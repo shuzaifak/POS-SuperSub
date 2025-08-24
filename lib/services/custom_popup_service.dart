@@ -28,24 +28,40 @@ class CustomPopupService {
       backgroundColor = Colors.red[700]!;
     }
 
-    _overlayEntry = OverlayEntry(
-      builder:
-          (overlayContext) => _PopupWidget(
-            message: message,
-            iconData: iconData,
-            backgroundColor: backgroundColor,
-            textColor: textColor,
-            overlayContext: overlayContext,
-          ),
-    );
+    try {
+      _overlayEntry = OverlayEntry(
+        builder:
+            (overlayContext) => _PopupWidget(
+              message: message,
+              iconData: iconData,
+              backgroundColor: backgroundColor,
+              textColor: textColor,
+              overlayContext: overlayContext,
+            ),
+      );
 
-    Overlay.of(context).insert(_overlayEntry!);
-    _dismissTimer = Timer(duration, _dismiss);
+      final overlay = Overlay.of(context);
+      if (overlay.mounted) {
+        overlay.insert(_overlayEntry!);
+        _dismissTimer = Timer(duration, _dismiss);
+      } else {
+        print('CustomPopupService: Overlay not mounted, skipping popup display');
+        _overlayEntry = null;
+      }
+    } catch (e) {
+      print('CustomPopupService: Error showing popup: $e');
+      _overlayEntry = null;
+    }
   }
 
   static void _dismiss() {
     _dismissTimer?.cancel();
-    _overlayEntry?.remove();
+    try {
+      _overlayEntry?.remove();
+    } catch (e) {
+      // Handle overlay removal errors gracefully
+      print('CustomPopupService: Error removing overlay: $e');
+    }
     _overlayEntry = null;
   }
 }

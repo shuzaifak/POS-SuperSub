@@ -1,7 +1,6 @@
 // lib/config/brand_info.dart
 class BrandInfo {
-  static const String _currentBrand =
-      'TVP'; // this value will be changed for multiple brands
+  static const String _currentBrand = 'Dallas';
 
   static const Map<String, String> _brandConfigs = {
     'TVP': 'TVP',
@@ -19,7 +18,7 @@ class BrandInfo {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
       'brand': currentBrand,
-      'x-client-id': 'TVP',
+      'x-client-id': currentBrand,
     };
   }
 }

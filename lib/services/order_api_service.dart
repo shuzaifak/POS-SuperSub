@@ -1,3 +1,5 @@
+// lib/services/order_api_service.dart
+
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:socket_io_client/socket_io_client.dart' as IO;
@@ -21,6 +23,7 @@ class OrderApiService {
   static const String _backendBaseUrl =
       'https://thevillage-backend.onrender.com';
 
+  // Singleton instance for OrderApiService
   static final OrderApiService _instance = OrderApiService._internal();
   factory OrderApiService() {
     return _instance;
@@ -31,15 +34,17 @@ class OrderApiService {
 
   late IO.Socket _socket;
 
+  // StreamControllers to expose events to the UI
   final _newOrderController = StreamController<Order>.broadcast();
   final _offersUpdatedController = StreamController<List<dynamic>>.broadcast();
   final _shopStatusUpdatedController =
-  StreamController<ShopStatusData>.broadcast();
+      StreamController<ShopStatusData>.broadcast();
   final _connectionStatusController = StreamController<bool>.broadcast();
   final _acceptedOrderController = StreamController<Order>.broadcast();
   final _orderStatusOrDriverChangedController =
-  StreamController<Map<String, dynamic>>.broadcast();
+      StreamController<Map<String, dynamic>>.broadcast();
 
+  // Getters for the streams
   Stream<Order> get newOrderStream => _newOrderController.stream;
   Stream<List<dynamic>> get offersUpdatedStream =>
       _offersUpdatedController.stream;
@@ -50,11 +55,15 @@ class OrderApiService {
   Stream<Map<String, dynamic>> get orderStatusOrDriverChangedStream =>
       _orderStatusOrDriverChangedController.stream;
 
+  //Method to add an order to the accepted stream
   void addAcceptedOrder(Order order) {
     _acceptedOrderController.add(order);
+    print('OrderApiService: Order ${order.orderId} added to accepted stream.');
   }
 
   void _initSocket() {
+    // Socket.IO connects directly, no proxy needed
+    // For socket connections, we can add brand info in extraHeaders
     _socket = IO.io(
       _backendBaseUrl,
       IO.OptionBuilder()
@@ -62,61 +71,117 @@ class OrderApiService {
           .enableForceNewConnection()
           .enableAutoConnect()
           .setExtraHeaders({
-        'withCredentials': 'true',
-        'brand': BrandInfo.currentBrand,
-        'x-client-id': BrandInfo.currentBrand,
-      })
+            'withCredentials': 'true',
+            'brand': BrandInfo.currentBrand,
+          })
           .build(),
     );
 
     _socket.onConnect((_) {
+      print('🟢 Connected to backend socket: ${_socket.id}');
+      print('🏷️  Brand: ${BrandInfo.currentBrand}');
       _connectionStatusController.add(true);
-      _socket.emit('join_brand_room', {'brand': BrandInfo.currentBrand});
     });
 
     _socket.on('new_order', (data) {
+      print('📦 New order received from server: $data');
       try {
-        final orderData = Order.fromJson(data);
-        _newOrderController.add(orderData);
+        // Check if the order is for the current brand before processing
+        final currentBrand = BrandInfo.currentBrand.toLowerCase();
+        final orderBrand =
+            (data['brand_name']?.toString().toLowerCase()) ??
+            (data['order_brand']?.toString().toLowerCase()) ??
+            '';
+
+        print(
+          '🏷️  Order brand: "$orderBrand", Current brand: "$currentBrand"',
+        );
+
+        // Only process orders for the current brand
+        if (orderBrand.isEmpty || orderBrand == currentBrand) {
+          final orderData = Order.fromJson(data);
+          print('✅ New order ${orderData.orderId} accepted for current brand');
+          _newOrderController.add(orderData);
+        } else {
+          print(
+            '❌ New order rejected - not for current brand (order: "$orderBrand", current: "$currentBrand")',
+          );
+        }
       } catch (e) {
-        // Error handling
+        print('Error parsing new_order data: $e');
       }
     });
 
     _socket.on('offers_updated', (data) {
+      print('🔥 Real-time offers update received: $data');
       if (data is List) {
         _offersUpdatedController.add(data);
+      } else {
+        print('Offers data is not a list: $data');
       }
     });
 
     _socket.on('shop_status_updated', (data) {
+      print('🟢 Shop status changed: $data');
       try {
         final shopStatus = ShopStatusData.fromJson(data);
         _shopStatusUpdatedController.add(shopStatus);
       } catch (e) {
-
+        print('Error parsing shop_status_updated data: $e');
       }
     });
 
     _socket.on("order_status_or_driver_changed", (data) {
+      print("🔄 Socket: Order status or driver updated (Real-time): $data");
+      print("🔍 Data type: ${data.runtimeType}");
+
       if (data is Map<String, dynamic>) {
-        _orderStatusOrDriverChangedController.add(data);
+        print("📋 Available keys: ${data.keys.toList()}");
+        print("📋 Values: ${data.values.toList()}");
+
+        // Check if the order status change is for the current brand
+        final currentBrand = BrandInfo.currentBrand.toLowerCase();
+        final orderBrand =
+            (data['brand_name']?.toString().toLowerCase()) ??
+            (data['order_brand']?.toString().toLowerCase()) ??
+            '';
+
+        print(
+          '🏷️  Order status change - Order brand: "$orderBrand", Current brand: "$currentBrand"',
+        );
+
+        // Only process status changes for the current brand
+        if (orderBrand.isEmpty || orderBrand == currentBrand) {
+          print('✅ Order status change accepted for current brand');
+          _orderStatusOrDriverChangedController.add(data);
+        } else {
+          print(
+            '❌ Order status change rejected - not for current brand (order: "$orderBrand", current: "$currentBrand")',
+          );
+        }
+      } else {
+        print(
+          '❌ Received non-Map data for order_status_or_driver_changed: $data',
+        );
+        print('❌ Actual type: ${data.runtimeType}');
       }
     });
 
     _socket.onDisconnect((_) {
+      print('🔴 Disconnected from socket');
       _connectionStatusController.add(false);
     });
 
     _socket.onError((error) {
+      print('❌ Socket Error: $error');
       _connectionStatusController.add(false);
     });
 
-    _socket.onConnectError((err) => {});
-    _socket.onReconnectError((err) => {});
-    _socket.onReconnectAttempt((_) => {});
-    _socket.onReconnect((attempt) => {});
-    _socket.onReconnectFailed((_) => {});
+    _socket.onConnectError((err) => print('Connect Error: $err'));
+    _socket.onReconnectError((err) => print('Reconnect Error: $err'));
+    _socket.onReconnectAttempt((_) => print('Reconnect Attempting...'));
+    _socket.onReconnect((attempt) => print('Reconnected on attempt: $attempt'));
+    _socket.onReconnectFailed((_) => print('Reconnect Failed'));
   }
 
   void connectSocket() {
@@ -145,17 +210,20 @@ class OrderApiService {
 
   static Future<List<Order>> fetchTodayOrders() async {
     final url = _buildProxyUrl('/orders/today');
+    print("🔍 DEBUG: fetchTodayOrders called");
     try {
       final response = await http.get(
         url,
-        headers: BrandInfo.getDefaultHeaders(),
+        headers: BrandInfo.getDefaultHeaders(), // Using brand headers
       );
-
       if (response.statusCode == 200) {
         List jsonResponse = json.decode(response.body);
-        return jsonResponse
-            .map((orderJson) => Order.fromJson(orderJson))
-            .toList();
+        List<Order> orders = [];
+        for (var orderJson in jsonResponse) {
+          orders.add(Order.fromJson(orderJson));
+        }
+
+        return orders;
       } else {
         throw Exception(
           'Failed to load today\'s orders: ${response.statusCode} ${response.body}',
@@ -166,9 +234,11 @@ class OrderApiService {
     }
   }
 
+  // Update order status
   static Future<bool> updateOrderStatus(int orderId, String newStatus) async {
     final url = _buildProxyUrl('/orders/update-status');
 
+    // Map internal status names to backend color codes
     String statusToSend;
     switch (newStatus.toLowerCase()) {
       case 'pending':
@@ -191,7 +261,7 @@ class OrderApiService {
     try {
       final response = await http.post(
         url,
-        headers: BrandInfo.getDefaultHeaders(),
+        headers: BrandInfo.getDefaultHeaders(), // Using brand headers
         body: jsonEncode(<String, dynamic>{
           'order_id': orderId,
           'status': statusToSend,
@@ -200,25 +270,36 @@ class OrderApiService {
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
+        print(
+          'Successfully updated order status $orderId to $newStatus (sent as $statusToSend)',
+        );
         return true;
       } else {
+        print(
+          'Failed to update order status $orderId to $newStatus (sent as $statusToSend): ${response.statusCode} - ${response.body}',
+        );
         return false;
       }
     } catch (e) {
+      print('Error updating order status: $e');
       return false;
     }
   }
 
+  // Customer search method
   static Future<CustomerSearchResponse?> searchCustomerByPhoneNumber(
-      String phoneNumber,
-      ) async {
+    String phoneNumber,
+  ) async {
     String cleanedPhoneNumber = phoneNumber.replaceAll(RegExp(r'\s+'), '');
     final url = _buildProxyUrl('/orders/search-customer');
+
+    print('PHONE NUMBER: Attempting to search customer with URL: $url');
+    print('PHONE NUMBER: Sending phone number: $cleanedPhoneNumber');
 
     try {
       final response = await http.post(
         url,
-        headers: BrandInfo.getDefaultHeaders(),
+        headers: BrandInfo.getDefaultHeaders(), // Using brand headers
         body: jsonEncode(<String, dynamic>{'phone_number': cleanedPhoneNumber}),
       );
 
@@ -230,11 +311,18 @@ class OrderApiService {
           return null;
         }
       } else if (response.statusCode == 404) {
+        print(
+          'Customer not found for phone number: $cleanedPhoneNumber (Status 404)',
+        );
         return null;
       } else {
+        print(
+          'Failed to search customer. Status: ${response.statusCode}, Body: ${response.body}',
+        );
         return null;
       }
     } catch (e) {
+      print('Error during customer search: $e');
       return null;
     }
   }

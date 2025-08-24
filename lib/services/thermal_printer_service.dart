@@ -1067,7 +1067,7 @@ class ThermalPrinterService {
     StringBuffer receipt = StringBuffer();
 
     receipt.writeln('================================');
-    receipt.writeln('              TVP');
+    receipt.writeln('             Dallas');
     receipt.writeln('================================');
     receipt.writeln('Date: ${UKTimeService.now().toString().split('.')[0]}');
     receipt.writeln('Order Type: ${orderType.toUpperCase()}');
@@ -1194,7 +1194,7 @@ class ThermalPrinterService {
 
     bytes += generator.setGlobalCodeTable('CP1252');
     bytes += generator.text(
-      'TVP',
+      'Dallas',
       styles: const PosStyles(
         align: PosAlign.center,
         height: PosTextSize.size2,
@@ -1653,7 +1653,7 @@ class ThermalPrinterService {
 
     // Header
     report.writeln('================================');
-    report.writeln('              TVP');
+    report.writeln('             Dallas');
     report.writeln('================================');
     report.writeln();
 
@@ -1825,7 +1825,7 @@ class ThermalPrinterService {
 
     // Header
     bytes += generator.text(
-      'TVP',
+      'Dallas',
       styles: const PosStyles(
         align: PosAlign.center,
         height: PosTextSize.size2,

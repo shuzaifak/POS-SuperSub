@@ -1,8 +1,9 @@
-// lib/services/api_service.dart (Updated with new sales report methods)
+// lib/services/api_service.dart (Fixed paid outs methods)
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/food_item.dart';
 import '../config/brand_info.dart';
+import '../models/paidout_models.dart';
 
 class ApiService {
   static const String baseUrl =
@@ -37,12 +38,6 @@ class ApiService {
     Map<String, dynamic> orderData,
   ) async {
     final url = Uri.parse("$alternativeProxy/orders/full-create");
-
-    print("📤 DEBUG: createOrderFromMap called");
-    print("📤 DEBUG: Order transaction_id: ${orderData['transaction_id']}");
-    print("📤 DEBUG: Order customer: ${orderData['guest']?['name']}");
-    print("📤 DEBUG: Order type: ${orderData['order_type']}");
-    print("📤 DEBUG: Order total: ${orderData['total_price']}");
 
     try {
       final response = await http.post(
@@ -86,6 +81,143 @@ class ApiService {
         'Failed to connect to the server or process request for order creation: $e',
       );
     }
+  }
+
+  // FIXED: Submit paid outs with correct endpoint and format
+  static Future<void> submitPaidOuts(List<PaidOut> paidOuts) async {
+    final url = Uri.parse("$alternativeProxy/admin/paidouts");
+
+    print("submitPaidOuts: Attempting to submit ${paidOuts.length} paid outs");
+
+    final requestBody = {
+      "paidouts": paidOuts.map((paidOut) => paidOut.toJson()).toList(),
+    };
+
+    print("submitPaidOuts: Request body: ${jsonEncode(requestBody)}");
+
+    try {
+      final response = await http.post(
+        url,
+        headers: BrandInfo.getDefaultHeaders(),
+        body: jsonEncode(requestBody),
+      );
+
+      print("submitPaidOuts: Response Code: ${response.statusCode}");
+      print("submitPaidOuts: Response Body: ${response.body}");
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        print("submitPaidOuts: Successfully submitted paid outs");
+      } else {
+        throw Exception(
+          "Failed to submit paid outs: ${response.statusCode} - ${response.body}",
+        );
+      }
+    } catch (e) {
+      print("submitPaidOuts: Error submitting paid outs: $e");
+      throw Exception("Error submitting paid outs: $e");
+    }
+  }
+
+  // FIXED: Get today's paid outs with correct endpoint and consistent proxy usage
+  static Future<List<PaidOutRecord>> getTodaysPaidOuts() async {
+    final url = Uri.parse("$alternativeProxy/admin/paidouts/today");
+    print("getTodaysPaidOuts: Attempting to fetch from URL: $url");
+    print("getTodaysPaidOuts: Using headers: ${BrandInfo.getDefaultHeaders()}");
+
+    try {
+      final response = await http.get(
+        url,
+        headers: BrandInfo.getDefaultHeaders(),
+      );
+      print("getTodaysPaidOuts: Response Code: ${response.statusCode}");
+      print("getTodaysPaidOuts: Response Body: ${response.body}");
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        print("getTodaysPaidOuts: Successfully parsed ${data.length} records");
+        return data.map((json) => PaidOutRecord.fromJson(json)).toList();
+      } else {
+        // Try alternative endpoint patterns
+        print(
+          "getTodaysPaidOuts: Primary endpoint failed, trying alternatives...",
+        );
+        return await _getTodaysPaidOutsFallback();
+      }
+    } catch (e) {
+      print("getTodaysPaidOuts: Primary method failed: $e");
+      // Try fallback method
+      return await _getTodaysPaidOutsFallback();
+    }
+  }
+
+  // FALLBACK: Try different endpoint patterns for getting today's paid outs
+  static Future<List<PaidOutRecord>> _getTodaysPaidOutsFallback() async {
+    final alternativeEndpoints = [
+      "$alternativeProxy/paidouts/today",
+      "$baseUrl/paidouts/today",
+      "$alternativeProxy/paidouts",
+      "$baseUrl/paidouts",
+    ];
+
+    for (String endpoint in alternativeEndpoints) {
+      try {
+        print("getTodaysPaidOuts: Trying alternative endpoint: $endpoint");
+
+        final response = await http.get(
+          Uri.parse(endpoint),
+          headers: BrandInfo.getDefaultHeaders(),
+        );
+
+        print(
+          "getTodaysPaidOuts: Alternative endpoint response: ${response.statusCode}",
+        );
+
+        if (response.statusCode == 200) {
+          final responseBody = response.body;
+          print(
+            "getTodaysPaidOuts: Alternative endpoint response body: $responseBody",
+          );
+
+          // Handle different response formats
+          dynamic data;
+          try {
+            data = jsonDecode(responseBody);
+          } catch (e) {
+            print("getTodaysPaidOuts: Failed to parse JSON: $e");
+            continue;
+          }
+
+          // Handle different data structures
+          List<dynamic> paidOutsList;
+          if (data is List) {
+            paidOutsList = data;
+          } else if (data is Map && data.containsKey('paidouts')) {
+            paidOutsList = data['paidouts'];
+          } else if (data is Map && data.containsKey('data')) {
+            paidOutsList = data['data'];
+          } else {
+            print(
+              "getTodaysPaidOuts: Unexpected response structure: ${data.runtimeType}",
+            );
+            continue;
+          }
+
+          print(
+            "getTodaysPaidOuts: Successfully found ${paidOutsList.length} records",
+          );
+          return paidOutsList
+              .map((json) => PaidOutRecord.fromJson(json))
+              .toList();
+        }
+      } catch (e) {
+        print("getTodaysPaidOuts: Alternative endpoint $endpoint failed: $e");
+        continue;
+      }
+    }
+
+    throw Exception(
+      "All paid outs endpoints failed. The API might be down or the endpoint structure has changed.",
+    );
   }
 
   static Future<Map<String, dynamic>> getShopStatus() async {
@@ -316,9 +448,6 @@ class ApiService {
     final fallbackUrl = Uri.parse(
       "https://cors-anywhere.herokuapp.com/https://thevillage-backend.onrender.com/admin/offers/update",
     );
-    print(
-      "updateOfferStatus: Fallback - Attempting to update offer: $offerText to value: $value",
-    );
 
     try {
       final response = await http.post(
@@ -426,6 +555,13 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         print("getTodaysReport: Success - Data keys: ${data.keys.toList()}");
+
+        // Debug: Print all the data to see what we're getting
+        print("getTodaysReport: Full response data:");
+        data.forEach((key, value) {
+          print("  $key: $value (type: ${value.runtimeType})");
+        });
+
         return data;
       } else {
         print(
@@ -466,9 +602,6 @@ class ApiService {
     ).replace(queryParameters: queryParams);
     final String encodedBackend = Uri.encodeComponent(backendUri.toString());
     final Uri url = Uri.parse(proxy + encodedBackend);
-
-    print("getDailyReport: Final URL: $url");
-    print("getDailyReport: Query params: $queryParams");
 
     try {
       final response = await http.get(
@@ -518,9 +651,6 @@ class ApiService {
     ).replace(queryParameters: queryParams);
     final String encodedBackend = Uri.encodeComponent(backendUri.toString());
     final Uri url = Uri.parse(proxy + encodedBackend);
-
-    print("getWeeklyReport: Final URL: $url");
-    print("getWeeklyReport: Query params: $queryParams");
 
     try {
       final response = await http.get(

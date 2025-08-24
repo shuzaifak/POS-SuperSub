@@ -18,13 +18,13 @@ class Page3 extends StatefulWidget {
 
 class _Page3State extends State<Page3> {
   int _selectedBottomNavItem = 4;
-  bool _canOpenDrawer = false;
+  bool _canOpenDrawer = false; // Restored to false by default
   bool _isDrawerOpening = false;
 
   @override
   void initState() {
     super.initState();
-    _checkDrawerAvailability();
+    _checkDrawerAvailability(); // Restored printer check
   }
 
   // Method to handle bottom nav item selection
@@ -56,14 +56,14 @@ class _Page3State extends State<Page3> {
     });
 
     try {
-      bool success = await ThermalPrinterService().openCashDrawer(
-        reason: "Manual open from main screen",
-      );
+      bool success = await ThermalPrinterService().openCashDrawer();
 
       if (mounted) {
         CustomPopupService.show(
           context,
-          success ? '💰 Cash drawer opened' : '❌ Failed to open cash drawer',
+          success
+              ? '💰 Cash drawer opened successfully'
+              : '❌ Failed to open cash drawer',
           type: success ? PopupType.success : PopupType.failure,
         );
       }
@@ -72,7 +72,7 @@ class _Page3State extends State<Page3> {
       if (mounted) {
         CustomPopupService.show(
           context,
-          '❌ Cash drawer error: $e',
+          '❌ Error opening cash drawer',
           type: PopupType.failure,
         );
       }
@@ -83,6 +83,127 @@ class _Page3State extends State<Page3> {
         });
       }
     }
+  }
+
+  void _openPaidOutsPage() {
+    Navigator.pushNamed(context, '/paidouts');
+  }
+
+  // Updated positioning to avoid popup overlap and accommodate both buttons
+  Widget _buildCashDrawerButton() {
+    // Calculate dynamic top position based on whether cash drawer is available
+    // If cash drawer is available, position lower to accommodate both buttons
+    // If not available, position higher for just the paid outs button
+    double topPosition = _canOpenDrawer ? 100.0 : 80.0;
+
+    return Positioned(
+      top: topPosition,
+      left: 20,
+      child: Column(
+        children: [
+          // Cash Drawer Button - Only show if drawer is available
+          if (_canOpenDrawer) ...[
+            GestureDetector(
+              onTap: _isDrawerOpening ? null : _openCashDrawer,
+              child: Container(
+                width: 170,
+                height: 55,
+                decoration: BoxDecoration(
+                  color:
+                      _isDrawerOpening
+                          ? const Color(0xFFE0E0E0)
+                          : const Color(0xFFF2D9F9),
+                  borderRadius: BorderRadius.circular(30),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  child:
+                      _isDrawerOpening
+                          ? const Center(
+                            child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                color: Color(0xFF575858),
+                                strokeWidth: 3,
+                              ),
+                            ),
+                          )
+                          : Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.point_of_sale,
+                                color: const Color(0xFF575858),
+                                size: 28,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Cash Drawer',
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF575858),
+                                  fontFamily: 'Poppins',
+                                ),
+                              ),
+                            ],
+                          ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 15), // Increased spacing between buttons
+          ],
+
+          // Paid Outs Button - Always visible
+          GestureDetector(
+            onTap: _openPaidOutsPage,
+            child: Container(
+              width: 170,
+              height: 55,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE3F2FD),
+                borderRadius: BorderRadius.circular(30),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.money_off,
+                    color: const Color(0xFF575858),
+                    size: 28,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Paid Outs',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF575858),
+                      fontFamily: 'Poppins',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -194,54 +315,8 @@ class _Page3State extends State<Page3> {
               ],
             ),
           ),
-
-          // Cash drawer button positioned in top-right corner
-          if (_canOpenDrawer)
-            Positioned(
-              top: 20,
-              right: 20,
-              child: GestureDetector(
-                onTap: _isDrawerOpening ? null : _openCashDrawer,
-                child: Container(
-                  width: 60,
-                  height: 60,
-                  decoration: BoxDecoration(
-                    color:
-                        _isDrawerOpening
-                            ? Colors.grey
-                            : const Color(0xFF4CAF50),
-                    borderRadius: BorderRadius.circular(30),
-                    boxShadow: [
-                      BoxShadow(
-                        color: (_isDrawerOpening
-                                ? Colors.grey
-                                : const Color(0xFF4CAF50))
-                            .withOpacity(0.3),
-                        blurRadius: 8,
-                        spreadRadius: 2,
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child:
-                        _isDrawerOpening
-                            ? const SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 3,
-                              ),
-                            )
-                            : const Icon(
-                              Icons.money,
-                              color: Colors.white,
-                              size: 32,
-                            ),
-                  ),
-                ),
-              ),
-            ),
+          // Always show the buttons container with improved positioning
+          _buildCashDrawerButton(),
         ],
       ),
     );

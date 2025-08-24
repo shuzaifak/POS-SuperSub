@@ -1,9 +1,14 @@
 // lib/active_orders_list.dart
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:epos/models/order.dart';
 import 'package:provider/provider.dart';
 import 'package:epos/providers/active_orders_provider.dart';
+import 'package:epos/services/thermal_printer_service.dart';
+import 'package:epos/services/custom_popup_service.dart';
+import 'models/cart_item.dart';
+import 'models/food_item.dart';
 
 extension HexColor on Color {
   static Color fromHex(String hexString) {
@@ -23,14 +28,79 @@ class ActiveOrdersList extends StatefulWidget {
 
 class _ActiveOrdersListState extends State<ActiveOrdersList> {
   Order? _selectedOrder;
+  final ScrollController _scrollController = ScrollController();
+  bool _isPrinterConnected = false;
+  bool _isCheckingPrinter = false;
+  Timer? _printerStatusTimer;
+  DateTime? _lastPrinterCheck;
+  Map<String, bool>? _cachedPrinterStatus;
 
   @override
   void initState() {
     super.initState();
+    _startPrinterStatusChecking();
+  }
+
+  void _startPrinterStatusChecking() {
+    _checkPrinterStatus();
+
+    // Check every 2 minutes instead of 30 seconds to reduce printer communication
+    _printerStatusTimer = Timer.periodic(const Duration(minutes: 2), (timer) {
+      _checkPrinterStatus();
+    });
+  }
+
+  Future<void> _checkPrinterStatus() async {
+    if (_isCheckingPrinter || !mounted) return; // Add mounted check
+
+    setState(() {
+      _isCheckingPrinter = true;
+    });
+
+    try {
+      // Use a more lightweight check - just check if printer service has cached connection info
+      // without actually communicating with the printer
+      Map<String, bool> connectionStatus = {'usb': false, 'bluetooth': false};
+
+      // Only do a real check every 5 minutes, otherwise use cached status
+      final now = DateTime.now();
+      if (_lastPrinterCheck == null ||
+          now.difference(_lastPrinterCheck!).inMinutes >= 5) {
+        connectionStatus =
+            await ThermalPrinterService().checkConnectionStatusOnly();
+        _lastPrinterCheck = now;
+        _cachedPrinterStatus = connectionStatus;
+      } else {
+        // Use cached status to avoid frequent printer communication
+        connectionStatus =
+            _cachedPrinterStatus ?? {'usb': false, 'bluetooth': false};
+      }
+
+      bool isConnected =
+          connectionStatus['usb'] == true ||
+          connectionStatus['bluetooth'] == true;
+
+      if (mounted) {
+        setState(() {
+          _isPrinterConnected = isConnected;
+          _isCheckingPrinter = false;
+        });
+      }
+    } catch (e) {
+      print('Error checking printer status: $e');
+      if (mounted) {
+        setState(() {
+          _isPrinterConnected = false;
+          _isCheckingPrinter = false;
+        });
+      }
+    }
   }
 
   @override
   void dispose() {
+    _printerStatusTimer?.cancel();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -127,16 +197,151 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
       return 'Web ${type == 'delivery' ? 'Delivery' : 'Pickup'}';
     } else if (source == 'epos') {
       if (type == 'delivery') {
-        return 'EPOS Delivery';
+        return 'POS Delivery';
       } else if (type == 'dinein') {
-        return 'EPOS Dine-In';
+        return 'POS Dine-In';
       } else if (type == 'takeout') {
-        return 'EPOS Takeout';
+        return 'POS Takeout';
       } else {
-        return 'EPOS Collection'; // fallback for other cases
+        return 'POS Collection';
       }
     }
     return '${source.toUpperCase()} ${type.toUpperCase()}';
+  }
+
+  Future<void> _handlePrintingOrderReceipt() async {
+    if (_selectedOrder == null) {
+      CustomPopupService.show(
+        context,
+        "No order selected for printing",
+        type: PopupType.failure,
+      );
+      return;
+    }
+
+    try {
+      // Convert Order items to CartItem format for the printer service
+      List<CartItem> cartItems =
+          _selectedOrder!.items.map((orderItem) {
+            // Calculate price per unit from total price and quantity
+            double pricePerUnit =
+                orderItem.quantity > 0
+                    ? (orderItem.totalPrice / orderItem.quantity)
+                    : 0.0;
+
+            // Extract options from description for proper printing
+            Map<String, dynamic> itemOptions =
+                _extractAllOptionsFromDescription(
+                  orderItem.description,
+                  defaultFoodItemToppings: orderItem.foodItem?.defaultToppings,
+                  defaultFoodItemCheese: orderItem.foodItem?.defaultCheese,
+                );
+
+            // Build selectedOptions list for receipt printing
+            List<String> selectedOptions = [];
+
+            if (itemOptions['hasOptions'] == true) {
+              if (itemOptions['size'] != null) {
+                selectedOptions.add('Size: ${itemOptions['size']}');
+              }
+              if (itemOptions['crust'] != null) {
+                selectedOptions.add('Crust: ${itemOptions['crust']}');
+              }
+              if (itemOptions['base'] != null) {
+                selectedOptions.add('Base: ${itemOptions['base']}');
+              }
+              if (itemOptions['toppings'] != null &&
+                  (itemOptions['toppings'] as List).isNotEmpty) {
+                selectedOptions.add(
+                  'Extra Toppings: ${(itemOptions['toppings'] as List<String>).join(', ')}',
+                );
+              }
+              if (itemOptions['sauceDips'] != null &&
+                  (itemOptions['sauceDips'] as List).isNotEmpty) {
+                selectedOptions.add(
+                  'Sauce Dips: ${(itemOptions['sauceDips'] as List<String>).join(', ')}',
+                );
+              }
+              if (itemOptions['isMeal'] == true) {
+                selectedOptions.add('MEAL');
+              }
+              if (itemOptions['drink'] != null) {
+                selectedOptions.add('Drink: ${itemOptions['drink']}');
+              }
+            }
+
+            return CartItem(
+              foodItem:
+                  orderItem.foodItem ??
+                  FoodItem(
+                    id: orderItem.itemId ?? 0,
+                    name: orderItem.itemName,
+                    category: orderItem.itemType,
+                    price: {'default': pricePerUnit},
+                    image: orderItem.imageUrl ?? '',
+                    availability: true,
+                  ),
+              quantity: orderItem.quantity,
+              selectedOptions:
+                  selectedOptions.isNotEmpty ? selectedOptions : null,
+              comment: orderItem.comment,
+              pricePerUnit: pricePerUnit,
+            );
+          }).toList();
+
+      // Calculate subtotal
+      double subtotal = _selectedOrder!.orderTotalPrice;
+
+      // Use the thermal printer service to print
+      bool
+      success = await ThermalPrinterService().printReceiptWithUserInteraction(
+        transactionId:
+            _selectedOrder!.transactionId.isNotEmpty
+                ? _selectedOrder!.transactionId
+                : _selectedOrder!.orderId.toString(),
+        orderType: _selectedOrder!.orderType,
+        cartItems: cartItems,
+        subtotal: subtotal,
+        totalCharge: _selectedOrder!.orderTotalPrice,
+        changeDue: _selectedOrder!.changeDue,
+        extraNotes: _selectedOrder!.orderExtraNotes,
+        customerName: _selectedOrder!.customerName,
+        customerEmail: _selectedOrder!.customerEmail,
+        phoneNumber: _selectedOrder!.phoneNumber,
+        streetAddress: _selectedOrder!.streetAddress,
+        city: _selectedOrder!.city,
+        postalCode: _selectedOrder!.postalCode,
+        paymentType: _selectedOrder!.paymentType,
+        onShowMethodSelection: (availableMethods) {
+          CustomPopupService.show(
+            context,
+            "Available printing methods: ${availableMethods.join(', ')}. Please check printer connections.",
+            type: PopupType.success,
+          );
+        },
+      );
+
+      if (success) {
+        CustomPopupService.show(
+          context,
+          "Receipt printed successfully",
+          type: PopupType.success,
+        );
+      } else {
+        CustomPopupService.show(
+          context,
+          "Failed to print receipt. Check printer connection.",
+          type: PopupType.failure,
+        );
+      }
+    } catch (e) {
+      print('Error printing receipt: $e');
+      CustomPopupService.show(
+        context,
+        "Error printing Receipt.",
+        type: PopupType.failure,
+      );
+    }
   }
 
   // UPDATED METHOD WITH DEFAULT VALUE FILTERING (same as website screen)
@@ -149,12 +354,13 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
       'size': null,
       'crust': null,
       'base': null,
-      'drink': null, // NEW: Add drink support
-      'isMeal': false, // NEW: Add meal detection
+      'drink': null,
+      'isMeal': false,
       'toppings': <String>[],
       'sauceDips': <String>[],
       'baseItemName': description,
       'hasOptions': false,
+      'extractedComment': null,
     };
 
     List<String> optionsList = [];
@@ -177,18 +383,19 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
               .where((s) => s.isNotEmpty)
               .toList();
 
-      // Check if any line contains options (has colons)
-      List<String> optionLines =
-          lines.where((line) => line.contains(':')).toList();
-
-      if (optionLines.isNotEmpty) {
+      if (lines.isNotEmpty) {
         foundOptionsSyntax = true;
-        optionsList = optionLines;
+        optionsList = lines;
 
-        // Find the first line that doesn't contain a colon (likely the item name)
+        // Find the first line that doesn't contain a colon and isn't a special topping (likely the item name)
         String foundItemName = '';
         for (var line in lines) {
-          if (!line.contains(':')) {
+          String lowerLine = line.toLowerCase();
+          if (!line.contains(':') &&
+              lowerLine != 'no salad' &&
+              lowerLine != 'no sauce' &&
+              lowerLine != 'no cream' &&
+              lowerLine != 'meal') {
             foundItemName = line;
             break;
           }
@@ -197,7 +404,7 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
         if (foundItemName.isNotEmpty) {
           options['baseItemName'] = foundItemName;
         } else {
-          options['baseItemName'] = description; // Fallback to full description
+          options['baseItemName'] = description;
         }
       }
     }
@@ -209,7 +416,7 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
       return options;
     }
 
-    // --- NEW: Combine default toppings and cheese from the FoodItem ---
+    // --- Combine default toppings and cheese from the FoodItem ---
     final Set<String> defaultToppingsAndCheese = {};
     if (defaultFoodItemToppings != null) {
       defaultToppingsAndCheese.addAll(
@@ -226,13 +433,14 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
     for (var option in optionsList) {
       String lowerOption = option.toLowerCase();
 
-      // NEW: Check for meal option
+      // Check for meal option
       if (lowerOption.contains('make it a meal') ||
-          lowerOption.contains('meal')) {
+          lowerOption.contains('meal') ||
+          lowerOption == 'meal') {
         options['isMeal'] = true;
         anyNonDefaultOptionFound = true;
       }
-      // NEW: Extract drink information
+      // Extract drink information
       else if (lowerOption.startsWith('drink:')) {
         String drinkValue = option.substring('drink:'.length).trim();
         if (drinkValue.isNotEmpty) {
@@ -241,22 +449,19 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
         }
       } else if (lowerOption.startsWith('size:')) {
         String sizeValue = option.substring('size:'.length).trim();
-        // FILTER: Only show if not default
-        if (sizeValue.isNotEmpty && sizeValue.toLowerCase() != 'default') {
+        if (sizeValue.isNotEmpty) {
           options['size'] = sizeValue;
           anyNonDefaultOptionFound = true;
         }
       } else if (lowerOption.startsWith('crust:')) {
         String crustValue = option.substring('crust:'.length).trim();
-        // FILTER: Only show if not normal
-        if (crustValue.isNotEmpty && crustValue.toLowerCase() != 'normal') {
+        if (crustValue.isNotEmpty) {
           options['crust'] = crustValue;
           anyNonDefaultOptionFound = true;
         }
       } else if (lowerOption.startsWith('base:')) {
         String baseValue = option.substring('base:'.length).trim();
-        // FILTER: Only show if not tomato (example default base)
-        if (baseValue.isNotEmpty && baseValue.toLowerCase() != 'tomato') {
+        if (baseValue.isNotEmpty) {
           if (baseValue.contains(',')) {
             List<String> baseList =
                 baseValue.split(',').map((b) => b.trim()).toList();
@@ -282,11 +487,10 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
                   .where((t) => t.isNotEmpty)
                   .toList();
 
-          // --- FILTER: Against FoodItem's default toppings/cheese ---
+          // Filter against FoodItem's default toppings/cheese
           List<String> filteredToppings =
               currentToppingsFromDescription.where((topping) {
                 String trimmedToppingLower = topping.trim().toLowerCase();
-                // Also keep the general "none", "no toppings" filter
                 return !defaultToppingsAndCheese.contains(
                       trimmedToppingLower,
                     ) &&
@@ -307,8 +511,22 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
             anyNonDefaultOptionFound = true;
           }
         }
-      } else if (lowerOption.startsWith('sauce dips:')) {
-        String sauceDipsValue = option.substring('sauce dips:'.length).trim();
+      } else if (lowerOption.startsWith('sauce dips:') ||
+          lowerOption.startsWith('dips:') ||
+          lowerOption.startsWith('sauce:') ||
+          lowerOption.contains('dip:')) {
+        String sauceDipsValue = '';
+        if (lowerOption.startsWith('sauce dips:')) {
+          sauceDipsValue = option.substring('sauce dips:'.length).trim();
+        } else if (lowerOption.startsWith('dips:')) {
+          sauceDipsValue = option.substring('dips:'.length).trim();
+        } else if (lowerOption.startsWith('sauce:')) {
+          sauceDipsValue = option.substring('sauce:'.length).trim();
+        } else if (lowerOption.contains('dip:')) {
+          int dipIndex = lowerOption.indexOf('dip:');
+          sauceDipsValue = option.substring(dipIndex + 'dip:'.length).trim();
+        }
+
         if (sauceDipsValue.isNotEmpty) {
           List<String> sauceDipsList =
               sauceDipsValue
@@ -321,6 +539,26 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
           );
           currentSauceDips.addAll(sauceDipsList);
           options['sauceDips'] = currentSauceDips.toSet().toList();
+          anyNonDefaultOptionFound = true;
+        }
+      } else if (lowerOption.startsWith('comment:') ||
+          lowerOption.startsWith('note:') ||
+          lowerOption.startsWith('notes:') ||
+          lowerOption.startsWith('special instructions:')) {
+        String commentValue = '';
+        if (lowerOption.startsWith('comment:')) {
+          commentValue = option.substring('comment:'.length).trim();
+        } else if (lowerOption.startsWith('note:')) {
+          commentValue = option.substring('note:'.length).trim();
+        } else if (lowerOption.startsWith('notes:')) {
+          commentValue = option.substring('notes:'.length).trim();
+        } else if (lowerOption.startsWith('special instructions:')) {
+          commentValue =
+              option.substring('special instructions:'.length).trim();
+        }
+
+        if (commentValue.isNotEmpty) {
+          options['extractedComment'] = commentValue;
           anyNonDefaultOptionFound = true;
         }
       } else if (lowerOption == 'no salad' ||
@@ -359,7 +597,10 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
         current = part;
         inToppings = true;
         inSauceDips = false;
-      } else if (lowerPart.startsWith('sauce dips:')) {
+      } else if (lowerPart.startsWith('sauce dips:') ||
+          lowerPart.startsWith('dips:') ||
+          lowerPart.startsWith('sauce:') ||
+          lowerPart.contains('dip:')) {
         if (current.isNotEmpty) {
           result.add(current.trim());
           current = '';
@@ -403,6 +644,10 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
     final bool isLoadingOrders = activeOrdersProvider.isLoading;
     final String? errorLoadingOrders = activeOrdersProvider.error;
 
+    // Get screen dimensions for responsive design
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isLargeScreen = screenWidth > 1200;
+
     if (_selectedOrder != null &&
         !activeOrders.any((o) => o.orderId == _selectedOrder!.orderId)) {
       _selectedOrder = null;
@@ -434,390 +679,708 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
       );
     }
 
+    // Detailed order view (similar to website orders screen)
     if (_selectedOrder != null) {
-      return Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Align(
-              alignment: Alignment.topLeft,
-              child: IconButton(
-                icon: Image.asset(
-                  'assets/images/bArrow.png',
-                  width: 30,
-                  height: 30,
+      return Stack(
+        children: [
+          Padding(
+            padding: EdgeInsets.all(isLargeScreen ? 20.0 : 16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Back button
+                Align(
+                  alignment: Alignment.topLeft,
+                  child: IconButton(
+                    icon: Image.asset(
+                      'assets/images/bArrow.png',
+                      width: isLargeScreen ? 35 : 30,
+                      height: isLargeScreen ? 35 : 30,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _selectedOrder = null;
+                      });
+                    },
+                  ),
                 ),
-                onPressed: () {
-                  setState(() {
-                    _selectedOrder = null;
-                  });
-                },
-              ),
-            ),
 
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 20.0,
-                vertical: 5,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                // Order header information
+                Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isLargeScreen ? 25.0 : 20.0,
+                    vertical: isLargeScreen ? 8 : 5,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            _selectedOrder!.orderType.toLowerCase() ==
+                                        "delivery" &&
+                                    _selectedOrder!.postalCode != null &&
+                                    _selectedOrder!.postalCode!.isNotEmpty
+                                ? '${_selectedOrder!.postalCode} '
+                                : '',
+                            style: TextStyle(
+                              fontSize: isLargeScreen ? 19 : 17,
+                              fontWeight: FontWeight.normal,
+                            ),
+                          ),
+                          Text(
+                            'Order no. ${_selectedOrder!.orderId}',
+                            style: TextStyle(
+                              fontSize: isLargeScreen ? 19 : 17,
+                              fontWeight: FontWeight.normal,
+                            ),
+                          ),
+                        ],
+                      ),
                       Text(
-                        _selectedOrder!.orderType.toLowerCase() == "delivery" &&
-                                _selectedOrder!.postalCode != null &&
-                                _selectedOrder!.postalCode!.isNotEmpty
-                            ? '${_selectedOrder!.postalCode} '
-                            : '',
-                        style: const TextStyle(
-                          fontSize: 17,
+                        _selectedOrder!.customerName,
+                        style: TextStyle(
+                          fontSize: isLargeScreen ? 19 : 17,
                           fontWeight: FontWeight.normal,
                         ),
                       ),
-                      Text(
-                        'Order no. ${_selectedOrder!.orderId}',
-                        style: const TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.normal,
+                      if (_selectedOrder!.orderType.toLowerCase() ==
+                              "delivery" &&
+                          _selectedOrder!.streetAddress != null &&
+                          _selectedOrder!.streetAddress!.isNotEmpty)
+                        Text(
+                          _selectedOrder!.streetAddress!,
+                          style: TextStyle(fontSize: isLargeScreen ? 20 : 18),
                         ),
-                      ),
-                    ],
-                  ),
-                  Text(
-                    _selectedOrder!.customerName,
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.normal,
-                    ),
-                  ),
-                  if (_selectedOrder!.orderType.toLowerCase() == "delivery" &&
-                      _selectedOrder!.streetAddress != null &&
-                      _selectedOrder!.streetAddress!.isNotEmpty)
-                    Text(
-                      _selectedOrder!.streetAddress!,
-                      style: const TextStyle(fontSize: 18),
-                    ),
-                  if (_selectedOrder!.orderType.toLowerCase() == "delivery" &&
-                      _selectedOrder!.city != null &&
-                      _selectedOrder!.city!.isNotEmpty)
-                    Text(
-                      '${_selectedOrder!.city}, ${_selectedOrder!.postalCode ?? ''}',
-                      style: const TextStyle(fontSize: 18),
-                    ),
-                  if (_selectedOrder!.phoneNumber != null &&
-                      _selectedOrder!.phoneNumber!.isNotEmpty)
-                    Text(
-                      _selectedOrder!.phoneNumber!,
-                      style: const TextStyle(fontSize: 18),
-                    ),
-                ],
-              ),
-            ),
+                      if (_selectedOrder!.orderType.toLowerCase() ==
+                              "delivery" &&
+                          _selectedOrder!.city != null &&
+                          _selectedOrder!.city!.isNotEmpty)
+                        Text(
+                          '${_selectedOrder!.city}, ${_selectedOrder!.postalCode ?? ''}',
+                          style: TextStyle(fontSize: isLargeScreen ? 20 : 18),
+                        ),
+                      if (_selectedOrder!.phoneNumber != null &&
+                          _selectedOrder!.phoneNumber!.isNotEmpty)
+                        Text(
+                          _selectedOrder!.phoneNumber!,
+                          style: TextStyle(fontSize: isLargeScreen ? 20 : 18),
+                        ),
+                      if (_selectedOrder!.customerEmail != null &&
+                          _selectedOrder!.customerEmail!.isNotEmpty)
+                        Text(
+                          _selectedOrder!.customerEmail!,
+                          style: TextStyle(fontSize: isLargeScreen ? 20 : 18),
+                        ),
 
-            const SizedBox(height: 20),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 55.0),
-              child: Divider(
-                height: 0,
-                thickness: 3,
-                color: const Color(0xFFB2B2B2),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Expanded(
-              child: ListView.builder(
-                itemCount: _selectedOrder!.items.length,
-                itemBuilder: (context, itemIndex) {
-                  final item = _selectedOrder!.items[itemIndex];
-
-                  // UPDATED: Pass default toppings and cheese for filtering
-                  Map<String, dynamic> itemOptions =
-                      _extractAllOptionsFromDescription(
-                        item.description,
-                        defaultFoodItemToppings: item.foodItem?.defaultToppings,
-                        defaultFoodItemCheese: item.foodItem?.defaultCheese,
-                      );
-
-                  String? selectedSize = itemOptions['size'];
-                  String? selectedCrust = itemOptions['crust'];
-                  String? selectedBase = itemOptions['base'];
-                  String? selectedDrink =
-                      itemOptions['drink']; // NEW: Add drink extraction
-                  bool isMeal =
-                      itemOptions['isMeal'] ?? false; // NEW: Add meal detection
-                  List<String> toppings = itemOptions['toppings'] ?? [];
-                  List<String> sauceDips = itemOptions['sauceDips'] ?? [];
-                  String baseItemName = item.itemName;
-                  bool hasOptions = itemOptions['hasOptions'] ?? false;
-
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12.0),
-                    child: Column(
-                      children: [
+                      // Display order-level extra notes
+                      if (_selectedOrder!.orderExtraNotes != null &&
+                          _selectedOrder!.orderExtraNotes!.isNotEmpty) ...[
+                        const SizedBox(height: 10),
                         Container(
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 12.0,
+                            horizontal: 16.0,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE8F5E8),
+                            borderRadius: BorderRadius.circular(8.0),
+                            border: Border.all(
+                              color: const Color(0xFF4CAF50),
+                              width: 1,
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Expanded(
-                                flex: 6,
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      '${item.quantity}',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 28,
-                                        fontFamily: 'Poppins',
-                                      ),
-                                    ),
-                                    Expanded(
-                                      child: Padding(
-                                        padding: const EdgeInsets.only(
-                                          left: 30,
-                                          right: 10,
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            // If no options found, display the description as simple text
-                                            if (!hasOptions)
-                                              Text(
-                                                item.description,
-                                                style: const TextStyle(
-                                                  fontSize: 15,
-                                                  fontFamily: 'Poppins',
-                                                  color: Colors.grey,
-                                                  fontStyle: FontStyle.normal,
-                                                ),
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-
-                                            // If options exist, display them individually (ONLY NON-DEFAULT ONES)
-                                            if (hasOptions) ...[
-                                              // Display Size (only if not default)
-                                              if (selectedSize != null)
-                                                Text(
-                                                  'Size: $selectedSize',
-                                                  style: const TextStyle(
-                                                    fontSize: 15,
-                                                    fontFamily: 'Poppins',
-                                                    color: Colors.black,
-                                                  ),
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                ),
-                                              // Display Crust (only if not default)
-                                              if (selectedCrust != null)
-                                                Text(
-                                                  'Crust: $selectedCrust',
-                                                  style: const TextStyle(
-                                                    fontSize: 15,
-                                                    fontFamily: 'Poppins',
-                                                    color: Colors.black,
-                                                  ),
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                ),
-                                              // Display Base (only if not default)
-                                              if (selectedBase != null)
-                                                Text(
-                                                  'Base: $selectedBase',
-                                                  style: const TextStyle(
-                                                    fontSize: 15,
-                                                    fontFamily: 'Poppins',
-                                                    color: Colors.black,
-                                                  ),
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                ),
-                                              // Display Toppings (only if not empty after filtering)
-                                              if (toppings.isNotEmpty)
-                                                Text(
-                                                  'Extra Toppings: ${toppings.join(', ')}',
-                                                  style: const TextStyle(
-                                                    fontSize: 15,
-                                                    fontFamily: 'Poppings',
-                                                    color: Colors.black,
-                                                  ),
-                                                  maxLines: 3,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                ),
-                                              // Display Sauce Dips (only if not empty)
-                                              if (sauceDips.isNotEmpty)
-                                                Text(
-                                                  'Sauce Dips: ${sauceDips.join(', ')}',
-                                                  style: const TextStyle(
-                                                    fontSize: 15,
-                                                    fontFamily: 'Poppins',
-                                                    color: Colors.black,
-                                                  ),
-                                                  maxLines: 2,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                ),
-
-                                              // Display meal information - NEW ADDITION
-                                              if (isMeal &&
-                                                  selectedDrink != null) ...[
-                                                const Text(
-                                                  'MEAL',
-                                                  style: TextStyle(
-                                                    fontSize: 15,
-                                                    fontFamily: 'Poppins',
-                                                    color: Colors.black,
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                ),
-                                                Text(
-                                                  'Drink: $selectedDrink',
-                                                  style: const TextStyle(
-                                                    fontSize: 15,
-                                                    fontFamily: 'Poppins',
-                                                    color: Colors.black,
-                                                  ),
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                ),
-                                              ],
-                                            ],
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ],
+                              const Text(
+                                'Order Notes:',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF2E7D2E),
+                                  fontFamily: 'Poppins',
                                 ),
                               ),
-
-                              Container(
-                                width: 1.2,
-                                height: 110,
-                                color: const Color(0xFFB2B2B2),
-                                margin: const EdgeInsets.symmetric(
-                                  horizontal: 0,
-                                ),
-                              ),
-
-                              Expanded(
-                                flex: 3,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    Container(
-                                      width: 90,
-                                      height: 64,
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      clipBehavior: Clip.hardEdge,
-                                      child: Image.asset(
-                                        _getCategoryIcon(item.itemType),
-                                        fit: BoxFit.contain,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      baseItemName,
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.normal,
-                                        fontFamily: 'Poppins',
-                                      ),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ],
+                              const SizedBox(height: 6),
+                              Text(
+                                _selectedOrder!.orderExtraNotes!,
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  color: Color(0xFF2E7D2E),
+                                  fontFamily: 'Poppins',
                                 ),
                               ),
                             ],
                           ),
                         ),
+                      ],
+                    ],
+                  ),
+                ),
 
-                        // Comment section moved outside the main row
-                        if (item.comment != null && item.comment!.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 8.0),
-                            child: Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 8.0,
-                                horizontal: 12.0,
+                SizedBox(height: isLargeScreen ? 25 : 20),
+                // Horizontal Divider
+                Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isLargeScreen ? 65.0 : 55.0,
+                  ),
+                  child: const Divider(
+                    height: 0,
+                    thickness: 3,
+                    color: Color(0xFFB2B2B2),
+                  ),
+                ),
+                SizedBox(height: isLargeScreen ? 15 : 10),
+
+                // Items list with scrollbar
+                Expanded(
+                  child: RawScrollbar(
+                    controller: _scrollController,
+                    thumbVisibility: true,
+                    trackVisibility: false,
+                    thickness: isLargeScreen ? 12.0 : 10.0,
+                    radius: const Radius.circular(30),
+                    interactive: true,
+                    thumbColor: const Color(0xFFF2D9F9),
+                    child: ListView.builder(
+                      controller: _scrollController,
+                      itemCount: _selectedOrder!.items.length,
+                      itemBuilder: (context, itemIndex) {
+                        final item = _selectedOrder!.items[itemIndex];
+
+                        // Enhanced option extraction
+                        Map<String, dynamic> itemOptions =
+                            _extractAllOptionsFromDescription(
+                              item.description,
+                              defaultFoodItemToppings:
+                                  item.foodItem?.defaultToppings,
+                              defaultFoodItemCheese:
+                                  item.foodItem?.defaultCheese,
+                            );
+
+                        String? selectedSize = itemOptions['size'];
+                        String? selectedCrust = itemOptions['crust'];
+                        String? selectedBase = itemOptions['base'];
+                        String? selectedDrink = itemOptions['drink'];
+                        bool isMeal = itemOptions['isMeal'] ?? false;
+                        List<String> toppings = itemOptions['toppings'] ?? [];
+                        List<String> sauceDips = itemOptions['sauceDips'] ?? [];
+                        String baseItemName =
+                            itemOptions['baseItemName'] ?? item.itemName;
+                        String displayItemName = item.itemName;
+                        bool hasOptions = itemOptions['hasOptions'] ?? false;
+                        String? extractedComment =
+                            itemOptions['extractedComment'];
+
+                        return Padding(
+                          padding: EdgeInsets.only(
+                            bottom: isLargeScreen ? 15.0 : 12.0,
+                          ),
+                          child: Column(
+                            children: [
+                              Container(
+                                padding: EdgeInsets.symmetric(
+                                  vertical: isLargeScreen ? 12 : 10,
+                                  horizontal: isLargeScreen ? 45 : 40,
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Expanded(
+                                      flex: 6,
+                                      child: Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            '${item.quantity}',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: isLargeScreen ? 38 : 34,
+                                              fontFamily: 'Poppins',
+                                            ),
+                                          ),
+                                          Expanded(
+                                            child: Padding(
+                                              padding: EdgeInsets.only(
+                                                left: isLargeScreen ? 35 : 30,
+                                                right: isLargeScreen ? 12 : 10,
+                                              ),
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  if (hasOptions) ...[
+                                                    // Show extracted base item name if it's different and meaningful
+                                                    if (baseItemName !=
+                                                            displayItemName &&
+                                                        baseItemName
+                                                            .trim()
+                                                            .isNotEmpty &&
+                                                        !baseItemName
+                                                            .toLowerCase()
+                                                            .contains(
+                                                              'size:',
+                                                            ) &&
+                                                        !baseItemName
+                                                            .toLowerCase()
+                                                            .contains(
+                                                              'crust:',
+                                                            ) &&
+                                                        !baseItemName
+                                                            .toLowerCase()
+                                                            .contains('base:'))
+                                                      Text(
+                                                        baseItemName,
+                                                        style: TextStyle(
+                                                          fontSize:
+                                                              isLargeScreen
+                                                                  ? 17
+                                                                  : 15,
+                                                          fontFamily: 'Poppins',
+                                                          color: Colors.black,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                        ),
+                                                        overflow:
+                                                            TextOverflow
+                                                                .ellipsis,
+                                                      ),
+
+                                                    // Display Size (only if not default)
+                                                    if (selectedSize != null)
+                                                      Text(
+                                                        'Size: $selectedSize',
+                                                        style: TextStyle(
+                                                          fontSize:
+                                                              isLargeScreen
+                                                                  ? 17
+                                                                  : 15,
+                                                          fontFamily: 'Poppins',
+                                                          color: Colors.black,
+                                                        ),
+                                                        overflow:
+                                                            TextOverflow
+                                                                .ellipsis,
+                                                      ),
+
+                                                    // Display Crust (only if not default)
+                                                    if (selectedCrust != null)
+                                                      Text(
+                                                        'Crust: $selectedCrust',
+                                                        style: TextStyle(
+                                                          fontSize:
+                                                              isLargeScreen
+                                                                  ? 17
+                                                                  : 15,
+                                                          fontFamily: 'Poppins',
+                                                          color: Colors.black,
+                                                        ),
+                                                        overflow:
+                                                            TextOverflow
+                                                                .ellipsis,
+                                                      ),
+
+                                                    // Display Base (only if not default)
+                                                    if (selectedBase != null)
+                                                      Text(
+                                                        'Base: $selectedBase',
+                                                        style: TextStyle(
+                                                          fontSize:
+                                                              isLargeScreen
+                                                                  ? 17
+                                                                  : 15,
+                                                          fontFamily: 'Poppins',
+                                                          color: Colors.black,
+                                                        ),
+                                                        overflow:
+                                                            TextOverflow
+                                                                .ellipsis,
+                                                      ),
+
+                                                    // Display MEAL first if it's a meal
+                                                    if (isMeal)
+                                                      Text(
+                                                        'MEAL',
+                                                        style: TextStyle(
+                                                          fontSize:
+                                                              isLargeScreen
+                                                                  ? 17
+                                                                  : 15,
+                                                          fontFamily: 'Poppins',
+                                                          color: Colors.black,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                        ),
+                                                        overflow:
+                                                            TextOverflow
+                                                                .ellipsis,
+                                                      ),
+
+                                                    // Display drink information
+                                                    if (selectedDrink != null &&
+                                                        selectedDrink
+                                                            .isNotEmpty)
+                                                      Text(
+                                                        'Drink: $selectedDrink',
+                                                        style: TextStyle(
+                                                          fontSize:
+                                                              isLargeScreen
+                                                                  ? 17
+                                                                  : 15,
+                                                          fontFamily: 'Poppins',
+                                                          color: Colors.black,
+                                                        ),
+                                                        overflow:
+                                                            TextOverflow
+                                                                .ellipsis,
+                                                      ),
+
+                                                    // Display Toppings (only if not empty)
+                                                    if (toppings.isNotEmpty)
+                                                      Text(
+                                                        'Extra Toppings: ${toppings.join(', ')}',
+                                                        style: TextStyle(
+                                                          fontSize:
+                                                              isLargeScreen
+                                                                  ? 17
+                                                                  : 15,
+                                                          fontFamily: 'Poppins',
+                                                          color: Colors.black,
+                                                        ),
+                                                        maxLines: 3,
+                                                        overflow:
+                                                            TextOverflow
+                                                                .ellipsis,
+                                                      ),
+
+                                                    // Display Sauce Dips (only if not empty)
+                                                    if (sauceDips.isNotEmpty)
+                                                      Text(
+                                                        'Sauce Dips: ${sauceDips.join(', ')}',
+                                                        style: TextStyle(
+                                                          fontSize:
+                                                              isLargeScreen
+                                                                  ? 17
+                                                                  : 15,
+                                                          fontFamily: 'Poppins',
+                                                          color: Colors.black,
+                                                        ),
+                                                        maxLines: 2,
+                                                        overflow:
+                                                            TextOverflow
+                                                                .ellipsis,
+                                                      ),
+                                                  ] else ...[
+                                                    // No structured options found, show raw description
+                                                    Text(
+                                                      item.description,
+                                                      style: TextStyle(
+                                                        fontSize:
+                                                            isLargeScreen
+                                                                ? 17
+                                                                : 15,
+                                                        fontFamily: 'Poppins',
+                                                        color: Colors.black,
+                                                        fontStyle:
+                                                            FontStyle.normal,
+                                                      ),
+                                                      maxLines: 3,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                    ),
+                                                  ],
+
+                                                  // Display item comment/notes if present
+                                                  if (item.comment != null &&
+                                                      item.comment!.isNotEmpty)
+                                                    Text(
+                                                      'Note: ${item.comment!}',
+                                                      style: TextStyle(
+                                                        fontSize:
+                                                            isLargeScreen
+                                                                ? 17
+                                                                : 15,
+                                                        fontFamily: 'Poppins',
+                                                        color:
+                                                            Colors.orange[700],
+                                                        fontWeight:
+                                                            FontWeight.w500,
+                                                      ),
+                                                      maxLines: 3,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                    ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+
+                                    Container(
+                                      width: 3,
+                                      height: isLargeScreen ? 120 : 110,
+                                      margin: const EdgeInsets.symmetric(
+                                        horizontal: 0,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(30),
+                                        color: const Color(0xFFB2B2B2),
+                                      ),
+                                    ),
+
+                                    Expanded(
+                                      flex: 3,
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.center,
+                                        children: [
+                                          Container(
+                                            width: isLargeScreen ? 100 : 90,
+                                            height: isLargeScreen ? 74 : 64,
+                                            decoration: BoxDecoration(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                            clipBehavior: Clip.hardEdge,
+                                            child: Image.asset(
+                                              _getCategoryIcon(item.itemType),
+                                              fit: BoxFit.contain,
+                                            ),
+                                          ),
+                                          SizedBox(
+                                            height: isLargeScreen ? 10 : 8,
+                                          ),
+                                          Text(
+                                            displayItemName,
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              fontSize: isLargeScreen ? 18 : 16,
+                                              fontWeight: FontWeight.normal,
+                                              fontFamily: 'Poppins',
+                                            ),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFFDF1C7),
-                                borderRadius: BorderRadius.circular(8.0),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  'Comment: ${item.comment!}',
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    color: Colors.black,
-                                    fontFamily: 'Poppins',
+
+                              // Comment section for extracted comments from description
+                              if ((item.comment != null &&
+                                      item.comment!.isNotEmpty) ||
+                                  (extractedComment != null &&
+                                      extractedComment.isNotEmpty))
+                                Padding(
+                                  padding: EdgeInsets.only(
+                                    top: isLargeScreen ? 10.0 : 8.0,
+                                  ),
+                                  child: Container(
+                                    width: double.infinity,
+                                    padding: EdgeInsets.symmetric(
+                                      vertical: isLargeScreen ? 10.0 : 8.0,
+                                      horizontal: isLargeScreen ? 15.0 : 12.0,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFDF1C7),
+                                      borderRadius: BorderRadius.circular(8.0),
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        'Comment: ${item.comment ?? extractedComment ?? ''}',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontSize: isLargeScreen ? 18 : 16,
+                                          color: Colors.black,
+                                          fontFamily: 'Poppins',
+                                        ),
+                                      ),
+                                    ),
                                   ),
                                 ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+
+                // Bottom section with total and print button
+                Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isLargeScreen ? 65.0 : 55.0,
+                  ),
+                  child: const Divider(
+                    height: 0,
+                    thickness: 3,
+                    color: Color(0xFFB2B2B2),
+                  ),
+                ),
+                SizedBox(height: isLargeScreen ? 15 : 10),
+
+                Column(
+                  children: [
+                    // Payment Type Row
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Payment Type:',
+                          style: TextStyle(fontSize: isLargeScreen ? 20 : 18),
+                        ),
+                        Text(
+                          _selectedOrder!.paymentType,
+                          style: TextStyle(
+                            fontSize: isLargeScreen ? 20 : 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: isLargeScreen ? 18 : 13),
+
+                    // Total and Change Due Box with Printer Icon
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: EdgeInsets.all(isLargeScreen ? 40 : 35),
+                          decoration: BoxDecoration(
+                            color: Colors.black,
+                            borderRadius: BorderRadius.circular(15),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Total',
+                                    style: TextStyle(
+                                      fontSize: isLargeScreen ? 22 : 20,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  SizedBox(width: isLargeScreen ? 120 : 110),
+                                  Text(
+                                    '£${_selectedOrder!.orderTotalPrice.toStringAsFixed(2)}',
+                                    style: TextStyle(
+                                      fontSize: isLargeScreen ? 22 : 20,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (_selectedOrder!.changeDue > 0) ...[
+                                SizedBox(height: isLargeScreen ? 12 : 10),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      'Change Due',
+                                      style: TextStyle(
+                                        fontSize: isLargeScreen ? 22 : 20,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    SizedBox(width: isLargeScreen ? 50 : 40),
+                                    Text(
+                                      '£${_selectedOrder!.changeDue.toStringAsFixed(2)}',
+                                      style: TextStyle(
+                                        fontSize: isLargeScreen ? 22 : 20,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        SizedBox(width: isLargeScreen ? 25 : 20),
+
+                        MouseRegion(
+                          cursor: SystemMouseCursors.click,
+                          child: GestureDetector(
+                            onTap: () async {
+                              await _handlePrintingOrderReceipt();
+                            },
+                            child: Container(
+                              padding: EdgeInsets.all(isLargeScreen ? 10 : 8),
+                              decoration: BoxDecoration(
+                                color: Colors.black,
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Image.asset(
+                                    'assets/images/printer.png',
+                                    width: isLargeScreen ? 65 : 58,
+                                    height: isLargeScreen ? 65 : 58,
+                                    color: Colors.white,
+                                  ),
+                                  SizedBox(height: isLargeScreen ? 6 : 4),
+                                  Text(
+                                    'Print Receipt',
+                                    style: TextStyle(
+                                      fontSize: isLargeScreen ? 17 : 15,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-            const Divider(),
-            const SizedBox(height: 10),
-
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Total amount:',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 15,
-                        vertical: 20,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black,
-                        borderRadius: BorderRadius.circular(15),
-                      ),
-                      child: Text(
-                        '£ ${_selectedOrder!.orderTotalPrice.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
                         ),
-                      ),
+                      ],
                     ),
                   ],
                 ),
+                SizedBox(height: isLargeScreen ? 20 : 16),
               ],
             ),
-            const SizedBox(height: 20),
-          ],
-        ),
+          ),
+          // Printer status indicator - positioned at top left
+          Positioned(
+            top: isLargeScreen ? 20 : 16,
+            left: isLargeScreen ? 20 : 16,
+            child: Container(
+              width: isLargeScreen ? 15 : 12,
+              height: isLargeScreen ? 15 : 12,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _isPrinterConnected ? Colors.green : Colors.red,
+                boxShadow: [
+                  BoxShadow(
+                    color: (_isPrinterConnected ? Colors.green : Colors.red)
+                        .withOpacity(0.5),
+                    blurRadius: 4,
+                    spreadRadius: 1,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       );
     } else if (activeOrders.isEmpty) {
       return const Center(

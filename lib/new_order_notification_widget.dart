@@ -3,7 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:epos/models/order.dart'; // Ensure your Order model is correctly imported
 
-class NewOrderNotificationWidget extends StatelessWidget {
+class NewOrderNotificationWidget extends StatefulWidget {
   final Order order; // Now handles a single order
   final Function(Order) onAccept;
   final Function(Order) onDecline;
@@ -16,6 +16,15 @@ class NewOrderNotificationWidget extends StatelessWidget {
     required this.onDecline,
     required this.onDismiss,
   }) : super(key: key);
+
+  @override
+  State<NewOrderNotificationWidget> createState() =>
+      _NewOrderNotificationWidgetState();
+}
+
+class _NewOrderNotificationWidgetState
+    extends State<NewOrderNotificationWidget> {
+  bool _isProcessing = false;
 
   @override
   Widget build(BuildContext context) {
@@ -49,14 +58,18 @@ class NewOrderNotificationWidget extends StatelessWidget {
             children: [
               // --- Header (Order ID) ---
               Container(
-                padding: EdgeInsets.symmetric(vertical: 10.0, horizontal: cardPadding),
+                padding: EdgeInsets.symmetric(
+                  vertical: 10.0,
+                  horizontal: cardPadding,
+                ),
                 decoration: const BoxDecoration(
                   color: Colors.black,
                   borderRadius: BorderRadius.vertical(top: Radius.circular(15)),
                 ),
-                child: Center( // Center the order ID
+                child: Center(
+                  // Center the order ID
                   child: Text(
-                    'Order ${order.orderId}',
+                    'Order ${widget.order.orderId}',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 24,
@@ -80,50 +93,60 @@ class NewOrderNotificationWidget extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              ...order.items.map((item) => Padding(
-                                padding: const EdgeInsets.only(bottom: 8.0),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            item.itemName,
+                              ...widget.order.items
+                                  .map(
+                                    (item) => Padding(
+                                      padding: const EdgeInsets.only(
+                                        bottom: 8.0,
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  item.itemName,
+                                                  style: const TextStyle(
+                                                    fontSize: 18,
+                                                    fontWeight:
+                                                        FontWeight.normal,
+                                                    color: Colors.black87,
+                                                    fontFamily: 'Poppins',
+                                                  ),
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                              Text(
+                                                '£${item.totalPrice.toStringAsFixed(2)}',
+                                                style: const TextStyle(
+                                                  fontSize: 18,
+                                                  fontWeight: FontWeight.normal,
+                                                  color: Colors.black87,
+                                                  fontFamily: 'Poppins',
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          Text(
+                                            'Qty: ${item.quantity}',
                                             style: const TextStyle(
-                                              fontSize: 18,
+                                              fontSize: 16,
                                               fontWeight: FontWeight.normal,
-                                              color: Colors.black87,
+                                              color: Colors.black54,
                                               fontFamily: 'Poppins',
                                             ),
-                                            overflow: TextOverflow.ellipsis,
                                           ),
-                                        ),
-                                        Text(
-                                          '£${item.totalPrice.toStringAsFixed(2)}',
-                                          style: const TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.normal,
-                                            color: Colors.black87,
-                                            fontFamily: 'Poppins',
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    Text(
-                                      'Qty: ${item.quantity}',
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.normal,
-                                        color: Colors.black54,
-                                        fontFamily: 'Poppins',
+                                        ],
                                       ),
                                     ),
-                                  ],
-                                ),
-                              )).toList(),
-                              if (order.items.isEmpty)
+                                  )
+                                  .toList(),
+                              if (widget.order.items.isEmpty)
                                 const Text(
                                   'No Items',
                                   style: TextStyle(
@@ -140,15 +163,15 @@ class NewOrderNotificationWidget extends StatelessWidget {
                       const SizedBox(height: 15),
 
                       // --- Horizontal Separator Line ---
-                      const Divider(
-                        color: Colors.black,
-                        thickness: 1,
-                      ),
+                      const Divider(color: Colors.black, thickness: 1),
                       const SizedBox(height: 15),
 
                       // --- Total Section ---
                       Container(
-                        padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 10.0),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 8.0,
+                          horizontal: 10.0,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFFCB6CE6).withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
@@ -166,7 +189,7 @@ class NewOrderNotificationWidget extends StatelessWidget {
                               ),
                             ),
                             Text(
-                              '£${order.orderTotalPrice.toStringAsFixed(2)}',
+                              '£${widget.order.orderTotalPrice.toStringAsFixed(2)}',
                               style: const TextStyle(
                                 fontSize: 22,
                                 fontWeight: FontWeight.bold,
@@ -181,16 +204,17 @@ class NewOrderNotificationWidget extends StatelessWidget {
 
                       // --- Customer Info ---
                       Text(
-                        'Customer: ${order.customerName}',
+                        'Customer: ${widget.order.customerName}',
                         style: const TextStyle(
                           fontSize: 16,
                           color: Colors.black,
                           fontFamily: 'Poppins',
                         ),
                       ),
-                      if (order.phoneNumber != null && order.phoneNumber!.isNotEmpty)
+                      if (widget.order.phoneNumber != null &&
+                          widget.order.phoneNumber!.isNotEmpty)
                         Text(
-                          'Phone: ${order.phoneNumber}',
+                          'Phone: ${widget.order.phoneNumber}',
                           style: const TextStyle(
                             fontSize: 16,
                             color: Colors.black,
@@ -198,7 +222,7 @@ class NewOrderNotificationWidget extends StatelessWidget {
                           ),
                         ),
                       Text(
-                        'Type: ${order.orderType}',
+                        'Type: ${widget.order.orderType}',
                         style: const TextStyle(
                           fontSize: 16,
                           color: Colors.black,
@@ -210,12 +234,21 @@ class NewOrderNotificationWidget extends StatelessWidget {
                       // --- Action Buttons ---
                       Row(
                         children: [
-                          // DECLINE Button
+                          // DECLINE Button (commented out as in original)
                           // Expanded(
                           //   child: ElevatedButton(
-                          //     onPressed: () {
-                          //       onDecline(order);
-                          //       onDismiss(); // Dismiss this specific notification
+                          //     onPressed: _isProcessing ? null : () async {
+                          //       setState(() {
+                          //         _isProcessing = true;
+                          //       });
+                          //
+                          //       await widget.onDecline(widget.order);
+                          //
+                          //       if (mounted) {
+                          //         setState(() {
+                          //           _isProcessing = false;
+                          //         });
+                          //       }
                           //     },
                           //     style: ElevatedButton.styleFrom(
                           //       backgroundColor: Colors.red,
@@ -240,13 +273,43 @@ class NewOrderNotificationWidget extends StatelessWidget {
                           // ACCEPT Button
                           Expanded(
                             child: ElevatedButton(
-                              onPressed: () {
-                                onAccept(order);
-                                onDismiss(); // Dismiss this specific notification
-                              },
+                              onPressed:
+                                  _isProcessing
+                                      ? null
+                                      : () async {
+                                        setState(() {
+                                          _isProcessing = true;
+                                        });
+
+                                        try {
+                                          await widget.onAccept(widget.order);
+
+                                          // Wait a bit to show success state, then dismiss
+                                          await Future.delayed(
+                                            const Duration(milliseconds: 1000),
+                                          );
+
+                                          // Dismiss the notification after successful processing
+                                          if (mounted) {
+                                            widget.onDismiss();
+                                          }
+                                        } catch (e) {
+                                          // Only reset processing state on error
+                                          if (mounted) {
+                                            setState(() {
+                                              _isProcessing = false;
+                                            });
+                                          }
+                                        }
+                                      },
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFFCB6CE6),
-                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                backgroundColor:
+                                    _isProcessing
+                                        ? Colors.grey
+                                        : const Color(0xFFCB6CE6),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(10),
                                 ),

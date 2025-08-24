@@ -58,6 +58,10 @@ class SalesReportProvider with ChangeNotifier {
   bool _showItems = false;
   bool get showItems => _showItems;
 
+  // Paid Outs visibility
+  bool _showPaidOuts = false;
+  bool get showPaidOuts => _showPaidOuts;
+
   // Error handling
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
@@ -100,6 +104,7 @@ class SalesReportProvider with ChangeNotifier {
     print('📊 Switching to tab $index');
     _currentTabIndex = index;
     _showItems = false;
+    _showPaidOuts = false;
     _errorMessage = null;
 
     // UPDATED: No PIN requirement, direct access to all tabs
@@ -213,6 +218,12 @@ class SalesReportProvider with ChangeNotifier {
   // Toggle items visibility
   void toggleShowItems() {
     _showItems = !_showItems;
+    notifyListeners();
+  }
+
+  // Toggle paid outs visibility
+  void toggleShowPaidOuts() {
+    _showPaidOuts = !_showPaidOuts;
     notifyListeners();
   }
 
@@ -671,6 +682,7 @@ class SalesReportProvider with ChangeNotifier {
     _selectedWeek = _getWeekNumber(UKTimeService.now());
     _selectedMonth = UKTimeService.now().month;
     _showItems = false;
+    _showPaidOuts = false;
     _errorMessage = null;
     _isInitialized = false;
     notifyListeners();

@@ -59,9 +59,11 @@ class OrderItem {
     // Try multiple possible comment field names
     final comment =
         json['comment'] ??
+        json['item_comment'] ??  
         json['order_extra_notes'] ??
-        json['item_comment'] ??
-        json['notes'] as String?;
+        json['notes'] ??
+        json['item_notes'] ??
+        json['description_comment'] as String?;
 
     return OrderItem(
       itemId: json['item_id'],

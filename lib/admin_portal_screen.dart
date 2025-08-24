@@ -11,6 +11,7 @@ import '../services/driver_api_service.dart';
 import '../models/order.dart';
 import '../widgets/live_updating_pill.dart';
 import '../widgets/items_table_widget.dart';
+import '../widgets/paidouts_table_widget.dart';
 import 'package:epos/services/uk_time_service.dart';
 import 'package:epos/services/custom_popup_service.dart';
 
@@ -2088,6 +2089,12 @@ class AdminSalesReport extends StatelessWidget {
           _buildSummaryItem('Total Sales Amount:', _getFormattedAmount(report?['total_sales'] ?? report?['total_sales_amount']), Colors.purple),
           if (report?['total_orders_placed'] != null)
             _buildSummaryItem('Total Orders Placed:', report!['total_orders_placed'].toString(), Colors.purple),
+          if (_hasPaidOutsData(report))
+            _buildSummaryItem('Total Paid Outs:', '-${_getFormattedAmount(_getPaidOutsValue(report))}', Colors.red),
+          if (_hasDiscountData(report))
+            _buildSummaryItem('Total Discount:', '-${_getFormattedAmount(report?['total_discount'])}', Colors.orange),
+          if (_hasPaidOutsData(report) || _hasDiscountData(report))
+            _buildSummaryItem('Net Sales Amount:', _getFormattedAmount(_getNetSalesAmount(report)), Colors.green),
           _buildSummaryItem('Sales Growth (vs. Last Week):', _getGrowthText(report), Colors.purple),
           _buildSummaryItem('Sales Growth (vs. Last Week):', _getGrowthAmount(report), Colors.purple),
           _buildSummaryItem('Most Sold Item:', _getMostSoldItem(report), Colors.purple),
@@ -2189,23 +2196,48 @@ class AdminSalesReport extends StatelessWidget {
                   color: Colors.black87,
                 ),
               ),
-              ElevatedButton(
-                onPressed: provider.toggleShowItems,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.black,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(4),
+              Row(
+                children: [
+                  ElevatedButton(
+                    onPressed: provider.toggleShowItems,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.black,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    child: Text(
+                      provider.showItems ? 'Hide Items' : 'Show Items',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
                   ),
-                ),
-                child: Text(
-                  provider.showItems ? 'Hide Items' : 'Show Items',
-                  style: GoogleFonts.poppins(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
+                  if (_hasPaidOutsData(provider.getCurrentReport())) ...[
+                    const SizedBox(width: 10),
+                    ElevatedButton(
+                      onPressed: provider.toggleShowPaidOuts,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange.shade600,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      child: Text(
+                        provider.showPaidOuts ? 'Hide Paid Outs' : 'Show Paid Outs',
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ],
           ),
@@ -2213,6 +2245,10 @@ class AdminSalesReport extends StatelessWidget {
         if (provider.showItems) ...[
           const SizedBox(height: 20),
           ItemsTableWidget(report: provider.getCurrentReport()),
+        ],
+        if (provider.showPaidOuts) ...[
+          const SizedBox(height: 20),
+          PaidOutsTableWidget(report: provider.getCurrentReport()),
         ],
       ],
     );
@@ -2824,6 +2860,76 @@ class AdminSalesReport extends StatelessWidget {
   static int _getWeekNumber(DateTime date) {
     int dayOfYear = int.parse(date.difference(DateTime(date.year, 1, 1)).inDays.toString()) + 1;
     return ((dayOfYear - date.weekday + 10) / 7).floor();
+  }
+
+  // Helper methods for paid outs functionality
+  bool _hasPaidOutsData(Map<String, dynamic>? report) {
+    if (report == null) return false;
+    
+    final paidouts = report['paidouts'];
+    if (paidouts is List && paidouts.isNotEmpty) {
+      return true;
+    }
+    
+    if (paidouts != null && paidouts is! List) {
+      final amount = double.tryParse(paidouts.toString()) ?? 0.0;
+      return amount > 0;
+    }
+    
+    return false;
+  }
+
+  bool _hasDiscountData(Map<String, dynamic>? report) {
+    if (report == null) return false;
+    final discount = report['total_discount'];
+    if (discount == null) return false;
+    final amount = double.tryParse(discount.toString()) ?? 0.0;
+    return amount > 0;
+  }
+
+  double _getPaidOutsValue(Map<String, dynamic>? report) {
+    if (report == null) return 0.0;
+    
+    final paidouts = report['paidouts'];
+    
+    if (paidouts is List) {
+      double total = 0.0;
+      for (final paidOut in paidouts) {
+        if (paidOut is Map) {
+          final amount = paidOut['amount'] ?? 0;
+          if (amount is String) {
+            total += double.tryParse(amount) ?? 0.0;
+          } else if (amount is num) {
+            total += amount.toDouble();
+          }
+        }
+      }
+      return total;
+    }
+    
+    if (paidouts is String) {
+      return double.tryParse(paidouts) ?? 0.0;
+    } else if (paidouts is num) {
+      return paidouts.toDouble();
+    }
+    
+    return 0.0;
+  }
+
+  double _getNetSalesAmount(Map<String, dynamic>? report) {
+    if (report == null) return 0.0;
+    
+    final totalSales = double.tryParse(
+      (report['total_sales'] ?? report['total_sales_amount'] ?? 0).toString(),
+    ) ?? 0.0;
+    
+    final paidOuts = _getPaidOutsValue(report);
+    
+    final discount = double.tryParse(
+      (report['total_discount'] ?? 0).toString(),
+    ) ?? 0.0;
+    
+    return totalSales - paidOuts - discount;
   }
 }
 

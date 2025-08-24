@@ -1765,45 +1765,72 @@ class _Page4State extends State<Page4> {
             _actualOrderType = value;
           });
         },
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 25,
-              height: 25,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: isSelected ? const Color(0xFFCB6CE6) : Colors.grey,
-                  width: 2,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? const Color(0xFFF3D9FF) : Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color:
+                  isSelected ? const Color(0xFFCB6CE6) : Colors.grey.shade300,
+              width: 2,
+            ),
+            boxShadow:
+                isSelected
+                    ? [
+                      BoxShadow(
+                        color: const Color(0xFFCB6CE6).withOpacity(0.2),
+                        spreadRadius: 1,
+                        blurRadius: 3,
+                        offset: const Offset(0, 2),
+                      ),
+                    ]
+                    : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color:
+                        isSelected
+                            ? const Color(0xFFCB6CE6)
+                            : Colors.grey.shade400,
+                    width: 2,
+                  ),
+                  color: Colors.white,
                 ),
-                color: Colors.white,
-              ),
-              child:
-                  isSelected
-                      ? Center(
-                        child: Container(
-                          width: 12,
-                          height: 12,
-                          decoration: const BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Color(0xFFCB6CE6),
+                child:
+                    isSelected
+                        ? Center(
+                          child: Container(
+                            width: 10,
+                            height: 10,
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Color(0xFFCB6CE6),
+                            ),
                           ),
-                        ),
-                      )
-                      : null,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontFamily: 'Poppins',
-                color: isSelected ? const Color(0xFFCB6CE6) : Colors.grey[600],
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                        )
+                        : null,
               ),
-            ),
-          ],
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontFamily: 'Poppins',
+                  color:
+                      isSelected ? const Color(0xFFCB6CE6) : Colors.grey[700],
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -2807,12 +2834,22 @@ class _Page4State extends State<Page4> {
   Future<void> _placeOrderDirectly(Map<String, dynamic> orderData) async {
     if (!mounted) return;
 
-    final offlineProvider = Provider.of<OfflineProvider>(context, listen: false);
-    final eposOrdersProvider = Provider.of<EposOrdersProvider>(context, listen: false);
+    final offlineProvider = Provider.of<OfflineProvider>(
+      context,
+      listen: false,
+    );
+    final eposOrdersProvider = Provider.of<EposOrdersProvider>(
+      context,
+      listen: false,
+    );
 
     // Check if we're online
-    print('🌐 DEBUG: Page4 order placement - OfflineProvider.isOnline: ${offlineProvider.isOnline}');
-    print('🌐 DEBUG: Page4 order placement - ConnectivityService.isOnline: ${ConnectivityService().isOnline}');
+    print(
+      '🌐 DEBUG: Page4 order placement - OfflineProvider.isOnline: ${offlineProvider.isOnline}',
+    );
+    print(
+      '🌐 DEBUG: Page4 order placement - ConnectivityService.isOnline: ${ConnectivityService().isOnline}',
+    );
     if (!offlineProvider.isOnline) {
       // OFFLINE MODE: Create local order that appears in orders list immediately
       try {
@@ -2838,11 +2875,11 @@ class _Page4State extends State<Page4> {
             "Order saved offline: ${offlineOrder.transactionId}\nWill appear in orders list and be processed when connection is restored",
             type: PopupType.success,
           );
-          
+
           // Clear cart like successful order
           _clearOrderState();
         }
-        
+
         // Add offline order to the orders list in background
         eposOrdersProvider.addOfflineOrder(offlineOrder).catchError((error) {
           print('⚠️ Background addOfflineOrder failed: $error');
@@ -2865,7 +2902,9 @@ class _Page4State extends State<Page4> {
     try {
       final orderId = await ApiService.createOrderFromMap(orderData);
 
-      print('✅ Order placed successfully online: $orderId for type: $_actualOrderType');
+      print(
+        '✅ Order placed successfully online: $orderId for type: $_actualOrderType',
+      );
 
       // Show success popup immediately after order placement
       if (mounted) {
@@ -2881,14 +2920,13 @@ class _Page4State extends State<Page4> {
       eposOrdersProvider.refresh().catchError((error) {
         print('⚠️ Background refresh failed after order placement: $error');
       });
-
     } catch (e) {
       print('❌ Online order placement failed: $e');
-      
+
       // FALLBACK: Try to save offline if online fails
       try {
         print('🔄 Attempting to save order offline as fallback...');
-        
+
         final offlineOrder = await OfflineOrderManager.createOfflineOrder(
           cartItems: _cartItems,
           paymentType: _selectedPaymentType,
@@ -2913,7 +2951,7 @@ class _Page4State extends State<Page4> {
           );
           _clearOrderState();
         }
-        
+
         // Add offline order to the orders list in background
         eposOrdersProvider.addOfflineOrder(offlineOrder).catchError((error) {
           print('⚠️ Background addOfflineOrder failed: $error');

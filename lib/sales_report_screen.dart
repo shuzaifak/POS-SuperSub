@@ -1,5 +1,4 @@
-// lib/sales_report_screen.dart (Complete - Today's Report Only)
-import 'dart:ui';
+// lib/sales_report_screen.dart
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -7,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'providers/sales_report_provider.dart';
 import 'widgets/items_table_widget.dart';
+import 'widgets/paidouts_table_widget.dart';
 import 'package:epos/services/uk_time_service.dart';
 
 class SalesReportScreen extends StatefulWidget {
@@ -51,9 +51,7 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
                 _buildHeader(),
 
                 // Today's Report Content
-                Expanded(
-                  child: _buildTodaysReport(provider),
-                ),
+                Expanded(child: _buildTodaysReport(provider)),
               ],
             ),
           ),
@@ -95,11 +93,7 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(
-                    Icons.today,
-                    color: Colors.white,
-                    size: 20,
-                  ),
+                  const Icon(Icons.today, color: Colors.white, size: 20),
                   const SizedBox(width: 8),
                   Text(
                     "Today's Sales Report",
@@ -123,9 +117,7 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
 
   Widget _buildTodaysReport(SalesReportProvider provider) {
     if (provider.isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
     return SingleChildScrollView(
@@ -177,7 +169,7 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
             'Filter by Source:',
             provider.sourceFilter,
             _getSourceOptions(provider),
-                (value) => provider.setFilters(source: value),
+            (value) => provider.setFilters(source: value),
           ),
         ),
         const SizedBox(width: 20),
@@ -186,7 +178,7 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
             'Filter by Payment Type:',
             provider.paymentFilter,
             _getPaymentOptions(provider),
-                (value) => provider.setFilters(payment: value),
+            (value) => provider.setFilters(payment: value),
           ),
         ),
         const SizedBox(width: 20),
@@ -195,7 +187,7 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
             'Filter by Order Type:',
             provider.orderTypeFilter,
             _getOrderTypeOptions(provider),
-                (value) => provider.setFilters(orderType: value),
+            (value) => provider.setFilters(orderType: value),
           ),
         ),
       ],
@@ -203,11 +195,11 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
   }
 
   Widget _buildFilterDropdown(
-      String label,
-      String value,
-      List<String> options,
-      Function(String) onChanged,
-      ) {
+    String label,
+    String value,
+    List<String> options,
+    Function(String) onChanged,
+  ) {
     final currentValue = options.contains(value) ? value : 'All';
 
     return Column(
@@ -233,18 +225,19 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
             child: DropdownButton<String>(
               value: currentValue,
               isExpanded: true,
-              items: options.map((option) {
-                return DropdownMenuItem<String>(
-                  value: option,
-                  child: Text(
-                    option,
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-                );
-              }).toList(),
+              items:
+                  options.map((option) {
+                    return DropdownMenuItem<String>(
+                      value: option,
+                      child: Text(
+                        option,
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    );
+                  }).toList(),
               onChanged: (newValue) {
                 if (newValue != null) {
                   onChanged(newValue);
@@ -273,9 +266,7 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
     if (provider.isLoading) {
       return Container(
         height: 300,
-        child: const Center(
-          child: CircularProgressIndicator(),
-        ),
+        child: const Center(child: CircularProgressIndicator()),
       );
     }
 
@@ -307,7 +298,10 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.black,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(4),
                   ),
@@ -330,22 +324,23 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Left side - Summary
-        Expanded(
-          flex: 1,
-          child: _buildSummaryCard(provider),
-        ),
+        Expanded(flex: 1, child: _buildSummaryCard(provider)),
         const SizedBox(width: 20),
         // Right side - Charts
-        Expanded(
-          flex: 2,
-          child: _buildChartsSection(provider),
-        ),
+        Expanded(flex: 2, child: _buildChartsSection(provider)),
       ],
     );
   }
 
   Widget _buildSummaryCard(SalesReportProvider provider) {
     final report = provider.getCurrentReport();
+
+    // Debug: Print report data to see what we're getting from API
+    print('SalesReport: Report data keys: ${report?.keys.toList()}');
+    if (report != null) {
+      print('SalesReport: paidouts value: ${report['paidouts']}');
+      print('SalesReport: total_discount value: ${report['total_discount']}');
+    }
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -366,15 +361,68 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
             ),
           ),
           const SizedBox(height: 15),
-          _buildSummaryItem('Date:', DateFormat('dd/MM/yyyy').format(UKTimeService.now()), Colors.purple),
-          _buildSummaryItem('Total Sales Amount:', _getFormattedAmount(report?['total_sales'] ?? report?['total_sales_amount']), Colors.purple),
+          _buildSummaryItem(
+            'Date:',
+            DateFormat('dd/MM/yyyy').format(UKTimeService.now()),
+            Colors.purple,
+          ),
+          _buildSummaryItem(
+            'Total Sales Amount:',
+            _getFormattedAmount(
+              report?['total_sales'] ?? report?['total_sales_amount'],
+            ),
+            Colors.purple,
+          ),
           if (report?['total_orders_placed'] != null)
-            _buildSummaryItem('Total Orders Placed:', report!['total_orders_placed'].toString(), Colors.purple),
-          _buildSummaryItem('Sales Growth (vs. Last Week):', _getGrowthText(report), Colors.purple),
-          _buildSummaryItem('Growth Amount:', _getGrowthAmount(report), Colors.purple),
-          _buildSummaryItem('Most Sold Item:', _getMostSoldItem(report), Colors.purple),
-          _buildSummaryItem('Most Sold Category:', _getMostSoldCategory(report), Colors.purple),
-          _buildSummaryItem('Most Delivered Area:', _getMostDeliveredArea(report), Colors.purple),
+            _buildSummaryItem(
+              'Total Orders Placed:',
+              report!['total_orders_placed'].toString(),
+              Colors.purple,
+            ),
+          if (_hasDiscountData(report))
+            _buildSummaryItem(
+              'Total Discount:',
+              _getFormattedAmount(_getDiscountValue(report)),
+              Colors.red,
+            ),
+          if (_hasPaidOutsData(report))
+            _buildSummaryItem(
+              'Total Paid Outs:',
+              _getFormattedAmount(_getPaidOutsValue(report)),
+              Colors.orange,
+            ),
+          // Net Sales calculation (Total Sales - Paid Outs)
+          _buildSummaryItem(
+            'Net Sales:',
+            _getNetSalesAmount(report),
+            Colors.green,
+          ),
+          const Divider(),
+          _buildSummaryItem(
+            'Sales Growth (vs. Last Week):',
+            _getGrowthText(report),
+            Colors.purple,
+          ),
+          _buildSummaryItem(
+            'Growth Amount:',
+            _getGrowthAmount(report),
+            Colors.purple,
+          ),
+          _buildSummaryItem(
+            'Most Sold Item:',
+            _getMostSoldItem(report),
+            Colors.purple,
+          ),
+          _buildSummaryItem(
+            'Most Sold Category:',
+            _getMostSoldCategory(report),
+            Colors.purple,
+          ),
+          _buildSummaryItem(
+            'Most Delivered Area:',
+            _getMostDeliveredArea(report),
+            Colors.purple,
+          ),
         ],
       ),
     );
@@ -421,26 +469,18 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
         // Top row charts
         Row(
           children: [
-            Expanded(
-              child: _buildGrowthChart(report),
-            ),
+            Expanded(child: _buildGrowthChart(report)),
             const SizedBox(width: 20),
-            Expanded(
-              child: _buildPaymentMethodsChart(report),
-            ),
+            Expanded(child: _buildPaymentMethodsChart(report)),
           ],
         ),
         const SizedBox(height: 30),
         // Bottom row charts
         Row(
           children: [
-            Expanded(
-              child: _buildOrderTypesChart(report),
-            ),
+            Expanded(child: _buildOrderTypesChart(report)),
             const SizedBox(width: 20),
-            Expanded(
-              child: _buildOrderSourcesChart(report),
-            ),
+            Expanded(child: _buildOrderSourcesChart(report)),
           ],
         ),
       ],
@@ -475,13 +515,38 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.black,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(4),
                   ),
                 ),
                 child: Text(
                   provider.showItems ? 'Hide Items' : 'Show Items',
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              ElevatedButton(
+                onPressed: provider.toggleShowPaidOuts,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                child: Text(
+                  provider.showPaidOuts ? 'Hide Paid Outs' : 'Show Paid Outs',
                   style: GoogleFonts.poppins(
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
@@ -497,6 +562,12 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
           const SizedBox(height: 20),
           ItemsTableWidget(report: provider.getCurrentReport()),
         ],
+
+        // Show paid outs table when toggled
+        if (provider.showPaidOuts) ...[
+          const SizedBox(height: 20),
+          PaidOutsTableWidget(report: provider.getCurrentReport()),
+        ],
       ],
     );
   }
@@ -506,6 +577,93 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
     if (amount == null) return '£0.00';
     final value = double.tryParse(amount.toString()) ?? 0.0;
     return '£${value.toStringAsFixed(2)}';
+  }
+
+  String _getNetSalesAmount(Map<String, dynamic>? report) {
+    if (report == null) return '£0.00';
+
+    final totalSales =
+        double.tryParse(
+          (report['total_sales'] ?? report['total_sales_amount'] ?? 0)
+              .toString(),
+        ) ??
+        0.0;
+    final paidOuts = _getPaidOutsValue(report);
+    final paidOutsAmount = double.tryParse(paidOuts.toString()) ?? 0.0;
+    final netSales = totalSales - paidOutsAmount;
+
+    return '£${netSales.toStringAsFixed(2)}';
+  }
+
+  bool _hasDiscountData(Map<String, dynamic>? report) {
+    if (report == null) return false;
+
+    final discountValue = _getDiscountValue(report);
+    final amount = double.tryParse(discountValue.toString()) ?? 0.0;
+    return amount > 0;
+  }
+
+  dynamic _getDiscountValue(Map<String, dynamic>? report) {
+    if (report == null) return 0;
+
+    // Try different possible field names for discount
+    return report['total_discount'] ??
+        report['discount'] ??
+        report['total_discounts'] ??
+        report['discounts_total'] ??
+        0;
+  }
+
+  bool _hasPaidOutsData(Map<String, dynamic>? report) {
+    if (report == null) return false;
+
+    // Check if we have paidouts as a list (which is the actual API structure)
+    if (report['paidouts'] is List &&
+        (report['paidouts'] as List).isNotEmpty) {
+      return true;
+    }
+    
+    // Check other possible list formats
+    if (report['paidouts_details'] is List &&
+        (report['paidouts_details'] as List).isNotEmpty) {
+      return true;
+    }
+    if (report['paid_outs'] is List &&
+        (report['paid_outs'] as List).isNotEmpty) {
+      return true;
+    }
+    if (report['paidouts_list'] is List &&
+        (report['paidouts_list'] as List).isNotEmpty) {
+      return true;
+    }
+
+    // Check if we have a total paid outs value > 0
+    final paidOutsValue = _getPaidOutsValue(report);
+    final amount = double.tryParse(paidOutsValue.toString()) ?? 0.0;
+    return amount > 0;
+  }
+
+  dynamic _getPaidOutsValue(Map<String, dynamic>? report) {
+    if (report == null) return 0;
+
+    // If paidouts is a list (which it is according to the API), calculate total
+    if (report['paidouts'] is List) {
+      final paidOutsList = report['paidouts'] as List<dynamic>;
+      double total = 0.0;
+      for (var paidOut in paidOutsList) {
+        if (paidOut is Map && paidOut['amount'] != null) {
+          final amount = double.tryParse(paidOut['amount'].toString()) ?? 0.0;
+          total += amount;
+        }
+      }
+      return total;
+    }
+
+    // Try different possible field names for paid outs (fallback)
+    return report['paid_outs'] ??
+        report['total_paidouts'] ??
+        report['paidouts_total'] ??
+        0;
   }
 
   String _formatCurrency(dynamic amount) {
@@ -604,15 +762,20 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
 
   Widget _buildPaymentMethodsChart(Map<String, dynamic>? report) {
     final paymentData = _getPaymentMethodsData(report);
-    final paymentTypes = report?['sales_by_payment_type'] as List<dynamic>? ?? [];
+    final paymentTypes =
+        report?['sales_by_payment_type'] as List<dynamic>? ?? [];
 
-    final paymentLabels = paymentTypes
-        .where((payment) => payment is Map && payment['payment_type'] != null)
-        .map((payment) => payment['payment_type'].toString().toUpperCase())
-        .where((label) => label.isNotEmpty)
-        .toList();
+    final paymentLabels =
+        paymentTypes
+            .where(
+              (payment) => payment is Map && payment['payment_type'] != null,
+            )
+            .map((payment) => payment['payment_type'].toString().toUpperCase())
+            .where((label) => label.isNotEmpty)
+            .toList();
 
-    final labels = paymentLabels.isNotEmpty ? paymentLabels : ['CARD', 'CASH', 'COD'];
+    final labels =
+        paymentLabels.isNotEmpty ? paymentLabels : ['CARD', 'CASH', 'COD'];
 
     final colors = <Color>[];
     final baseColors = [
@@ -642,19 +805,13 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
           height: 80,
           width: 80,
           child: CustomPaint(
-            painter: PieChartPainter(
-              data: paymentData,
-              colors: colors,
-            ),
+            painter: PieChartPainter(data: paymentData, colors: colors),
           ),
         ),
         const SizedBox(height: 8),
         _buildChartLegend([
           for (int i = 0; i < labels.length && i < colors.length; i++)
-            {
-              'label': labels[i],
-              'color': colors[i],
-            },
+            {'label': labels[i], 'color': colors[i]},
         ]),
       ],
     );
@@ -745,30 +902,31 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
     return Wrap(
       spacing: 8,
       runSpacing: 4,
-      children: items.map((item) {
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                color: item['color'],
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(width: 4),
-            Text(
-              item['label'],
-              style: GoogleFonts.poppins(
-                fontSize: 8,
-                fontWeight: FontWeight.w400,
-                color: Colors.black54,
-              ),
-            ),
-          ],
-        );
-      }).toList(),
+      children:
+          items.map((item) {
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: item['color'],
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  item['label'],
+                  style: GoogleFonts.poppins(
+                    fontSize: 8,
+                    fontWeight: FontWeight.w400,
+                    color: Colors.black54,
+                  ),
+                ),
+              ],
+            );
+          }).toList(),
     );
   }
 
@@ -809,7 +967,8 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
 
     for (var orderType in orderTypes) {
       if (orderType is! Map) continue;
-      final amount = double.tryParse(orderType['total']?.toString() ?? '0') ?? 0;
+      final amount =
+          double.tryParse(orderType['total']?.toString() ?? '0') ?? 0;
       if (amount > 0) {
         amounts.add(amount);
         total += amount;
@@ -828,7 +987,9 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
     if (orderTypes == null || orderTypes.isEmpty) return [];
 
     return orderTypes
-        .where((orderType) => orderType is Map && orderType['order_type'] != null)
+        .where(
+          (orderType) => orderType is Map && orderType['order_type'] != null,
+        )
         .map((orderType) => orderType['order_type'].toString().toUpperCase())
         .where((label) => label.isNotEmpty)
         .toList();
@@ -884,10 +1045,7 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
     return labels.asMap().entries.map((entry) {
       final index = entry.key;
       final label = entry.value;
-      return {
-        'label': label,
-        'color': colors[index % colors.length],
-      };
+      return {'label': label, 'color': colors[index % colors.length]};
     }).toList();
   }
 
@@ -904,10 +1062,7 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
     return labels.asMap().entries.map((entry) {
       final index = entry.key;
       final label = entry.value;
-      return {
-        'label': label,
-        'color': colors[index % colors.length],
-      };
+      return {'label': label, 'color': colors[index % colors.length]};
     }).toList();
   }
 }
@@ -931,19 +1086,21 @@ class DonutChartPainter extends CustomPainter {
     const strokeWidth = 8.0;
 
     // Background circle
-    final backgroundPaint = Paint()
-      ..color = backgroundColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth;
+    final backgroundPaint =
+        Paint()
+          ..color = backgroundColor
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = strokeWidth;
 
     canvas.drawCircle(center, radius - strokeWidth / 2, backgroundPaint);
 
     // Progress arc
-    final progressPaint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round;
+    final progressPaint =
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = strokeWidth
+          ..strokeCap = StrokeCap.round;
 
     const startAngle = -math.pi / 2;
     final sweepAngle = 2 * math.pi * value;
@@ -965,10 +1122,7 @@ class PieChartPainter extends CustomPainter {
   final List<double> data;
   final List<Color> colors;
 
-  PieChartPainter({
-    required this.data,
-    required this.colors,
-  });
+  PieChartPainter({required this.data, required this.colors});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -979,9 +1133,10 @@ class PieChartPainter extends CustomPainter {
 
     for (int i = 0; i < data.length && i < colors.length; i++) {
       final sweepAngle = 2 * math.pi * data[i];
-      final paint = Paint()
-        ..color = colors[i]
-        ..style = PaintingStyle.fill;
+      final paint =
+          Paint()
+            ..color = colors[i]
+            ..style = PaintingStyle.fill;
 
       canvas.drawArc(
         Rect.fromCircle(center: center, radius: radius),

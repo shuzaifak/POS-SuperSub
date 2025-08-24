@@ -1,5 +1,6 @@
 // lib/main.dart
 
+import 'package:epos/paidpouts_page.dart';
 import 'package:flutter/material.dart';
 import 'package:epos/page3.dart';
 import 'package:epos/page4.dart';
@@ -15,6 +16,7 @@ import 'package:epos/providers/active_orders_provider.dart';
 import 'package:epos/providers/food_item_details_provider.dart';
 import 'package:epos/providers/page4_state_provider.dart';
 import 'package:epos/providers/sales_report_provider.dart';
+import 'package:epos/providers/paidout_provider.dart';
 import 'package:epos/sales_report_screen.dart';
 import 'package:epos/providers/item_availability_provider.dart';
 import 'package:epos/providers/offline_provider.dart';
@@ -162,6 +164,15 @@ void main() async {
           lazy: false, // Make non-lazy to ensure immediate availability
         ),
 
+        // NEW: PaidOutProvider - INDEPENDENT PROVIDER FOR PAID OUTS
+        ChangeNotifierProvider<PaidOutProvider>(
+          create: (_) {
+            print('💰 CREATING PaidOutProvider');
+            return PaidOutProvider();
+          },
+          lazy: false, // Make non-lazy to ensure immediate availability
+        ),
+
         ChangeNotifierProvider.value(
           value:
               ItemAvailabilityProvider(), // This ensures same instance everywhere
@@ -300,6 +311,12 @@ class _MyAppState extends State<MyApp> {
             return MaterialPageRoute(
               builder:
                   (context) => const MainAppWrapper(child: SalesReportScreen()),
+            );
+
+          // NEW: Paid Outs Route
+          case '/paidouts':
+            return MaterialPageRoute(
+              builder: (context) => const MainAppWrapper(child: PaidOutsPage()),
             );
 
           default:

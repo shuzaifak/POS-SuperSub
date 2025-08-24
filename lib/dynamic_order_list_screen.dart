@@ -51,7 +51,8 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
   bool _isCheckingPrinter = false;
   Timer? _reloadDebounceTimer;
   Timer? _printerStatusTimer;
-
+  DateTime? _lastPrinterCheck;
+  Map<String, bool>? _cachedPrinterStatus;
   final ScrollController _scrollController = ScrollController();
 
   late StreamSubscription<Map<String, dynamic>> _orderStatusSubscription;
@@ -74,12 +75,11 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
     _startPrinterStatusChecking(); // Add this line
   }
 
-  // Add this new method
   void _startPrinterStatusChecking() {
     _checkPrinterStatus();
 
-    // Create a periodic timer and store the reference
-    _printerStatusTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+    // Check every 2 minutes instead of 30 seconds to reduce printer communication
+    _printerStatusTimer = Timer.periodic(const Duration(minutes: 2), (timer) {
       _checkPrinterStatus();
     });
   }
@@ -265,14 +265,27 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
     });
 
     try {
-      Map<String, bool> connectionStatus =
-          await ThermalPrinterService().checkConnectionStatusOnly();
+      Map<String, bool> connectionStatus = {'usb': false, 'bluetooth': false};
+
+      // Only do a real check every 5 minutes, otherwise use cached status
+      final now = DateTime.now();
+      if (_lastPrinterCheck == null ||
+          now.difference(_lastPrinterCheck!).inMinutes >= 5) {
+        connectionStatus =
+            await ThermalPrinterService().checkConnectionStatusOnly();
+        _lastPrinterCheck = now;
+        _cachedPrinterStatus = connectionStatus;
+      } else {
+        // Use cached status to avoid frequent printer communication
+        connectionStatus =
+            _cachedPrinterStatus ?? {'usb': false, 'bluetooth': false};
+      }
+
       bool isConnected =
           connectionStatus['usb'] == true ||
           connectionStatus['bluetooth'] == true;
 
       if (mounted) {
-        // Check mounted before setState
         setState(() {
           _isPrinterConnected = isConnected;
           _isCheckingPrinter = false;
@@ -281,7 +294,6 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
     } catch (e) {
       print('Error checking printer status: $e');
       if (mounted) {
-        // Check mounted before setState
         setState(() {
           _isPrinterConnected = false;
           _isCheckingPrinter = false;
@@ -804,6 +816,8 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
     List<String>? defaultFoodItemToppings,
     List<String>? defaultFoodItemCheese,
   }) {
+    print('🔍 DynamicOrdersScreen: Parsing description: "$description"');
+
     Map<String, dynamic> options = {
       'size': null,
       'crust': null,
@@ -814,6 +828,7 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
       'sauceDips': <String>[],
       'baseItemName': description,
       'hasOptions': false,
+      'extractedComment': null, // NEW: Add extracted comment support
     };
 
     List<String> optionsList = [];
@@ -964,8 +979,22 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
             anyNonDefaultOptionFound = true;
           }
         }
-      } else if (lowerOption.startsWith('sauce dips:')) {
-        String sauceDipsValue = option.substring('sauce dips:'.length).trim();
+      } else if (lowerOption.startsWith('sauce dips:') ||
+          lowerOption.startsWith('dips:') ||
+          lowerOption.startsWith('sauce:') ||
+          lowerOption.contains('dip:')) {
+        String sauceDipsValue = '';
+        if (lowerOption.startsWith('sauce dips:')) {
+          sauceDipsValue = option.substring('sauce dips:'.length).trim();
+        } else if (lowerOption.startsWith('dips:')) {
+          sauceDipsValue = option.substring('dips:'.length).trim();
+        } else if (lowerOption.startsWith('sauce:')) {
+          sauceDipsValue = option.substring('sauce:'.length).trim();
+        } else if (lowerOption.contains('dip:')) {
+          int dipIndex = lowerOption.indexOf('dip:');
+          sauceDipsValue = option.substring(dipIndex + 'dip:'.length).trim();
+        }
+
         if (sauceDipsValue.isNotEmpty) {
           List<String> sauceDipsList =
               sauceDipsValue
@@ -980,6 +1009,26 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
           options['sauceDips'] = currentSauceDips.toSet().toList();
           anyNonDefaultOptionFound = true;
         }
+      } else if (lowerOption.startsWith('comment:') ||
+          lowerOption.startsWith('note:') ||
+          lowerOption.startsWith('notes:') ||
+          lowerOption.startsWith('special instructions:')) {
+        String commentValue = '';
+        if (lowerOption.startsWith('comment:')) {
+          commentValue = option.substring('comment:'.length).trim();
+        } else if (lowerOption.startsWith('note:')) {
+          commentValue = option.substring('note:'.length).trim();
+        } else if (lowerOption.startsWith('notes:')) {
+          commentValue = option.substring('notes:'.length).trim();
+        } else if (lowerOption.startsWith('special instructions:')) {
+          commentValue =
+              option.substring('special instructions:'.length).trim();
+        }
+
+        if (commentValue.isNotEmpty) {
+          options['extractedComment'] = commentValue;
+          anyNonDefaultOptionFound = true;
+        }
       } else if (lowerOption == 'no salad' ||
           lowerOption == 'no sauce' ||
           lowerOption == 'no cream') {
@@ -991,6 +1040,11 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
     }
 
     options['hasOptions'] = anyNonDefaultOptionFound;
+
+    print(
+      '🔍 DynamicOrdersScreen: Parsed result - hasOptions: ${options['hasOptions']}, size: ${options['size']}, crust: ${options['crust']}, base: ${options['base']}, toppings: ${options['toppings']}, sauceDips: ${options['sauceDips']}',
+    );
+
     return options;
   }
 
@@ -1016,7 +1070,10 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
         current = part;
         inToppings = true;
         inSauceDips = false;
-      } else if (lowerPart.startsWith('sauce dips:')) {
+      } else if (lowerPart.startsWith('sauce dips:') ||
+          lowerPart.startsWith('dips:') ||
+          lowerPart.startsWith('sauce:') ||
+          lowerPart.contains('dip:')) {
         if (current.isNotEmpty) {
           result.add(current.trim());
           current = '';
@@ -1053,138 +1110,138 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
     return result;
   }
 
-  // Future<void> _showReceiptDialog(
-  //   Order order,
-  //   List<CartItem> cartItems,
-  //   double subtotal,
-  // ) async {
-  //   String receiptContent = _generateReceiptContent(order, cartItems, subtotal);
-  //
-  //   showDialog(
-  //     context: context,
-  //     builder: (BuildContext context) {
-  //       return Dialog(
-  //         child: Container(
-  //           width: 400,
-  //           height: 600,
-  //           padding: const EdgeInsets.all(16),
-  //           child: Column(
-  //             children: [
-  //               Row(
-  //                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-  //                 children: [
-  //                   const Text(
-  //                     'Receipt Preview',
-  //                     style: TextStyle(
-  //                       fontSize: 18,
-  //                       fontWeight: FontWeight.bold,
-  //                     ),
-  //                   ),
-  //                   IconButton(
-  //                     icon: const Icon(Icons.close),
-  //                     onPressed: () => Navigator.of(context).pop(),
-  //                   ),
-  //                 ],
-  //               ),
-  //               const Divider(),
-  //               Expanded(
-  //                 child: SingleChildScrollView(
-  //                   child: Container(
-  //                     padding: const EdgeInsets.all(12),
-  //                     decoration: BoxDecoration(
-  //                       color: Colors.grey[100],
-  //                       borderRadius: BorderRadius.circular(8),
-  //                     ),
-  //                     child: Text(
-  //                       receiptContent,
-  //                       style: const TextStyle(
-  //                         fontFamily: 'monospace',
-  //                         fontSize: 12,
-  //                       ),
-  //                     ),
-  //                   ),
-  //                 ),
-  //               ),
-  //             ],
-  //           ),
-  //         ),
-  //       );
-  //     },
-  //   );
-  // }
-  //
-  // String _generateReceiptContent(
-  //   Order order,
-  //   List<CartItem> cartItems,
-  //   double subtotal,
-  // ) {
-  //   StringBuffer content = StringBuffer();
-  //   content.writeln('================================================');
-  //   content.writeln('                RECEIPT PREVIEW                ');
-  //   content.writeln('================================================');
-  //   content.writeln('Order ID: ${order.orderId}');
-  //   content.writeln('Order Type: ${order.orderType}');
-  //   content.writeln('Date: ${DateTime.now().toString().split('.')[0]}');
-  //   content.writeln('------------------------------------------------');
-  //
-  //   if (order.customerName.isNotEmpty == true) {
-  //     content.writeln('Customer: ${order.customerName}');
-  //   }
-  //   if (order.phoneNumber?.isNotEmpty == true) {
-  //     content.writeln('Phone: ${order.phoneNumber}');
-  //   }
-  //   if (order.streetAddress?.isNotEmpty == true) {
-  //     content.writeln('Address: ${order.streetAddress}');
-  //     if (order.city?.isNotEmpty == true) {
-  //       content.writeln('City: ${order.city}');
-  //     }
-  //     if (order.postalCode?.isNotEmpty == true) {
-  //       content.writeln('Postal Code: ${order.postalCode}');
-  //     }
-  //   }
-  //   content.writeln('------------------------------------------------');
-  //
-  //   for (var item in cartItems) {
-  //     content.writeln('${item.foodItem.name} x${item.quantity}');
-  //     content.writeln(
-  //       '  £${(item.pricePerUnit * item.quantity).toStringAsFixed(2)}',
-  //     );
-  //
-  //     if (item.selectedOptions != null && item.selectedOptions!.isNotEmpty) {
-  //       for (var option in item.selectedOptions!) {
-  //         content.writeln('  + $option');
-  //       }
-  //     }
-  //
-  //     if (item.comment?.isNotEmpty == true) {
-  //       content.writeln('  Note: ${item.comment}');
-  //     }
-  //     content.writeln('');
-  //   }
-  //
-  //   content.writeln('------------------------------------------------');
-  //   content.writeln('Subtotal: £${subtotal.toStringAsFixed(2)}');
-  //   content.writeln('TOTAL: £${order.orderTotalPrice.toStringAsFixed(2)}');
-  //
-  //   if (order.changeDue > 0) {
-  //     content.writeln('Change Due: £${order.changeDue.toStringAsFixed(2)}');
-  //   }
-  //
-  //   if (order.paymentType.isNotEmpty == true) {
-  //     content.writeln('Payment: ${order.paymentType}');
-  //   }
-  //
-  //   if (order.orderExtraNotes?.isNotEmpty == true) {
-  //     content.writeln('------------------------------------------------');
-  //     content.writeln('Notes: ${order.orderExtraNotes}');
-  //   }
-  //
-  //   content.writeln('================================================');
-  //   content.writeln('           Thank you for your order!           ');
-  //   content.writeln('================================================');
-  //
-  //   return content.toString();
-  // }
+  Future<void> _showReceiptDialog(
+    Order order,
+    List<CartItem> cartItems,
+    double subtotal,
+  ) async {
+    String receiptContent = _generateReceiptContent(order, cartItems, subtotal);
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          child: Container(
+            width: 400,
+            height: 600,
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Receipt Preview',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ],
+                ),
+                const Divider(),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        receiptContent,
+                        style: const TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  String _generateReceiptContent(
+    Order order,
+    List<CartItem> cartItems,
+    double subtotal,
+  ) {
+    StringBuffer content = StringBuffer();
+    content.writeln('================================================');
+    content.writeln('                RECEIPT PREVIEW                ');
+    content.writeln('================================================');
+    content.writeln('Order ID: ${order.orderId}');
+    content.writeln('Order Type: ${order.orderType}');
+    content.writeln('Date: ${DateTime.now().toString().split('.')[0]}');
+    content.writeln('------------------------------------------------');
+
+    if (order.customerName.isNotEmpty == true) {
+      content.writeln('Customer: ${order.customerName}');
+    }
+    if (order.phoneNumber?.isNotEmpty == true) {
+      content.writeln('Phone: ${order.phoneNumber}');
+    }
+    if (order.streetAddress?.isNotEmpty == true) {
+      content.writeln('Address: ${order.streetAddress}');
+      if (order.city?.isNotEmpty == true) {
+        content.writeln('City: ${order.city}');
+      }
+      if (order.postalCode?.isNotEmpty == true) {
+        content.writeln('Postal Code: ${order.postalCode}');
+      }
+    }
+    content.writeln('------------------------------------------------');
+
+    for (var item in cartItems) {
+      content.writeln('${item.foodItem.name} x${item.quantity}');
+      content.writeln(
+        '  £${(item.pricePerUnit * item.quantity).toStringAsFixed(2)}',
+      );
+
+      if (item.selectedOptions != null && item.selectedOptions!.isNotEmpty) {
+        for (var option in item.selectedOptions!) {
+          content.writeln('  + $option');
+        }
+      }
+
+      if (item.comment?.isNotEmpty == true) {
+        content.writeln('  Note: ${item.comment}');
+      }
+      content.writeln('');
+    }
+
+    content.writeln('------------------------------------------------');
+    content.writeln('Subtotal: £${subtotal.toStringAsFixed(2)}');
+    content.writeln('TOTAL: £${order.orderTotalPrice.toStringAsFixed(2)}');
+
+    if (order.changeDue > 0) {
+      content.writeln('Change Due: £${order.changeDue.toStringAsFixed(2)}');
+    }
+
+    if (order.paymentType.isNotEmpty == true) {
+      content.writeln('Payment: ${order.paymentType}');
+    }
+
+    if (order.orderExtraNotes?.isNotEmpty == true) {
+      content.writeln('------------------------------------------------');
+      content.writeln('Notes: ${order.orderExtraNotes}');
+    }
+
+    content.writeln('================================================');
+    content.writeln('           Thank you for your order!           ');
+    content.writeln('================================================');
+
+    return content.toString();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1918,6 +1975,8 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
                                             bool hasOptions =
                                                 itemOptions['hasOptions'] ??
                                                 false;
+                                            String? extractedComment =
+                                                itemOptions['extractedComment'];
 
                                             return Padding(
                                               padding: const EdgeInsets.only(
@@ -2182,8 +2241,14 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
                                                     ),
                                                   ),
 
-                                                  if (item.comment != null &&
-                                                      item.comment!.isNotEmpty)
+                                                  if ((item.comment != null &&
+                                                          item
+                                                              .comment!
+                                                              .isNotEmpty) ||
+                                                      (extractedComment !=
+                                                              null &&
+                                                          extractedComment
+                                                              .isNotEmpty))
                                                     Padding(
                                                       padding:
                                                           const EdgeInsets.only(
@@ -2207,7 +2272,7 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
                                                         ),
                                                         child: Center(
                                                           child: Text(
-                                                            'Comment: ${item.comment!}',
+                                                            'Comment: ${item.comment ?? extractedComment ?? ''}',
                                                             textAlign:
                                                                 TextAlign
                                                                     .center,
@@ -2493,7 +2558,7 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
       double subtotal = _selectedOrder!.orderTotalPrice;
 
       // Show test dialog with receipt content
-      // await _showReceiptDialog(_selectedOrder!, cartItems, subtotal);
+      await _showReceiptDialog(_selectedOrder!, cartItems, subtotal);
 
       // Use the thermal printer service to print
       bool
