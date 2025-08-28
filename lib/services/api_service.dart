@@ -38,7 +38,6 @@ class ApiService {
     Map<String, dynamic> orderData,
   ) async {
     final url = Uri.parse("$alternativeProxy/orders/full-create");
-
     try {
       final response = await http.post(
         url,

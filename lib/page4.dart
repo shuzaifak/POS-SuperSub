@@ -77,6 +77,15 @@ class _Page4State extends State<Page4> {
   final GlobalKey _leftPanelKey = GlobalKey();
   Rect _leftPanelRect = Rect.zero;
   bool _wasDiscountPageShown = false;
+  bool _isEditingCustomerDetails = false;
+  final TextEditingController _editNameController = TextEditingController();
+  final TextEditingController _editPhoneController = TextEditingController();
+  final TextEditingController _editEmailController = TextEditingController();
+  final TextEditingController _editAddressController = TextEditingController();
+  final TextEditingController _editCityController = TextEditingController();
+  final TextEditingController _editPostalCodeController =
+      TextEditingController();
+  final GlobalKey<FormState> _editFormKey = GlobalKey<FormState>();
 
   void _scrollCategoriesLeft() {
     _categoryScrollController.animateTo(
@@ -92,6 +101,93 @@ class _Page4State extends State<Page4> {
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeOut,
     );
+  }
+
+  final RegExp _nameRegExp = RegExp(r"^[a-zA-Z\s-']+$");
+  final RegExp _emailRegExp = RegExp(
+    r"^[a-zA-Z0-9.a-zA-Z0-9.!#$%&'*+-/=?^_`{|}~]+@[a-zA-Z0-9]+\.[a-zA-Z]+",
+  );
+
+  bool _validateUKPhoneNumber(String phoneNumber) {
+    if (phoneNumber.isEmpty) return false;
+    String cleanedNumber = phoneNumber.replaceAll(RegExp(r'[()\s-]'), '');
+    final RegExp finalUkPhoneRegex = RegExp(r'^(?:(?:\+|00)44|0)\d{9,10}$');
+    return finalUkPhoneRegex.hasMatch(cleanedNumber);
+  }
+
+  void _startEditingCustomerDetails() {
+    if (_customerDetails != null) {
+      _editNameController.text =
+          _customerDetails!.name != 'Walk-in Customer'
+              ? _customerDetails!.name
+              : '';
+      _editPhoneController.text =
+          _customerDetails!.phoneNumber != 'N/A'
+              ? _customerDetails!.phoneNumber
+              : '';
+      _editEmailController.text = _customerDetails!.email ?? '';
+      _editAddressController.text = _customerDetails!.streetAddress ?? '';
+      _editCityController.text = _customerDetails!.city ?? '';
+      _editPostalCodeController.text = _customerDetails!.postalCode ?? '';
+    }
+
+    setState(() {
+      _isEditingCustomerDetails = true;
+    });
+  }
+
+  void _saveCustomerDetails() {
+    if (_editFormKey.currentState?.validate() ?? false) {
+      setState(() {
+        _customerDetails = CustomerDetails(
+          name:
+              _editNameController.text.trim().isEmpty
+                  ? 'Walk-in Customer'
+                  : _editNameController.text.trim(),
+          phoneNumber:
+              _editPhoneController.text.trim().isEmpty
+                  ? 'N/A'
+                  : _editPhoneController.text.trim(),
+          email:
+              _editEmailController.text.trim().isEmpty
+                  ? null
+                  : _editEmailController.text.trim(),
+          streetAddress:
+              _editAddressController.text.trim().isEmpty
+                  ? null
+                  : _editAddressController.text.trim(),
+          city:
+              _editCityController.text.trim().isEmpty
+                  ? null
+                  : _editCityController.text.trim(),
+          postalCode:
+              _editPostalCodeController.text.trim().isEmpty
+                  ? null
+                  : _editPostalCodeController.text.trim(),
+        );
+        _isEditingCustomerDetails = false;
+      });
+
+      CustomPopupService.show(
+        context,
+        'Customer details updated successfully',
+        type: PopupType.success,
+      );
+    }
+  }
+
+  void _cancelEditingCustomerDetails() {
+    setState(() {
+      _isEditingCustomerDetails = false;
+    });
+
+    // Clear controllers
+    _editNameController.clear();
+    _editPhoneController.clear();
+    _editEmailController.clear();
+    _editAddressController.clear();
+    _editCityController.clear();
+    _editPostalCodeController.clear();
   }
 
   void _preserveCustomerDataForOrderTypeChange(String newOrderType) {
@@ -497,6 +593,15 @@ class _Page4State extends State<Page4> {
     _commentEditingController.dispose();
     _commentFocusNode.dispose();
     _scrollController.dispose();
+
+    // Add these new disposals
+    _editNameController.dispose();
+    _editPhoneController.dispose();
+    _editEmailController.dispose();
+    _editAddressController.dispose();
+    _editCityController.dispose();
+    _editPostalCodeController.dispose();
+
     super.dispose();
   }
 
@@ -641,7 +746,7 @@ class _Page4State extends State<Page4> {
   Widget _buildCustomerDetailsDisplay() {
     if (_customerDetails == null ||
         _actualOrderType.toLowerCase() != 'delivery') {
-      return const SizedBox.shrink(); // Don't show for non-delivery orders or when no customer details
+      return const SizedBox.shrink();
     }
 
     return Column(
@@ -654,101 +759,436 @@ class _Page4State extends State<Page4> {
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: Colors.black, width: 1),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header
-              Row(
-                children: [
-                  const Icon(Icons.person, color: Colors.black, size: 20),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Customer Details',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black,
-                      fontFamily: 'Poppins',
-                    ),
+          child:
+              _isEditingCustomerDetails
+                  ? _buildEditingCustomerDetails()
+                  : _buildDisplayCustomerDetails(),
+        ),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  Widget _buildDisplayCustomerDetails() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Header
+        Row(
+          children: [
+            const Icon(Icons.person, color: Colors.black, size: 20),
+            const SizedBox(width: 8),
+            const Text(
+              'Customer Details',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.black,
+                fontFamily: 'Poppins',
+              ),
+            ),
+            const Spacer(),
+            // Edit button
+            MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: GestureDetector(
+                onTap: _startEditingCustomerDetails,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.black),
                   ),
-                  const Spacer(),
-                  // Edit button
-                  MouseRegion(
-                    cursor: SystemMouseCursors.click,
-                    child: GestureDetector(
-                      onTap: () {
-                        // Reset to show customer details form again
-                        setState(() {
-                          _hasProcessedFirstStep = false;
-                          _showPayment = false;
-                          _selectedPaymentType = '';
-                        });
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: Colors.black),
-                        ),
-                        child: const Icon(
-                          Icons.edit,
-                          size: 16,
-                          color: Colors.black,
+                  child: const Icon(Icons.edit, size: 16, color: Colors.black),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        // Customer details in a compact row format
+        Wrap(
+          spacing: 16,
+          runSpacing: 8,
+          children: [
+            // Name
+            _buildDetailChip(
+              icon: Icons.person_outline,
+              label: 'Name',
+              value: _customerDetails!.name,
+            ),
+
+            // Phone
+            if (_customerDetails!.phoneNumber.isNotEmpty)
+              _buildDetailChip(
+                icon: Icons.phone_outlined,
+                label: 'Phone',
+                value: _customerDetails!.phoneNumber,
+              ),
+
+            // Email (if provided)
+            if (_customerDetails!.email != null &&
+                _customerDetails!.email!.isNotEmpty)
+              _buildDetailChip(
+                icon: Icons.email_outlined,
+                label: 'Email',
+                value: _customerDetails!.email!,
+              ),
+
+            // Address (if provided)
+            if (_customerDetails!.streetAddress != null &&
+                _customerDetails!.streetAddress!.isNotEmpty)
+              _buildDetailChip(
+                icon: Icons.location_on_outlined,
+                label: 'Address',
+                value:
+                    '${_customerDetails!.streetAddress!}${_customerDetails!.city != null ? ', ${_customerDetails!.city!}' : ''}${_customerDetails!.postalCode != null ? ' ${_customerDetails!.postalCode!}' : ''}',
+                isAddress: true,
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEditingCustomerDetails() {
+    return Form(
+      key: _editFormKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              const Icon(Icons.edit, color: Colors.black, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'Edit Customer Details',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black,
+                  fontFamily: 'Poppins',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Name field
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            child: TextFormField(
+              controller: _editNameController,
+              style: const TextStyle(fontSize: 14, fontFamily: 'Poppins'),
+              decoration: InputDecoration(
+                labelText: 'Customer Name *',
+                labelStyle: const TextStyle(
+                  fontSize: 12,
+                  fontFamily: 'Poppins',
+                  color: Colors.grey,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Colors.grey, width: 1),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(
+                    color: Color(0xFFCB6CE6),
+                    width: 2.0,
+                  ),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                isDense: true,
+              ),
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter customer name';
+                }
+                if (!_nameRegExp.hasMatch(value)) {
+                  return 'Name can only contain letters, spaces, hyphens, or apostrophes';
+                }
+                return null;
+              },
+            ),
+          ),
+
+          // Phone field
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            child: TextFormField(
+              controller: _editPhoneController,
+              style: const TextStyle(fontSize: 14, fontFamily: 'Poppins'),
+              decoration: InputDecoration(
+                labelText: 'Phone Number *',
+                hintText: 'e.g., 07123456789',
+                labelStyle: const TextStyle(
+                  fontSize: 12,
+                  fontFamily: 'Poppins',
+                  color: Colors.grey,
+                ),
+                hintStyle: const TextStyle(
+                  fontSize: 11,
+                  fontFamily: 'Poppins',
+                  color: Colors.grey,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Colors.grey, width: 1),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(
+                    color: Color(0xFFCB6CE6),
+                    width: 2.0,
+                  ),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                isDense: true,
+              ),
+              keyboardType: TextInputType.phone,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter phone number';
+                }
+                if (!_validateUKPhoneNumber(value)) {
+                  return 'Please enter a valid UK phone number';
+                }
+                return null;
+              },
+            ),
+          ),
+
+          // Email field
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            child: TextFormField(
+              controller: _editEmailController,
+              style: const TextStyle(fontSize: 14, fontFamily: 'Poppins'),
+              decoration: InputDecoration(
+                labelText: 'Email *',
+                labelStyle: const TextStyle(
+                  fontSize: 12,
+                  fontFamily: 'Poppins',
+                  color: Colors.grey,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Colors.grey, width: 1),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(
+                    color: Color(0xFFCB6CE6),
+                    width: 2.0,
+                  ),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                isDense: true,
+              ),
+              keyboardType: TextInputType.emailAddress,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Email is required for delivery';
+                }
+                if (!_emailRegExp.hasMatch(value)) {
+                  return 'Enter a valid email address';
+                }
+                return null;
+              },
+            ),
+          ),
+
+          // Address field
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            child: TextFormField(
+              controller: _editAddressController,
+              style: const TextStyle(fontSize: 14, fontFamily: 'Poppins'),
+              decoration: InputDecoration(
+                labelText: 'Street Address *',
+                labelStyle: const TextStyle(
+                  fontSize: 12,
+                  fontFamily: 'Poppins',
+                  color: Colors.grey,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Colors.grey, width: 1),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(
+                    color: Color(0xFFCB6CE6),
+                    width: 2.0,
+                  ),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                isDense: true,
+              ),
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter street address';
+                }
+                return null;
+              },
+            ),
+          ),
+
+          // City field
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            child: TextFormField(
+              controller: _editCityController,
+              style: const TextStyle(fontSize: 14, fontFamily: 'Poppins'),
+              decoration: InputDecoration(
+                labelText: 'City *',
+                labelStyle: const TextStyle(
+                  fontSize: 12,
+                  fontFamily: 'Poppins',
+                  color: Colors.grey,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Colors.grey, width: 1),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(
+                    color: Color(0xFFCB6CE6),
+                    width: 2.0,
+                  ),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                isDense: true,
+              ),
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter city';
+                }
+                return null;
+              },
+            ),
+          ),
+
+          // Postal Code field
+          Container(
+            margin: const EdgeInsets.only(bottom: 16),
+            child: TextFormField(
+              controller: _editPostalCodeController,
+              style: const TextStyle(fontSize: 14, fontFamily: 'Poppins'),
+              decoration: InputDecoration(
+                labelText: 'Postal Code *',
+                labelStyle: const TextStyle(
+                  fontSize: 12,
+                  fontFamily: 'Poppins',
+                  color: Colors.grey,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Colors.grey, width: 1),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(
+                    color: Color(0xFFCB6CE6),
+                    width: 2.0,
+                  ),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                isDense: true,
+              ),
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter postal code';
+                }
+                return null;
+              },
+            ),
+          ),
+
+          // Action buttons
+          Row(
+            children: [
+              Expanded(
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    onTap: _cancelEditingCustomerDetails,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.grey),
+                      ),
+                      child: const Center(
+                        child: Text(
+                          'Cancel',
+                          style: TextStyle(
+                            color: Colors.black,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            fontFamily: 'Poppins',
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ],
+                ),
               ),
-              const SizedBox(height: 12),
-
-              // Customer details in a compact row format
-              Wrap(
-                spacing: 16,
-                runSpacing: 8,
-                children: [
-                  // Name
-                  _buildDetailChip(
-                    icon: Icons.person_outline,
-                    label: 'Name',
-                    value: _customerDetails!.name,
+              const SizedBox(width: 8),
+              Expanded(
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    onTap: _saveCustomerDetails,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.black,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Center(
+                        child: Text(
+                          'Save',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            fontFamily: 'Poppins',
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
-
-                  // Phone
-                  if (_customerDetails!.phoneNumber.isNotEmpty)
-                    _buildDetailChip(
-                      icon: Icons.phone_outlined,
-                      label: 'Phone',
-                      value: _customerDetails!.phoneNumber,
-                    ),
-
-                  // Email (if provided)
-                  if (_customerDetails!.email != null &&
-                      _customerDetails!.email!.isNotEmpty)
-                    _buildDetailChip(
-                      icon: Icons.email_outlined,
-                      label: 'Email',
-                      value: _customerDetails!.email!,
-                    ),
-
-                  // Address (if provided)
-                  if (_customerDetails!.streetAddress != null &&
-                      _customerDetails!.streetAddress!.isNotEmpty)
-                    _buildDetailChip(
-                      icon: Icons.location_on_outlined,
-                      label: 'Address',
-                      value:
-                          '${_customerDetails!.streetAddress!}${_customerDetails!.city != null ? ', ${_customerDetails!.city!}' : ''}${_customerDetails!.postalCode != null ? ' ${_customerDetails!.postalCode!}' : ''}',
-                      isAddress: true,
-                    ),
-                ],
+                ),
               ),
             ],
           ),
-        ),
-        const SizedBox(height: 8),
-      ],
+        ],
+      ),
     );
   }
 
@@ -2564,6 +3004,48 @@ class _Page4State extends State<Page4> {
                 Expanded(
                   child: GestureDetector(
                     onTap: () {
+                      setState(() {
+                        _selectedPaymentType = 'Card & Cash';
+                      });
+                      _proceedToNextStep();
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 27,
+                      ),
+                      decoration: BoxDecoration(
+                        color:
+                            _selectedPaymentType == 'Card & Cash'
+                                ? Colors.grey[300]
+                                : Colors.black,
+                        borderRadius: BorderRadius.circular(8),
+                        border:
+                            _selectedPaymentType == 'Card & Cash'
+                                ? Border.all(color: Colors.grey)
+                                : null,
+                      ),
+                      child: Center(
+                        child: Text(
+                          'Card & Cash',
+                          style: TextStyle(
+                            color:
+                                _selectedPaymentType == 'Card & Cash'
+                                    ? Colors.black
+                                    : Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16.6,
+                            fontFamily: 'Poppins',
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () {
                       if (_cartItems.isNotEmpty) {
                         setState(() {
                           _showDiscountPage = true;
@@ -2731,6 +3213,7 @@ class _Page4State extends State<Page4> {
       "status": "yellow",
       "change_due": finalChangeDue,
       "order_source": "EPOS",
+      "paid_status": paymentDetails.paidStatus,
       "items":
           _cartItems.map((cartItem) {
             String description = cartItem.foodItem.name;
@@ -2756,6 +3239,7 @@ class _Page4State extends State<Page4> {
     };
 
     print("Attempting to submit order with order_type: $_actualOrderType");
+    print("Payment Details: ${paymentDetails.paymentType}");
     print("Order Data being sent: $orderData");
 
     String extraNotes =

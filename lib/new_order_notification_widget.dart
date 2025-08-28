@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:epos/models/order.dart'; // Ensure your Order model is correctly imported
+import 'package:epos/services/notification_audio_service.dart';
 
 class NewOrderNotificationWidget extends StatefulWidget {
   final Order order; // Now handles a single order
@@ -25,6 +26,14 @@ class NewOrderNotificationWidget extends StatefulWidget {
 class _NewOrderNotificationWidgetState
     extends State<NewOrderNotificationWidget> {
   bool _isProcessing = false;
+  final NotificationAudioService _audioService = NotificationAudioService();
+
+  @override
+  void initState() {
+    super.initState();
+    // Play notification sound when new order popup appears
+    _audioService.playNewOrderSound();
+  }
 
   @override
   Widget build(BuildContext context) {

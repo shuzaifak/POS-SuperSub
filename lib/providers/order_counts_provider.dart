@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 
 class OrderCountsProvider extends ChangeNotifier {
   Map<String, int> _activeOrdersCount = {
-    'takeaway': 0,
+    'collection': 0,
     'takeout': 0,  // New separate key for takeout
     'dinein': 0,
     'delivery': 0,
@@ -13,7 +13,7 @@ class OrderCountsProvider extends ChangeNotifier {
   };
 
   Map<String, Color> _dominantOrderColors = {
-    'takeaway': const Color(0xFF8cdd69), // Default to green
+    'collection': const Color(0xFF8cdd69), // Default to green
     'takeout': const Color(0xFF8cdd69),  // New separate key for takeout
     'dinein': const Color(0xFF8cdd69),
     'delivery': const Color(0xFF8cdd69),
@@ -92,14 +92,14 @@ class OrderCountsProvider extends ChangeNotifier {
   void resetCounts() {
 
     _activeOrdersCount = {
-      'takeaway': 0,
+      'collection': 0,
       'takeout': 0,
       'dinein': 0,
       'delivery': 0,
       'website': 0,
     };
     _dominantOrderColors = {
-      'takeaway': const Color(0xFF8cdd69), // Reset to default green
+      'collection': const Color(0xFF8cdd69), // Reset to default green
       'takeout': const Color(0xFF8cdd69),
       'dinein': const Color(0xFF8cdd69),
       'delivery': const Color(0xFF8cdd69),

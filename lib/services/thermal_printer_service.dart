@@ -269,15 +269,13 @@ class ThermalPrinterService {
     }
 
     if (kIsWeb && ENABLE_DRAWER_TEST_MODE) {
-      print('🧪 Web platform - running in drawer test mode');
-
-      // Auto-open cash drawer for cash payments even on web in test mode
-      if (_autoOpenOnCashPayment &&
-          paymentType?.toLowerCase() == 'cash' &&
-          _isDrawerOpeningEnabled) {
-        print('💰 Auto-opening cash drawer for cash payment (WEB TEST MODE)');
-        await openCashDrawer(reason: "Cash payment completed - WEB TEST");
-      }
+      // Auto-open cash drawer disabled - drawer opens only via manual button press
+      // if (_autoOpenOnCashPayment &&
+      //     paymentType?.toLowerCase() == 'cash' &&
+      //     _isDrawerOpeningEnabled) {
+      //   print('💰 Auto-opening cash drawer for cash payment (WEB TEST MODE)');
+      //   await openCashDrawer(reason: "Cash payment completed - WEB TEST");
+      // }
 
       // Simulate successful printing in test mode
       await Future.delayed(Duration(seconds: 1));
@@ -373,13 +371,13 @@ class ThermalPrinterService {
       if (success) {
         print('✅ $method printing successful');
 
-        // Auto-open cash drawer for cash payments
-        if (_autoOpenOnCashPayment &&
-            paymentType?.toLowerCase() == 'cash' &&
-            _isDrawerOpeningEnabled) {
-          print('💰 Auto-opening cash drawer for cash payment');
-          await openCashDrawer(reason: "Cash payment completed");
-        }
+        // Auto-open cash drawer disabled - drawer opens only via manual button press
+        // if (_autoOpenOnCashPayment &&
+        //     paymentType?.toLowerCase() == 'cash' &&
+        //     _isDrawerOpeningEnabled) {
+        //   print('💰 Auto-opening cash drawer for cash payment');
+        //   await openCashDrawer(reason: "Cash payment completed");
+        // }
 
         return true;
       }
@@ -1067,7 +1065,7 @@ class ThermalPrinterService {
     StringBuffer receipt = StringBuffer();
 
     receipt.writeln('================================');
-    receipt.writeln('             Dallas');
+    receipt.writeln('              TVP');
     receipt.writeln('================================');
     receipt.writeln('Date: ${UKTimeService.now().toString().split('.')[0]}');
     receipt.writeln('Order Type: ${orderType.toUpperCase()}');
@@ -1194,7 +1192,7 @@ class ThermalPrinterService {
 
     bytes += generator.setGlobalCodeTable('CP1252');
     bytes += generator.text(
-      'Dallas',
+      'TVP',
       styles: const PosStyles(
         align: PosAlign.center,
         height: PosTextSize.size2,
@@ -1653,7 +1651,7 @@ class ThermalPrinterService {
 
     // Header
     report.writeln('================================');
-    report.writeln('             Dallas');
+    report.writeln('              TVP');
     report.writeln('================================');
     report.writeln();
 
@@ -1825,7 +1823,7 @@ class ThermalPrinterService {
 
     // Header
     bytes += generator.text(
-      'Dallas',
+      'TVP',
       styles: const PosStyles(
         align: PosAlign.center,
         height: PosTextSize.size2,

@@ -24,13 +24,17 @@ class PaymentDetails {
   final double discountPercentage;
   final double totalCharge;
   final double changeDue;
+  final bool paidStatus;
 
   PaymentDetails({
     required this.paymentType,
     this.amountReceived,
     required this.discountPercentage,
     required this.totalCharge,
-  }) : changeDue = (paymentType == 'cash' && amountReceived != null)
+    this.paidStatus = true, // Default to paid
+  }) : changeDue = (paymentType.toLowerCase() == 'cash' && amountReceived != null)
+      ? (amountReceived - totalCharge).clamp(0.0, double.infinity)
+      : (paymentType.toLowerCase() == 'card & cash' && amountReceived != null)
       ? (amountReceived - totalCharge).clamp(0.0, double.infinity)
       : 0.0;
 }

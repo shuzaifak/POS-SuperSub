@@ -1385,7 +1385,7 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
     } else if (activeOrders.isEmpty) {
       return const Center(
         child: Text(
-          'No active orders found.',
+          'No unpaid orders found.',
           style: TextStyle(fontSize: 16, color: Colors.grey),
         ),
       );

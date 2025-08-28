@@ -1033,8 +1033,8 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
 
     // Calculate responsive dimensions based on 10.5" screen
     final isLargeScreen = screenWidth > 1200;
-    final headerImageSize = isLargeScreen ? 70.0 : 60.0;
-    final headerFontSize = isLargeScreen ? 52.0 : 46.0;
+    final headerImageSize = 60.0;
+    final headerFontSize = 46.0;
     final buttonWidth = isLargeScreen ? 220.0 : 200.0;
     final buttonHeight = isLargeScreen ? 65.0 : 55.0;
     final buttonFontSize = isLargeScreen ? 32.0 : 28.0;
@@ -1081,10 +1081,14 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Container(
-                              padding: EdgeInsets.all(isLargeScreen ? 20 : 17),
+                              padding: const EdgeInsets.all(
+                                17,
+                              ), // Fixed padding like dynamic order screen
                               decoration: BoxDecoration(
                                 color: Colors.black,
-                                borderRadius: BorderRadius.circular(25),
+                                borderRadius: BorderRadius.circular(
+                                  23,
+                                ), // Fixed border radius like dynamic order screen
                               ),
                               child: Image.asset(
                                 'assets/images/${_screenImage}',
@@ -1092,15 +1096,21 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                                 height: headerImageSize,
                               ),
                             ),
-                            SizedBox(width: isLargeScreen ? 25 : 20),
+                            const SizedBox(
+                              width: 20,
+                            ), // Fixed spacing like dynamic order screen
                             Container(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: isLargeScreen ? 22 : 18,
-                                vertical: isLargeScreen ? 16 : 14,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal:
+                                    18, // Fixed padding like dynamic order screen
+                                vertical:
+                                    14, // Fixed padding like dynamic order screen
                               ),
                               decoration: BoxDecoration(
                                 color: Colors.black,
-                                borderRadius: BorderRadius.circular(25),
+                                borderRadius: BorderRadius.circular(
+                                  23,
+                                ), // Fixed border radius like dynamic order screen
                               ),
                               child: Text(
                                 _screenHeading,

@@ -129,19 +129,19 @@ class CustomBottomNavBar extends StatelessWidget {
         final dominantOrderColors = orderCountsProvider.dominantOrderColors;
 
         // Get individual counts
-        final takeawayCount = activeOrdersCount['takeaway'] ?? 0;
+        final collectionCount = activeOrdersCount['collection'] ?? 0;
         final combinedDineinCount = orderCountsProvider.combinedDineinCount; // dinein + takeout
         final deliveryCount = activeOrdersCount['delivery'] ?? 0;
         final websiteCount = activeOrdersCount['website'] ?? 0;
 
         // Get individual colors
-        final takeawayColor = dominantOrderColors['takeaway'] ?? const Color(0xFF8cdd69);
+        final collectionColor = dominantOrderColors['collection'] ?? const Color(0xFF8cdd69);
         final combinedDineinColor = orderCountsProvider.combinedDineinColor; // highest priority between dinein and takeout
         final deliveryColor = dominantOrderColors['delivery'] ?? const Color(0xFF8cdd69);
         final websiteColor = dominantOrderColors['website'] ?? const Color(0xFF8cdd69);
 
-        print('🎨 NavBar Update: takeaway=$takeawayCount, combinedDinein=$combinedDineinCount, delivery=$deliveryCount, website=$websiteCount');
-        print('🎨 NavBar Colors: takeaway=${_colorToString(takeawayColor)}, combinedDinein=${_colorToString(combinedDineinColor)}, delivery=${_colorToString(deliveryColor)}, website=${_colorToString(websiteColor)}');
+        print('🎨 NavBar Update: collection=$collectionCount, combinedDinein=$combinedDineinCount, delivery=$deliveryCount, website=$websiteCount');
+        print('🎨 NavBar Colors: collection=${_colorToString(collectionColor)}, combinedDinein=${_colorToString(combinedDineinColor)}, delivery=${_colorToString(deliveryColor)}, website=${_colorToString(websiteColor)}');
 
         Widget navBar = Container(
           height: 80,
@@ -163,16 +163,16 @@ class CustomBottomNavBar extends StatelessWidget {
                   context,
                   'TakeAway.png',
                   0,
-                  typeKey: 'takeaway',
-                  count: takeawayCount,
-                  bubbleColor: takeawayColor,
+                  typeKey: 'collection',
+                  count: collectionCount,
+                  bubbleColor: collectionColor,
                   onTap: () {
                     if (selectedIndex != 0) {
                       Navigator.pushReplacement(
                         context,
                         MaterialPageRoute(
                           builder: (_) => const DynamicOrderListScreen(
-                            orderType: 'takeaway',
+                            orderType: 'collection',
                             initialBottomNavItemIndex: 0,
                           ),
                         ),

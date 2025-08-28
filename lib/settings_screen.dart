@@ -75,20 +75,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
 
     try {
+      print('🏪 Attempting to toggle shop status to: $value');
+      final message = await ApiService.toggleShopStatus(value);
+      print('🏪 Shop status toggle successful: $message');
+
       CustomPopupService.show(
         context,
-        'Discount % cannot exceed 100%',
-        type: value ? PopupType.success : PopupType.failure,
+        message.isNotEmpty
+            ? message
+            : (value ? 'Shop opened successfully' : 'Shop closed successfully'),
+        type: PopupType.success,
       );
     } catch (e) {
       // Revert on error
       setState(() {
         _shopOpen = !value;
       });
-      print('Error toggling shop status: $e');
+      print('🏪 Error toggling shop status: $e');
       CustomPopupService.show(
         context,
-        'Failed to toggle shop status',
+        'Failed to toggle shop status: $e',
         type: PopupType.failure,
       );
     }

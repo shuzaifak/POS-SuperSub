@@ -58,7 +58,6 @@ class OrderApiService {
   //Method to add an order to the accepted stream
   void addAcceptedOrder(Order order) {
     _acceptedOrderController.add(order);
-    print('OrderApiService: Order ${order.orderId} added to accepted stream.');
   }
 
   void _initSocket() {
@@ -116,8 +115,6 @@ class OrderApiService {
       print('🔥 Real-time offers update received: $data');
       if (data is List) {
         _offersUpdatedController.add(data);
-      } else {
-        print('Offers data is not a list: $data');
       }
     });
 
@@ -210,7 +207,6 @@ class OrderApiService {
 
   static Future<List<Order>> fetchTodayOrders() async {
     final url = _buildProxyUrl('/orders/today');
-    print("🔍 DEBUG: fetchTodayOrders called");
     try {
       final response = await http.get(
         url,
@@ -222,7 +218,6 @@ class OrderApiService {
         for (var orderJson in jsonResponse) {
           orders.add(Order.fromJson(orderJson));
         }
-
         return orders;
       } else {
         throw Exception(
@@ -270,18 +265,11 @@ class OrderApiService {
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        print(
-          'Successfully updated order status $orderId to $newStatus (sent as $statusToSend)',
-        );
         return true;
       } else {
-        print(
-          'Failed to update order status $orderId to $newStatus (sent as $statusToSend): ${response.statusCode} - ${response.body}',
-        );
         return false;
       }
     } catch (e) {
-      print('Error updating order status: $e');
       return false;
     }
   }
@@ -292,9 +280,6 @@ class OrderApiService {
   ) async {
     String cleanedPhoneNumber = phoneNumber.replaceAll(RegExp(r'\s+'), '');
     final url = _buildProxyUrl('/orders/search-customer');
-
-    print('PHONE NUMBER: Attempting to search customer with URL: $url');
-    print('PHONE NUMBER: Sending phone number: $cleanedPhoneNumber');
 
     try {
       final response = await http.post(
@@ -311,18 +296,11 @@ class OrderApiService {
           return null;
         }
       } else if (response.statusCode == 404) {
-        print(
-          'Customer not found for phone number: $cleanedPhoneNumber (Status 404)',
-        );
         return null;
       } else {
-        print(
-          'Failed to search customer. Status: ${response.statusCode}, Body: ${response.body}',
-        );
         return null;
       }
     } catch (e) {
-      print('Error during customer search: $e');
       return null;
     }
   }

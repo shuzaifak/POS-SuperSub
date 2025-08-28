@@ -64,7 +64,7 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
     _selectedBottomNavItem = widget.initialBottomNavItemIndex;
 
     // Initialize filters based on order type
-    if (widget.orderType.toLowerCase() == 'takeaway') {
+    if (widget.orderType.toLowerCase() == 'collection') {
       pickcollect = null;
     } else if (widget.orderType.toLowerCase() == 'dinein') {
       dineinFilter = null;
@@ -320,8 +320,8 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
       );
 
       // Reset filters based on new order type
-      if (widget.orderType.toLowerCase() == 'takeaway') {
-        pickcollect = null; // Remove filters for takeaway
+      if (widget.orderType.toLowerCase() == 'collection') {
+        pickcollect = null; // Remove filters for collection
         dineinFilter = null;
       } else if (widget.orderType.toLowerCase() == 'dinein') {
         dineinFilter = null; // Default to null for dine in
@@ -495,8 +495,8 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
   // FIXED: Get filtered orders from provider based on screen type
   List<Order> _getFilteredOrdersFromProvider(EposOrdersProvider provider) {
     switch (widget.orderType.toLowerCase()) {
-      case 'takeaway':
-        // For takeaway screen, show all takeaway types without filtering
+      case 'collection':
+        // For collection screen, show all collection types without filtering
         return provider.getTakeawayOrders('all_takeaway_types');
       case 'dinein':
         // For dine in screen, filter based on dineinFilter
@@ -587,8 +587,8 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
 
   String get _screenHeading {
     switch (widget.orderType.toLowerCase()) {
-      case 'takeaway':
-        return 'Take Aways';
+      case 'collection':
+        return 'Collections';
       case 'dinein':
         return 'Dine In';
       case 'delivery':
@@ -614,7 +614,7 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
 
   String get _screenImage {
     switch (widget.orderType.toLowerCase()) {
-      case 'takeaway':
+      case 'collection':
         return 'TakeAwaywhite.png';
       case 'dinein':
         return 'DineInwhite.png';
@@ -629,8 +629,8 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
 
   String get _emptyStateMessage {
     switch (widget.orderType.toLowerCase()) {
-      case 'takeaway':
-        return 'No takeaway/collection orders found.';
+      case 'collection':
+        return 'No collection orders found.';
       case 'dinein':
         if (dineinFilter == null) {
           return 'Choose type to see orders';

@@ -18,8 +18,28 @@ class PaidOutsPage extends StatefulWidget {
 }
 
 class _PaidOutsPageState extends State<PaidOutsPage> {
+  static const List<String> _defaultPaidOutOptions = [
+    'Shopping',
+    'Bills',
+    'Supplier Payment',
+    'Staff Wages',
+    'Rent',
+    'Utilities',
+    'Insurance',
+    'Equipment Purchase',
+    'Maintenance',
+    'Transportation',
+    'Marketing',
+    'Office Supplies',
+    'Cleaning Supplies',
+    'Bank Charges',
+    'Professional Services',
+    'Other',
+  ];
+
   List<PaidOut> _paidOuts = [PaidOut(label: '', amount: 0.0)];
   bool _isSubmitting = false;
+  List<TextEditingController> _labelControllers = [TextEditingController()];
 
   @override
   void initState() {
@@ -33,9 +53,19 @@ class _PaidOutsPageState extends State<PaidOutsPage> {
     });
   }
 
+  @override
+  void dispose() {
+    // Dispose all controllers
+    for (var controller in _labelControllers) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
   void _addPaidOut() {
     setState(() {
       _paidOuts.add(PaidOut(label: '', amount: 0.0));
+      _labelControllers.add(TextEditingController());
     });
   }
 
@@ -43,6 +73,8 @@ class _PaidOutsPageState extends State<PaidOutsPage> {
     if (_paidOuts.length > 1) {
       setState(() {
         _paidOuts.removeAt(index);
+        _labelControllers[index].dispose();
+        _labelControllers.removeAt(index);
       });
     }
   }
@@ -50,6 +82,13 @@ class _PaidOutsPageState extends State<PaidOutsPage> {
   void _updateLabel(int index, String value) {
     setState(() {
       _paidOuts[index].label = value;
+    });
+  }
+
+  void _selectPredefinedLabel(int index, String label) {
+    setState(() {
+      _paidOuts[index].label = label;
+      _labelControllers[index].text = label;
     });
   }
 
@@ -99,6 +138,11 @@ class _PaidOutsPageState extends State<PaidOutsPage> {
         // Reset form
         setState(() {
           _paidOuts = [PaidOut(label: '', amount: 0.0)];
+          // Clear all controllers and reset to single controller
+          for (var controller in _labelControllers) {
+            controller.dispose();
+          }
+          _labelControllers = [TextEditingController()];
         });
       }
     } catch (e) {
@@ -401,101 +445,157 @@ class _PaidOutsPageState extends State<PaidOutsPage> {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: Colors.grey.shade300),
       ),
-      child: Row(
+      child: Column(
         children: [
-          // Number badge
+          Row(
+            children: [
+              // Number badge
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade200,
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: Center(
+                  child: Text(
+                    '${index + 1}',
+                    style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ),
+              ),
+
+              const SizedBox(width: 12),
+
+              // Label field
+              Expanded(
+                flex: 2,
+                child: TextField(
+                  controller: _labelControllers[index],
+                  onChanged: (value) => _updateLabel(index, value),
+                  style: GoogleFonts.poppins(fontSize: 12),
+                  decoration: InputDecoration(
+                    labelText: 'Description',
+                    hintText: 'e.g., Supplier Payment',
+                    labelStyle: GoogleFonts.poppins(fontSize: 10),
+                    hintStyle: GoogleFonts.poppins(fontSize: 10),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(4),
+                      borderSide: BorderSide(color: Colors.grey.shade400),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    isDense: true,
+                  ),
+                ),
+              ),
+
+              const SizedBox(width: 12),
+
+              // Amount field
+              Expanded(
+                flex: 1,
+                child: TextField(
+                  onChanged: (value) => _updateAmount(index, value),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(
+                      RegExp(r'^\d*\.?\d{0,2}'),
+                    ),
+                  ],
+                  style: GoogleFonts.poppins(fontSize: 12),
+                  decoration: InputDecoration(
+                    labelText: 'Amount',
+                    hintText: '0.00',
+                    prefixText: '£',
+                    labelStyle: GoogleFonts.poppins(fontSize: 10),
+                    hintStyle: GoogleFonts.poppins(fontSize: 10),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(4),
+                      borderSide: BorderSide(color: Colors.grey.shade400),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    isDense: true,
+                  ),
+                ),
+              ),
+
+              const SizedBox(width: 8),
+
+              // Remove button
+              if (_paidOuts.length > 1)
+                IconButton(
+                  onPressed: () => _removePaidOut(index),
+                  icon: Icon(
+                    Icons.delete_outline,
+                    color: Colors.red.shade400,
+                    size: 18,
+                  ),
+                  tooltip: 'Remove',
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
+                ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // Quick select buttons for predefined options
           Container(
-            width: 30,
-            height: 30,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade200,
-              borderRadius: BorderRadius.circular(15),
-            ),
-            child: Center(
-              child: Text(
-                '${index + 1}',
-                style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12,
-                  color: Colors.black87,
-                ),
-              ),
-            ),
-          ),
-
-          const SizedBox(width: 12),
-
-          // Label field
-          Expanded(
-            flex: 2,
-            child: TextField(
-              onChanged: (value) => _updateLabel(index, value),
-              style: GoogleFonts.poppins(fontSize: 12),
-              decoration: InputDecoration(
-                labelText: 'Description',
-                hintText: 'e.g., Supplier Payment',
-                labelStyle: GoogleFonts.poppins(fontSize: 10),
-                hintStyle: GoogleFonts.poppins(fontSize: 10),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(4),
-                  borderSide: BorderSide(color: Colors.grey.shade400),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                isDense: true,
-              ),
+            width: double.infinity,
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children:
+                  _defaultPaidOutOptions.map((option) {
+                    final isSelected = _paidOuts[index].label == option;
+                    return GestureDetector(
+                      onTap: () => _selectPredefinedLabel(index, option),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color:
+                              isSelected ? Colors.black : Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color:
+                                isSelected
+                                    ? Colors.black
+                                    : Colors.grey.shade300,
+                          ),
+                        ),
+                        child: Text(
+                          option,
+                          style: GoogleFonts.poppins(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w500,
+                            color:
+                                isSelected
+                                    ? Colors.white
+                                    : Colors.grey.shade700,
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
             ),
           ),
-
-          const SizedBox(width: 12),
-
-          // Amount field
-          Expanded(
-            flex: 1,
-            child: TextField(
-              onChanged: (value) => _updateAmount(index, value),
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
-              ],
-              style: GoogleFonts.poppins(fontSize: 12),
-              decoration: InputDecoration(
-                labelText: 'Amount',
-                hintText: '0.00',
-                prefixText: '£',
-                labelStyle: GoogleFonts.poppins(fontSize: 10),
-                hintStyle: GoogleFonts.poppins(fontSize: 10),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(4),
-                  borderSide: BorderSide(color: Colors.grey.shade400),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                isDense: true,
-              ),
-            ),
-          ),
-
-          const SizedBox(width: 8),
-
-          // Remove button
-          if (_paidOuts.length > 1)
-            IconButton(
-              onPressed: () => _removePaidOut(index),
-              icon: Icon(
-                Icons.delete_outline,
-                color: Colors.red.shade400,
-                size: 18,
-              ),
-              tooltip: 'Remove',
-              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            ),
         ],
       ),
     );

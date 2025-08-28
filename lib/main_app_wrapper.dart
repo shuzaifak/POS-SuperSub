@@ -882,8 +882,13 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
       textDirection: TextDirection.ltr,
       child: Consumer<OrderProvider>(
         builder: (context, orderProvider, child) {
-          // Check for cancelled orders whenever the provider updates
-          _checkForCancelledOrders(orderProvider.websiteOrders);
+          // Schedule checking for cancelled orders after the current build frame completes
+          // This prevents setState during build issues
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              _checkForCancelledOrders(orderProvider.websiteOrders);
+            }
+          });
 
           print(
             "MainAppWrapper: Building with ${_activeNewOrderNotifications.length} new and ${_activeCancelledOrderNotifications.length} cancelled notifications",
@@ -916,10 +921,15 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
 
               // Cancelled order notifications
               ..._activeCancelledOrderNotifications.map((order) {
-                return CancelledOrderNotificationWidget(
-                  key: ValueKey('cancelled_${order.orderId}'),
-                  order: order,
-                  onDismiss: () => _removeCancelledOrderNotification(order),
+                final double cardWidth = 450.0;
+                return Positioned(
+                  top: 50,
+                  left: (MediaQuery.of(context).size.width - cardWidth) / 2,
+                  child: CancelledOrderNotificationWidget(
+                    key: ValueKey('cancelled_${order.orderId}'),
+                    order: order,
+                    onDismiss: () => _removeCancelledOrderNotification(order),
+                  ),
                 );
               }).toList(),
             ],

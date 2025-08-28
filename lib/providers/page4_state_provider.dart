@@ -79,25 +79,25 @@ class OrderTypeState {
 class Page4StateProvider extends ChangeNotifier {
   // Separate state for each order type
   final Map<String, OrderTypeState> _orderTypeStates = {
-    'takeaway': OrderTypeState(),
+    'collection': OrderTypeState(),
     'delivery': OrderTypeState(),
     'dinein': OrderTypeState(),
-    'collection': OrderTypeState(),
     'takeout': OrderTypeState(),
   };
 
   // Current active order type
-  String _currentOrderType = 'takeaway';
+  String _currentOrderType = 'collection';
 
   String get currentOrderType => _currentOrderType;
 
-  String _takeawaySubType = 'takeaway';
+  String _takeawaySubType = 'collection';
 
   String get takeawaySubType => _takeawaySubType;
 
   // Get current state based on active order type
   OrderTypeState get _currentState {
-    return _orderTypeStates[_currentOrderType] ?? _orderTypeStates['takeaway']!;
+    return _orderTypeStates[_currentOrderType] ??
+        _orderTypeStates['collection']!;
   }
 
   // Getters that return current order type's state
@@ -272,8 +272,8 @@ class Page4StateProvider extends ChangeNotifier {
     for (var state in _orderTypeStates.values) {
       state.reset();
     }
-    _currentOrderType = 'takeaway';
-    _takeawaySubType = 'takeaway';
+    _currentOrderType = 'collection';
+    _takeawaySubType = 'collection';
     notifyListeners();
   }
 

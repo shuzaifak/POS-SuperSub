@@ -17,6 +17,12 @@ class ActiveOrdersProvider with ChangeNotifier {
 
   final Map<int, Timer> _scheduledUpdates = {};
 
+  // Polling for live updates
+  Timer? _pollingTimer;
+  static const Duration _pollingInterval = Duration(
+    seconds: 30,
+  ); // Poll every 30 seconds
+
   List<Order> get activeOrders => _activeOrders;
   bool get isLoading => _isLoading;
   String? get error => _error;
@@ -46,11 +52,14 @@ class ActiveOrdersProvider with ChangeNotifier {
       return false;
     }
 
+    // First check if the order is paid - if paid, don't show it
+    if (order.paidStatus) {
+      return false;
+    }
+
+    // For unpaid orders, show them unless they are completed/delivered/declined
     bool shouldShow =
         !['completed', 'delivered', 'declined', 'blue'].contains(status);
-    print(
-      '🏪 EPOS order ${order.orderId}: status="$status" -> shouldShow=$shouldShow',
-    );
 
     return shouldShow;
   }
@@ -139,11 +148,6 @@ class ActiveOrdersProvider with ChangeNotifier {
       final allOrders = await OrderApiService.fetchTodayOrders();
 
       print('📊 Total orders fetched: ${allOrders.length}');
-      for (var order in allOrders) {
-        print(
-          '📋 Order ${order.orderId}: source=${order.orderSource}, status=${order.status}, type=${order.orderType}',
-        );
-      }
 
       _activeOrders = _filterActiveOrders(allOrders);
       _activeOrders.sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -169,6 +173,7 @@ class ActiveOrdersProvider with ChangeNotifier {
       notifyListeners();
 
       _listenToStreams();
+      _startPolling();
     } catch (e) {
       _error = 'Failed to load active orders: $e';
       _isLoading = false;
@@ -321,9 +326,15 @@ class ActiveOrdersProvider with ChangeNotifier {
     if (_activeOrders.isEmpty) {
       print('🎨 No active orders - setting all to default green');
       _orderCountsProvider.updateAllCountsAndColors(
-        {'takeaway': 0, 'takeout': 0, 'dinein': 0, 'delivery': 0, 'website': 0},
         {
-          'takeaway': const Color(0xFF8cdd69),
+          'collection': 0,
+          'takeout': 0,
+          'dinein': 0,
+          'delivery': 0,
+          'website': 0,
+        },
+        {
+          'collection': const Color(0xFF8cdd69),
           'takeout': const Color(0xFF8cdd69),
           'dinein': const Color(0xFF8cdd69),
           'delivery': const Color(0xFF8cdd69),
@@ -335,7 +346,7 @@ class ActiveOrdersProvider with ChangeNotifier {
     }
 
     Map<String, int> currentTypeCounts = {
-      'takeaway': 0,
+      'collection': 0,
       'takeout': 0,
       'dinein': 0,
       'delivery': 0,
@@ -343,7 +354,7 @@ class ActiveOrdersProvider with ChangeNotifier {
     };
 
     Map<String, List<int>> allPrioritiesForTypes = {
-      'takeaway': [],
+      'collection': [],
       'takeout': [],
       'dinein': [],
       'delivery': [],
@@ -351,7 +362,7 @@ class ActiveOrdersProvider with ChangeNotifier {
     };
 
     Map<String, Color> dominantColorsForTypes = {
-      'takeaway': const Color(0xFF8cdd69),
+      'collection': const Color(0xFF8cdd69),
       'takeout': const Color(0xFF8cdd69),
       'dinein': const Color(0xFF8cdd69),
       'delivery': const Color(0xFF8cdd69),
@@ -374,7 +385,7 @@ class ActiveOrdersProvider with ChangeNotifier {
         if (orderTypeLower == 'takeaway' ||
             orderTypeLower == 'pickup' ||
             orderTypeLower == 'collection') {
-          orderTypeKey = 'takeaway';
+          orderTypeKey = 'collection';
         } else if (orderTypeLower == 'takeout') {
           orderTypeKey = 'takeout';
         } else if (orderTypeLower == 'dinein') {
@@ -597,11 +608,86 @@ class ActiveOrdersProvider with ChangeNotifier {
     return _fetchAndListenToOrders();
   }
 
+  // Start polling for live updates
+  void _startPolling() {
+    _stopPolling(); // Stop any existing polling
+    print('🔄 Starting polling every ${_pollingInterval.inSeconds} seconds');
+
+    _pollingTimer = Timer.periodic(_pollingInterval, (timer) async {
+      try {
+        await _pollForUpdates();
+      } catch (e) {
+        print('❌ Polling error: $e');
+      }
+    });
+  }
+
+  // Stop polling
+  void _stopPolling() {
+    _pollingTimer?.cancel();
+    _pollingTimer = null;
+    print('⏹️ Stopped polling');
+  }
+
+  // Poll for updates without full refresh
+  Future<void> _pollForUpdates() async {
+    try {
+      final allOrders = await OrderApiService.fetchTodayOrders();
+      final filteredOrders = _filterActiveOrders(allOrders);
+
+      // Check if there are any changes
+      bool hasChanges = false;
+
+      if (filteredOrders.length != _activeOrders.length) {
+        hasChanges = true;
+      } else {
+        // Check if any orders changed
+        for (int i = 0; i < filteredOrders.length; i++) {
+          final newOrder = filteredOrders[i];
+          final existingOrder = _activeOrders.firstWhere(
+            (o) => o.orderId == newOrder.orderId,
+            orElse:
+                () => Order(
+                  orderId: -1,
+                  paymentType: '',
+                  transactionId: '',
+                  orderType: '',
+                  status: '',
+                  createdAt: DateTime.now(),
+                  changeDue: 0,
+                  orderSource: '',
+                  customerName: '',
+                  orderTotalPrice: 0,
+                  items: [],
+                ),
+          );
+
+          if (existingOrder.orderId == -1 ||
+              existingOrder.status != newOrder.status ||
+              existingOrder.paidStatus != newOrder.paidStatus) {
+            hasChanges = true;
+            break;
+          }
+        }
+      }
+
+      if (hasChanges) {
+        _activeOrders = filteredOrders;
+        _activeOrders.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        _calculateAndUpdateCounts();
+        notifyListeners();
+      }
+    } catch (e) {
+      print('❌ Polling update failed: $e');
+    }
+  }
+
   @override
   void dispose() {
     _newOrderSocketSubscription.cancel();
     _acceptedOrderStreamSubscription.cancel();
     _orderStatusChangedSubscription.cancel();
+    _stopPolling();
 
     for (var timer in _scheduledUpdates.values) {
       timer.cancel();

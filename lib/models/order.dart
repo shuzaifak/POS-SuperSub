@@ -59,7 +59,7 @@ class OrderItem {
     // Try multiple possible comment field names
     final comment =
         json['comment'] ??
-        json['item_comment'] ??  
+        json['item_comment'] ??
         json['order_extra_notes'] ??
         json['notes'] ??
         json['item_notes'] ??
@@ -142,6 +142,7 @@ class Order {
   final String? orderExtraNotes;
   final List<OrderItem> items;
   final int? driverId;
+  final bool paidStatus;
 
   Order({
     required this.orderId,
@@ -163,6 +164,7 @@ class Order {
     this.orderExtraNotes,
     required this.items,
     this.driverId,
+    this.paidStatus = false,
   });
 
   factory Order.fromJson(Map<String, dynamic> json) {
@@ -225,13 +227,17 @@ class Order {
       county: json['county'],
       postalCode: json['postal_code'],
       orderTotalPrice: totalPrice,
-      orderExtraNotes: json['order_extra_notes'] ?? json['extra_notes'] ?? json['notes'],
+      orderExtraNotes:
+          json['order_extra_notes'] ?? json['extra_notes'] ?? json['notes'],
       items:
           (json['items'] as List?)
               ?.map((itemJson) => OrderItem.fromJson(itemJson))
               .toList() ??
           [],
       driverId: json['driver_id'] as int?,
+      paidStatus:
+          json['paid_status'] as bool? ??
+          false, // Default to unpaid if not specified, so orders show in active list
     );
   }
 
@@ -267,6 +273,9 @@ class Order {
     String? orderExtraNotes,
     List<OrderItem>? items,
     int? driverId,
+    bool? paidStatus,
+    double? cardAmount,
+    double? cashAmount,
   }) {
     return Order(
       orderId: orderId ?? this.orderId,
@@ -288,6 +297,7 @@ class Order {
       orderExtraNotes: orderExtraNotes ?? this.orderExtraNotes,
       items: items ?? this.items,
       driverId: driverId ?? this.driverId,
+      paidStatus: paidStatus ?? this.paidStatus,
     );
   }
 

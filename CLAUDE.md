@@ -20,6 +20,10 @@ This is a Flutter-based EPOS (Electronic Point of Sale) system designed for rest
 - `dart run build_runner build` - Generate Hive adapters
 - `dart run build_runner build --delete-conflicting-outputs` - Regenerate adapters
 
+### Environment Requirements
+- **Flutter SDK**: ^3.7.2
+- **Dart**: Compatible with Flutter 3.7.2+
+
 ### Additional Services
 - **CartPersistenceService** (`lib/services/cart_persistence_service.dart`) - Cart state persistence across sessions
 - **CustomPopupService** (`lib/services/custom_popup_service.dart`) - Custom modal and popup management
@@ -114,12 +118,14 @@ Brand configuration is handled in `lib/config/brand_info.dart`:
 
 ### Key Dependencies
 - **Provider** (^6.1.5) - State management
-- **Hive** (^2.2.3) + hive_flutter - Local database
+- **Hive** (^2.2.3) + hive_flutter (^1.1.0) - Local database
 - **socket_io_client** (^3.1.2) - Real-time WebSocket communication
 - **print_bluetooth_thermal** (^1.1.0) - Bluetooth receipt printing
 - **connectivity_plus** (^6.1.5) - Network connectivity monitoring
 - **esc_pos_utils_plus** (^2.0.4) - Receipt formatting
 - **fl_chart** (^1.0.0) - Sales reporting charts
+- **http** (^1.4.0) - HTTP client for API requests
+- **flutter_lints** (^5.0.0) - Static analysis and linting
 
 ## Important Files to Understand
 - `lib/main.dart` - App initialization and critical provider setup with dependency chain
@@ -130,3 +136,29 @@ Brand configuration is handled in `lib/config/brand_info.dart`:
 - `lib/models/offline_order.dart` - Hive models requiring code generation
 - `lib/services/api_service.dart` - Backend communication with CORS proxy setup
 - `pubspec.yaml` - Dependencies and project configuration
+
+## Development Guidelines
+
+### Code Generation Workflow
+When modifying Hive models:
+1. Make changes to model files (e.g., `lib/models/offline_order.dart`)
+2. Run `dart run build_runner build --delete-conflicting-outputs`
+3. Verify generated `.g.dart` files are updated
+4. Test offline functionality after changes
+
+### Provider Modification Guidelines
+**CRITICAL**: When modifying providers, maintain the exact dependency chain order in `main.dart`:
+1. OrderCountsProvider (base, no dependencies)
+2. ActiveOrdersProvider (depends on OrderCountsProvider)
+3. EposOrdersProvider (depends on ActiveOrdersProvider)
+4. All other providers can depend on these three
+
+Breaking this chain will cause provider recreation and state loss.
+
+### Brand Switching
+To switch brands, modify `_currentBrand` in `lib/config/brand_info.dart`. Available options:
+- 'TVP' (default)
+- 'Dallas' 
+- 'SuperSub'
+
+All API calls automatically include brand headers via `BrandInfo.getDefaultHeaders()`.

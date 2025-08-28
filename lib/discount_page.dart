@@ -40,7 +40,7 @@ class _DiscountPageState extends State<DiscountPage> {
       TextEditingController();
 
   // Add these state variables for service selection
-  String _actualOrderType = 'takeaway';
+  String _actualOrderType = 'collection';
   bool _hasProcessedFirstStep = false;
   // Removed _cartItems, _customerDetails, _showPayment, _selectedBottomNavItem as they are not used in this widget.
 

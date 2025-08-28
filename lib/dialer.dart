@@ -43,7 +43,7 @@ class _DialerPageState extends State<DialerPage> {
   String _displayValue = '0';
 
   // State variables for service selection (kept from original code)
-  String _actualOrderType = 'takeaway';
+  String _actualOrderType = 'collection';
   bool _hasProcessedFirstStep = false;
 
   // New variable to hold the entered payment amount.
@@ -75,7 +75,7 @@ class _DialerPageState extends State<DialerPage> {
         onTap: () {
           setState(() {
             if (type.toLowerCase() == 'takeaway') {
-              _actualOrderType = 'takeaway';
+              _actualOrderType = 'collection';
             } else {
               _actualOrderType = type;
             }

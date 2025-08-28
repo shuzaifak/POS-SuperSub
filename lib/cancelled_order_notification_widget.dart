@@ -2,8 +2,9 @@
 
 import 'package:flutter/material.dart';
 import 'package:epos/models/order.dart';
+import 'package:epos/services/notification_audio_service.dart';
 
-class CancelledOrderNotificationWidget extends StatelessWidget {
+class CancelledOrderNotificationWidget extends StatefulWidget {
   final Order order;
   final VoidCallback onDismiss;
 
@@ -12,6 +13,22 @@ class CancelledOrderNotificationWidget extends StatelessWidget {
     required this.order,
     required this.onDismiss,
   }) : super(key: key);
+
+  @override
+  State<CancelledOrderNotificationWidget> createState() =>
+      _CancelledOrderNotificationWidgetState();
+}
+
+class _CancelledOrderNotificationWidgetState
+    extends State<CancelledOrderNotificationWidget> {
+  final NotificationAudioService _audioService = NotificationAudioService();
+
+  @override
+  void initState() {
+    super.initState();
+    // Play notification sound when cancel order popup appears
+    _audioService.playCancelOrderSound();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -42,7 +59,10 @@ class CancelledOrderNotificationWidget extends StatelessWidget {
           children: [
             // Header with cross icon
             Container(
-              padding: EdgeInsets.symmetric(vertical: 10.0, horizontal: cardPadding),
+              padding: EdgeInsets.symmetric(
+                vertical: 10.0,
+                horizontal: cardPadding,
+              ),
               decoration: const BoxDecoration(
                 color: Colors.red,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(15)),
@@ -53,7 +73,7 @@ class CancelledOrderNotificationWidget extends StatelessWidget {
                   const SizedBox(width: 40),
                   Expanded(
                     child: Text(
-                      'Order ${order.orderId} Cancelled',
+                      'Order ${widget.order.orderId} Cancelled',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 24,
@@ -64,7 +84,7 @@ class CancelledOrderNotificationWidget extends StatelessWidget {
                     ),
                   ),
                   GestureDetector(
-                    onTap: onDismiss,
+                    onTap: widget.onDismiss,
                     child: Container(
                       width: 40,
                       height: 40,
@@ -127,50 +147,56 @@ class CancelledOrderNotificationWidget extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            ...order.items.map((item) => Padding(
-                              padding: const EdgeInsets.only(bottom: 8.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          item.itemName,
+                            ...widget.order.items
+                                .map(
+                                  (item) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 8.0),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                item.itemName,
+                                                style: const TextStyle(
+                                                  fontSize: 18,
+                                                  fontWeight: FontWeight.normal,
+                                                  color: Colors.black87,
+                                                  fontFamily: 'Poppins',
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                            Text(
+                                              '£${item.totalPrice.toStringAsFixed(2)}',
+                                              style: const TextStyle(
+                                                fontSize: 18,
+                                                fontWeight: FontWeight.normal,
+                                                color: Colors.black87,
+                                                fontFamily: 'Poppins',
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        Text(
+                                          'Qty: ${item.quantity}',
                                           style: const TextStyle(
-                                            fontSize: 18,
+                                            fontSize: 16,
                                             fontWeight: FontWeight.normal,
-                                            color: Colors.black87,
+                                            color: Colors.black54,
                                             fontFamily: 'Poppins',
                                           ),
-                                          overflow: TextOverflow.ellipsis,
                                         ),
-                                      ),
-                                      Text(
-                                        '£${item.totalPrice.toStringAsFixed(2)}',
-                                        style: const TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.normal,
-                                          color: Colors.black87,
-                                          fontFamily: 'Poppins',
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  Text(
-                                    'Qty: ${item.quantity}',
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.normal,
-                                      color: Colors.black54,
-                                      fontFamily: 'Poppins',
+                                      ],
                                     ),
                                   ),
-                                ],
-                              ),
-                            )).toList(),
-                            if (order.items.isEmpty)
+                                )
+                                .toList(),
+                            if (widget.order.items.isEmpty)
                               const Text(
                                 'No Items',
                                 style: TextStyle(
@@ -187,15 +213,15 @@ class CancelledOrderNotificationWidget extends StatelessWidget {
                     const SizedBox(height: 15),
 
                     // Divider
-                    const Divider(
-                      color: Colors.red,
-                      thickness: 1,
-                    ),
+                    const Divider(color: Colors.red, thickness: 1),
                     const SizedBox(height: 15),
 
                     // Total section
                     Container(
-                      padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 10.0),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 8.0,
+                        horizontal: 10.0,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.red.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(8),
@@ -213,7 +239,7 @@ class CancelledOrderNotificationWidget extends StatelessWidget {
                             ),
                           ),
                           Text(
-                            '£${order.orderTotalPrice.toStringAsFixed(2)}',
+                            '£${widget.order.orderTotalPrice.toStringAsFixed(2)}',
                             style: const TextStyle(
                               fontSize: 22,
                               fontWeight: FontWeight.bold,
@@ -228,16 +254,17 @@ class CancelledOrderNotificationWidget extends StatelessWidget {
 
                     // Customer info
                     Text(
-                      'Customer: ${order.customerName}',
+                      'Customer: ${widget.order.customerName}',
                       style: const TextStyle(
                         fontSize: 16,
                         color: Colors.black,
                         fontFamily: 'Poppins',
                       ),
                     ),
-                    if (order.phoneNumber != null && order.phoneNumber!.isNotEmpty)
+                    if (widget.order.phoneNumber != null &&
+                        widget.order.phoneNumber!.isNotEmpty)
                       Text(
-                        'Phone: ${order.phoneNumber}',
+                        'Phone: ${widget.order.phoneNumber}',
                         style: const TextStyle(
                           fontSize: 16,
                           color: Colors.black,
@@ -245,7 +272,7 @@ class CancelledOrderNotificationWidget extends StatelessWidget {
                         ),
                       ),
                     Text(
-                      'Type: ${order.orderType}',
+                      'Type: ${widget.order.orderType}',
                       style: const TextStyle(
                         fontSize: 16,
                         color: Colors.black,
@@ -258,7 +285,7 @@ class CancelledOrderNotificationWidget extends StatelessWidget {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: onDismiss,
+                        onPressed: widget.onDismiss,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.red,
                           padding: const EdgeInsets.symmetric(vertical: 16),

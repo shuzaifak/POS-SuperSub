@@ -39,6 +39,15 @@ class PaymentWidget extends StatefulWidget {
 class _PaymentWidgetState extends State<PaymentWidget> {
   final TextEditingController _amountPaidController = TextEditingController();
   final FocusNode _amountPaidFocusNode = FocusNode();
+
+  // Split payment controllers for Card & Cash
+  final TextEditingController _cardAmountController = TextEditingController();
+  final TextEditingController _cashAmountController = TextEditingController();
+  final FocusNode _cardAmountFocusNode = FocusNode();
+  final FocusNode _cashAmountFocusNode = FocusNode();
+  double _cardAmount = 0.0;
+  double _cashAmount = 0.0;
+
   bool _isPrinterConnected = false;
   bool _isCheckingPrinter = false;
   bool _isCustomAmountMode = false;
@@ -57,6 +66,9 @@ class _PaymentWidgetState extends State<PaymentWidget> {
   bool _canOpenDrawer = false;
   bool _isDrawerOpening = false;
 
+  // Paid status state
+  bool _isPaid = true; // Default to paid
+
   @override
   void initState() {
     super.initState();
@@ -67,12 +79,19 @@ class _PaymentWidgetState extends State<PaymentWidget> {
     if (widget.paymentType.toLowerCase() == 'card') {
       _isCustomAmountMode = false;
       _amountPaidController.text = _discountedTotal.toStringAsFixed(2);
+    } else if (widget.paymentType.toLowerCase() == 'card & cash') {
+      _isCustomAmountMode = false;
+      _amountPaidController.clear();
+      _cardAmountController.clear();
+      _cashAmountController.clear();
     } else {
       _isCustomAmountMode = false;
       _amountPaidController.clear();
     }
 
     _amountPaidController.addListener(_onAmountPaidChanged);
+    _cardAmountController.addListener(_onSplitPaymentChanged);
+    _cashAmountController.addListener(_onSplitPaymentChanged);
     _calculatePresetAmounts();
 
     // Start printer status checking when widget initializes
@@ -116,6 +135,15 @@ class _PaymentWidgetState extends State<PaymentWidget> {
     _amountPaidController.removeListener(_onAmountPaidChanged);
     _amountPaidController.dispose();
     _amountPaidFocusNode.dispose();
+
+    // Dispose split payment controllers
+    _cardAmountController.removeListener(_onSplitPaymentChanged);
+    _cashAmountController.removeListener(_onSplitPaymentChanged);
+    _cardAmountController.dispose();
+    _cashAmountController.dispose();
+    _cardAmountFocusNode.dispose();
+    _cashAmountFocusNode.dispose();
+
     _changeOverlayEntry?.remove();
     super.dispose();
   }
@@ -129,6 +157,19 @@ class _PaymentWidgetState extends State<PaymentWidget> {
         });
         _calculateChange();
       }
+    }
+  }
+
+  void _onSplitPaymentChanged() {
+    if (widget.paymentType.toLowerCase() == 'card & cash') {
+      double cardAmount = double.tryParse(_cardAmountController.text) ?? 0.0;
+      double cashAmount = double.tryParse(_cashAmountController.text) ?? 0.0;
+      setState(() {
+        _cardAmount = cardAmount;
+        _cashAmount = cashAmount;
+        _selectedAmount = cardAmount + cashAmount;
+      });
+      _calculateChange();
     }
   }
 
@@ -146,11 +187,13 @@ class _PaymentWidgetState extends State<PaymentWidget> {
 
       if (nextRoundTen > exactAmount &&
           !amounts.contains(nextRoundTen) &&
-          amounts.length < 3) {
+          amounts.length < 4) {
+        // Changed from 3 to 4
         amounts.add(nextRoundTen);
       }
 
-      while (amounts.length < 3) {
+      while (amounts.length < 4) {
+        // Changed from 3 to 4
         double lastAmount = amounts.last;
         double nextAmount;
 
@@ -169,7 +212,7 @@ class _PaymentWidgetState extends State<PaymentWidget> {
           break;
         }
       }
-      _presetAmounts = amounts.take(3).toList();
+      _presetAmounts = amounts.take(4).toList();
     } else {
       _presetAmounts = [];
     }
@@ -403,6 +446,21 @@ class _PaymentWidgetState extends State<PaymentWidget> {
 
               const SizedBox(height: 9),
 
+              // Paid/Unpaid Radio buttons
+              Padding(
+                padding: const EdgeInsets.only(bottom: 7.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _buildPaidStatusRadioOption(true, 'Paid'),
+                    const SizedBox(width: 20),
+                    _buildPaidStatusRadioOption(false, 'Unpaid'),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 9),
+
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 55.0),
                 child: Divider(
@@ -566,6 +624,191 @@ class _PaymentWidgetState extends State<PaymentWidget> {
                                 ),
                               ],
                             ),
+                          )
+                        else if (widget.paymentType.toLowerCase() ==
+                            'card & cash')
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16.0,
+                            ),
+                            child: Column(
+                              children: [
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text(
+                                      'Card Amount',
+                                      style: TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                        fontFamily: 'Poppins',
+                                      ),
+                                    ),
+                                    SizedBox(
+                                      width: 120,
+                                      child: TextFormField(
+                                        controller: _cardAmountController,
+                                        focusNode: _cardAmountFocusNode,
+                                        textAlign: TextAlign.right,
+                                        style: const TextStyle(
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.bold,
+                                          fontFamily: 'Poppins',
+                                        ),
+                                        decoration: InputDecoration(
+                                          contentPadding:
+                                              const EdgeInsets.symmetric(
+                                                vertical: 8,
+                                                horizontal: 12,
+                                              ),
+                                          isDense: true,
+                                          prefixText: '£',
+                                          border: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            borderSide: const BorderSide(
+                                              color: Colors.grey,
+                                            ),
+                                          ),
+                                          focusedBorder: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            borderSide: const BorderSide(
+                                              color: Colors.blue,
+                                              width: 2,
+                                            ),
+                                          ),
+                                          enabledBorder: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            borderSide: const BorderSide(
+                                              color: Colors.grey,
+                                            ),
+                                          ),
+                                          filled: true,
+                                          fillColor: Colors.white,
+                                        ),
+                                        keyboardType:
+                                            const TextInputType.numberWithOptions(
+                                              decimal: true,
+                                            ),
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter.allow(
+                                            RegExp(r'^\d*\.?\d{0,2}$'),
+                                          ),
+                                        ],
+                                        readOnly: false,
+                                        onTap: () {},
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text(
+                                      'Cash Amount',
+                                      style: TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                        fontFamily: 'Poppins',
+                                      ),
+                                    ),
+                                    SizedBox(
+                                      width: 120,
+                                      child: TextFormField(
+                                        controller: _cashAmountController,
+                                        focusNode: _cashAmountFocusNode,
+                                        textAlign: TextAlign.right,
+                                        style: const TextStyle(
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.bold,
+                                          fontFamily: 'Poppins',
+                                        ),
+                                        decoration: InputDecoration(
+                                          contentPadding:
+                                              const EdgeInsets.symmetric(
+                                                vertical: 8,
+                                                horizontal: 12,
+                                              ),
+                                          isDense: true,
+                                          prefixText: '£',
+                                          border: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            borderSide: const BorderSide(
+                                              color: Colors.grey,
+                                            ),
+                                          ),
+                                          focusedBorder: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            borderSide: const BorderSide(
+                                              color: Colors.blue,
+                                              width: 2,
+                                            ),
+                                          ),
+                                          enabledBorder: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            borderSide: const BorderSide(
+                                              color: Colors.grey,
+                                            ),
+                                          ),
+                                          filled: true,
+                                          fillColor: Colors.white,
+                                        ),
+                                        keyboardType:
+                                            const TextInputType.numberWithOptions(
+                                              decimal: true,
+                                            ),
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter.allow(
+                                            RegExp(r'^\d*\.?\d{0,2}$'),
+                                          ),
+                                        ],
+                                        readOnly: false,
+                                        onTap: () {},
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text(
+                                      'Total Paid',
+                                      style: TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                        fontFamily: 'Poppins',
+                                        color: Colors.blue,
+                                      ),
+                                    ),
+                                    Text(
+                                      '£${(_cardAmount + _cashAmount).toStringAsFixed(2)}',
+                                      style: const TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                        fontFamily: 'Poppins',
+                                        color: Colors.blue,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
                           ),
                       ],
                     ),
@@ -642,9 +885,35 @@ class _PaymentWidgetState extends State<PaymentWidget> {
                                               double.parse(
                                                     _amountPaidController.text,
                                                   ) >
-                                                  0))
+                                                  0) ||
+                                          (widget.paymentType.toLowerCase() ==
+                                                  'card & cash' &&
+                                              _cardAmount > 0 &&
+                                              _cashAmount > 0 &&
+                                              (_cardAmount + _cashAmount) > 0))
                                       ? () async {
-                                        if (_selectedAmount <
+                                        // Special validation for Card & Cash payments
+                                        if (widget.paymentType.toLowerCase() ==
+                                            'card & cash') {
+                                          if (_cardAmount <= 0 ||
+                                              _cashAmount <= 0) {
+                                            CustomPopupService.show(
+                                              context,
+                                              'Please enter both card and cash amounts!',
+                                              type: PopupType.failure,
+                                            );
+                                            return;
+                                          }
+                                          if ((_cardAmount + _cashAmount) <
+                                              _discountedTotal) {
+                                            CustomPopupService.show(
+                                              context,
+                                              'Total amount paid (£${(_cardAmount + _cashAmount).toStringAsFixed(2)}) cannot be less than order total (£${_discountedTotal.toStringAsFixed(2)})!',
+                                              type: PopupType.failure,
+                                            );
+                                            return;
+                                          }
+                                        } else if (_selectedAmount <
                                             _discountedTotal) {
                                           CustomPopupService.show(
                                             context,
@@ -663,15 +932,36 @@ class _PaymentWidgetState extends State<PaymentWidget> {
                                           discountPercentage:
                                               _currentDiscountPercentageForPaymentDetails,
                                           totalCharge: _discountedTotal,
+                                          paidStatus: _isPaid,
                                         );
+
+                                        // Debug payment details
+                                        print("🔍 PAYMENT DEBUG:");
+                                        print(
+                                          "Payment Type: ${paymentDetails.paymentType}",
+                                        );
+                                        print(
+                                          "Total Amount: £${paymentDetails.amountReceived}",
+                                        );
+                                        print(
+                                          "Change Due: £${paymentDetails.changeDue}",
+                                        );
+
                                         widget.onPaymentConfirmed(
                                           paymentDetails,
                                         );
                                       }
                                       : () {
+                                        String errorMessage =
+                                            'Please enter and choose an amount to pay.';
+                                        if (widget.paymentType.toLowerCase() ==
+                                            'card & cash') {
+                                          errorMessage =
+                                              'Please enter both card and cash amounts.';
+                                        }
                                         CustomPopupService.show(
                                           context,
-                                          'Please enter and choose an amount to pay.',
+                                          errorMessage,
                                           type: PopupType.failure,
                                         );
                                       },
@@ -711,12 +1001,16 @@ class _PaymentWidgetState extends State<PaymentWidget> {
                           ),
                         ),
 
-                        // Cash drawer button (only for cash payments)
-                        if (widget.paymentType.toLowerCase() == 'cash' &&
+                        // Cash drawer button (only for cash and mixed payments)
+                        if ((widget.paymentType.toLowerCase() == 'cash' ||
+                                widget.paymentType.toLowerCase() ==
+                                    'card & cash') &&
                             _canOpenDrawer)
                           const SizedBox(width: 8),
 
-                        if (widget.paymentType.toLowerCase() == 'cash' &&
+                        if ((widget.paymentType.toLowerCase() == 'cash' ||
+                                widget.paymentType.toLowerCase() ==
+                                    'card & cash') &&
                             _canOpenDrawer)
                           GestureDetector(
                             onTap: _isDrawerOpening ? null : _openCashDrawer,
@@ -802,6 +1096,88 @@ class _PaymentWidgetState extends State<PaymentWidget> {
             ),
           ),
       ],
+    );
+  }
+
+  // Radio button for paid/unpaid status
+  Widget _buildPaidStatusRadioOption(bool paidValue, String label) {
+    bool isSelected = _isPaid == paidValue;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            _isPaid = paidValue;
+          });
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? const Color(0xFFF3D9FF) : Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color:
+                  isSelected ? const Color(0xFFCB6CE6) : Colors.grey.shade300,
+              width: 2,
+            ),
+            boxShadow:
+                isSelected
+                    ? [
+                      BoxShadow(
+                        color: const Color(0xFFCB6CE6).withOpacity(0.2),
+                        spreadRadius: 1,
+                        blurRadius: 3,
+                        offset: const Offset(0, 2),
+                      ),
+                    ]
+                    : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color:
+                        isSelected
+                            ? const Color(0xFFCB6CE6)
+                            : Colors.grey.shade400,
+                    width: 2,
+                  ),
+                  color: Colors.white,
+                ),
+                child:
+                    isSelected
+                        ? Center(
+                          child: Container(
+                            width: 10,
+                            height: 10,
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Color(0xFFCB6CE6),
+                            ),
+                          ),
+                        )
+                        : null,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontFamily: 'Poppins',
+                  color:
+                      isSelected ? const Color(0xFFCB6CE6) : Colors.grey[700],
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
