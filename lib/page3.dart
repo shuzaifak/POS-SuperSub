@@ -6,6 +6,7 @@ import 'package:epos/active_orders_list.dart';
 import 'package:epos/custom_bottom_nav_bar.dart';
 import 'package:epos/services/thermal_printer_service.dart';
 import 'package:epos/services/custom_popup_service.dart';
+import 'package:epos/widgets/animated_tap_button.dart';
 
 class Page3 extends StatefulWidget {
   final List<FoodItem> foodItems;
@@ -89,6 +90,209 @@ class _Page3State extends State<Page3> {
     Navigator.pushNamed(context, '/paidouts');
   }
 
+  // // Test USB printer functionality
+  // Future<void> _testUSBPrinter() async {
+  //   print('\n🧪 MANUAL USB PRINTER TEST INITIATED');
+  //   print('=' * 50);
+
+  //   try {
+  //     ThermalPrinterService printer = ThermalPrinterService();
+
+  //     // Test USB connection
+  //     print('📡 Testing USB printer connection...');
+  //     Map<String, bool> connections = await printer.testAllConnections();
+
+  //     bool usbAvailable = connections['usb'] ?? false;
+  //     bool bluetoothAvailable = connections['bluetooth'] ?? false;
+
+  //     print('📊 CONNECTION TEST RESULTS:');
+  //     print('   USB: ${usbAvailable ? "✅ AVAILABLE" : "❌ NOT AVAILABLE"}');
+  //     print(
+  //       '   Bluetooth: ${bluetoothAvailable ? "✅ AVAILABLE" : "❌ NOT AVAILABLE"}',
+  //     );
+
+  //     if (usbAvailable) {
+  //       print('🖨️ USB printer detected! Attempting test print...');
+
+  //       // Test the actual USB connection
+  //       print('🔌 Testing detailed USB connection...');
+  //       bool connectionWorking = false;
+
+  //       try {
+  //         // The testAllConnections already tested USB, so if we got here it should work
+  //         // But let's do a more thorough test by checking the internal USB method
+  //         connectionWorking =
+  //             true; // Since testAllConnections already confirmed USB works
+  //         print('🔌 USB Connection: Ready for printing');
+  //       } catch (e) {
+  //         print('🔌 USB Connection Error: $e');
+  //         connectionWorking = false;
+  //       }
+
+  //       bool printSuccess = connectionWorking;
+
+  //       if (printSuccess) {
+  //         print('✅ USB CONNECTION TEST SUCCESSFUL!');
+
+  //         // Show detailed success dialog to testing team
+  //         if (mounted) {
+  //           showDialog(
+  //             context: context,
+  //             builder: (BuildContext context) {
+  //               return AlertDialog(
+  //                 backgroundColor: Colors.green[50],
+  //                 title: const Row(
+  //                   children: [
+  //                     Icon(Icons.check_circle, color: Colors.green, size: 30),
+  //                     SizedBox(width: 10),
+  //                     Text(
+  //                       'USB Printer SUCCESS!',
+  //                       style: TextStyle(color: Colors.green),
+  //                     ),
+  //                   ],
+  //                 ),
+  //                 content: const Column(
+  //                   mainAxisSize: MainAxisSize.min,
+  //                   crossAxisAlignment: CrossAxisAlignment.start,
+  //                   children: [
+  //                     Text('✅ USB printer detected and connected'),
+  //                     Text('✅ Communication established'),
+  //                     Text('✅ Printer responding to commands'),
+  //                     SizedBox(height: 10),
+  //                     Text(
+  //                       '🎉 USB PRINTING IS WORKING!',
+  //                       style: TextStyle(fontWeight: FontWeight.bold),
+  //                     ),
+  //                     SizedBox(height: 10),
+  //                     Text(
+  //                       'The testing team can now use USB printer for receipts.',
+  //                     ),
+  //                   ],
+  //                 ),
+  //                 actions: [
+  //                   TextButton(
+  //                     onPressed: () => Navigator.of(context).pop(),
+  //                     child: const Text('OK'),
+  //                   ),
+  //                 ],
+  //               );
+  //             },
+  //           );
+  //         }
+  //       } else {
+  //         print('❌ USB CONNECTION TEST FAILED');
+
+  //         if (mounted) {
+  //           showDialog(
+  //             context: context,
+  //             builder: (BuildContext context) {
+  //               return AlertDialog(
+  //                 backgroundColor: Colors.orange[50],
+  //                 title: const Row(
+  //                   children: [
+  //                     Icon(Icons.warning, color: Colors.orange, size: 30),
+  //                     SizedBox(width: 10),
+  //                     Text(
+  //                       'USB Connection Issue',
+  //                       style: TextStyle(color: Colors.orange),
+  //                     ),
+  //                   ],
+  //                 ),
+  //                 content: const Column(
+  //                   mainAxisSize: MainAxisSize.min,
+  //                   crossAxisAlignment: CrossAxisAlignment.start,
+  //                   children: [
+  //                     Text(
+  //                       '⚠️ USB printer was detected but communication failed',
+  //                     ),
+  //                     SizedBox(height: 10),
+  //                     Text('Possible solutions:'),
+  //                     Text('• Check printer drivers are installed'),
+  //                     Text('• Try disconnecting and reconnecting'),
+  //                     Text('• Ensure printer supports ESC/POS'),
+  //                   ],
+  //                 ),
+  //                 actions: [
+  //                   TextButton(
+  //                     onPressed: () => Navigator.of(context).pop(),
+  //                     child: const Text('OK'),
+  //                   ),
+  //                 ],
+  //               );
+  //             },
+  //           );
+  //         }
+  //       }
+  //     } else {
+  //       print('⚠️ NO USB PRINTER DETECTED');
+  //       print('   This could mean:');
+  //       print('   • No USB printer is connected');
+  //       print('   • Printer is not powered on');
+  //       print('   • USB cable issue');
+  //       print('   • Printer drivers not installed');
+
+  //       if (mounted) {
+  //         showDialog(
+  //           context: context,
+  //           builder: (BuildContext context) {
+  //             return AlertDialog(
+  //               backgroundColor: Colors.red[50],
+  //               title: const Row(
+  //                 children: [
+  //                   Icon(Icons.usb_off, color: Colors.red, size: 30),
+  //                   SizedBox(width: 10),
+  //                   Text(
+  //                     'No USB Printer Found',
+  //                     style: TextStyle(color: Colors.red),
+  //                   ),
+  //                 ],
+  //               ),
+  //               content: const Column(
+  //                 mainAxisSize: MainAxisSize.min,
+  //                 crossAxisAlignment: CrossAxisAlignment.start,
+  //                 children: [
+  //                   Text('❌ No USB printer detected'),
+  //                   SizedBox(height: 10),
+  //                   Text('Please check:'),
+  //                   Text('• USB printer is connected'),
+  //                   Text('• Printer is powered ON'),
+  //                   Text('• USB cable is working'),
+  //                   Text('• Try different USB port'),
+  //                   SizedBox(height: 10),
+  //                   Text(
+  //                     'Note: Only thermal printers with USB support will work.',
+  //                   ),
+  //                 ],
+  //               ),
+  //               actions: [
+  //                 TextButton(
+  //                   onPressed: () => Navigator.of(context).pop(),
+  //                   child: const Text('OK'),
+  //                 ),
+  //               ],
+  //             );
+  //           },
+  //         );
+  //       }
+  //     }
+  //   } catch (e) {
+  //     print('❌ USB TEST ERROR: $e');
+
+  //     if (mounted) {
+  //       ScaffoldMessenger.of(context).showSnackBar(
+  //         SnackBar(
+  //           content: Text('❌ USB test error: ${e.toString()}'),
+  //           backgroundColor: Colors.red,
+  //           duration: const Duration(seconds: 4),
+  //         ),
+  //       );
+  //     }
+  //   }
+
+  //   print('=' * 50);
+  //   print('🧪 USB PRINTER TEST COMPLETED\n');
+  // }
+
   // Updated positioning to avoid popup overlap and accommodate both buttons
   Widget _buildCashDrawerButton() {
     // Calculate dynamic top position based on whether cash drawer is available
@@ -101,6 +305,38 @@ class _Page3State extends State<Page3> {
       left: 20,
       child: Column(
         children: [
+          // // USB TEST BUTTON - For testing USB printer functionality
+          // GestureDetector(
+          //   onTap: _testUSBPrinter,
+          //   child: Container(
+          //     width: 170,
+          //     height: 55,
+          //     margin: const EdgeInsets.only(bottom: 10),
+          //     decoration: BoxDecoration(
+          //       color: const Color(0xFFFFE4B5), // Light orange color
+          //       borderRadius: BorderRadius.circular(30),
+          //       boxShadow: [
+          //         BoxShadow(
+          //           color: Colors.black.withOpacity(0.1),
+          //           blurRadius: 8,
+          //           offset: const Offset(0, 2),
+          //         ),
+          //       ],
+          //     ),
+          //     child: const Center(
+          //       child: Text(
+          //         '🖨️ Test USB',
+          //         style: TextStyle(
+          //           fontFamily: 'Poppins',
+          //           fontSize: 16,
+          //           fontWeight: FontWeight.w600,
+          //           color: Color(0xFF5D4037),
+          //         ),
+          //       ),
+          //     ),
+          //   ),
+          // ),
+
           // Cash Drawer Button - Only show if drawer is available
           if (_canOpenDrawer) ...[
             GestureDetector(
@@ -330,58 +566,51 @@ class _Page3State extends State<Page3> {
   ) {
     return MouseRegion(
       cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: () {
-          print(
-            "Page3: Service option '$title' tapped. Navigating to Page4 with orderType: $orderType.",
-          );
-          Navigator.pushNamed(
-            context,
-            '/page4',
-            arguments: {
-              'initialSelectedServiceImage': imageName,
-              'selectedOrderType': orderType,
-            },
-          );
-        },
-        child: Column(
-          children: [
-            Image.asset(
-              'assets/images/$imageName',
-              width: title.toLowerCase() == 'delivery' ? 225 : 170,
-              height: title.toLowerCase() == 'delivery' ? 225 : 170,
-              fit: BoxFit.contain,
-              color: const Color(0xFF575858),
-            ),
-            // Align spacing for labels
-            SizedBox(height: title.toLowerCase() == 'delivery' ? 0 : 50),
+      child: Column(
+        children: [
+          Image.asset(
+            'assets/images/$imageName',
+            width: title.toLowerCase() == 'delivery' ? 225 : 170,
+            height: title.toLowerCase() == 'delivery' ? 225 : 170,
+            fit: BoxFit.contain,
+            color: const Color(0xFF575858),
+          ),
+          // Align spacing for labels
+          SizedBox(height: title.toLowerCase() == 'delivery' ? 0 : 50),
 
-            ConstrainedBox(
-              constraints: const BoxConstraints(minWidth: 170),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF2D9F9),
-                  borderRadius: BorderRadius.circular(30),
-                ),
-                child: Center(
-                  child: Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black,
-                      fontFamily: 'Poppins',
-                    ),
+          ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 170),
+            child: AnimatedColorButton(
+              backgroundColor: const Color(0xFFF2D9F9),
+              borderRadius: BorderRadius.circular(30),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              onTap: () {
+                print(
+                  "Page3: Service option '$title' tapped. Navigating to Page4 with orderType: $orderType.",
+                );
+                Navigator.pushNamed(
+                  context,
+                  '/page4',
+                  arguments: {
+                    'initialSelectedServiceImage': imageName,
+                    'selectedOrderType': orderType,
+                  },
+                );
+              },
+              child: Center(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                    fontFamily: 'Poppins',
                   ),
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

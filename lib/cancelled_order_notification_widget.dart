@@ -1,17 +1,18 @@
-// lib/cancelled_order_notification_widget.dart
-
 import 'package:flutter/material.dart';
 import 'package:epos/models/order.dart';
 import 'package:epos/services/notification_audio_service.dart';
+import 'package:epos/widgets/debounced_button.dart';
 
 class CancelledOrderNotificationWidget extends StatefulWidget {
   final Order order;
   final VoidCallback onDismiss;
+  final bool shouldPlaySound; // NEW: Control sound playing
 
   const CancelledOrderNotificationWidget({
     Key? key,
     required this.order,
     required this.onDismiss,
+    this.shouldPlaySound = true,
   }) : super(key: key);
 
   @override
@@ -22,12 +23,63 @@ class CancelledOrderNotificationWidget extends StatefulWidget {
 class _CancelledOrderNotificationWidgetState
     extends State<CancelledOrderNotificationWidget> {
   final NotificationAudioService _audioService = NotificationAudioService();
+  bool _isDismissed = false;
 
   @override
   void initState() {
     super.initState();
-    // Play notification sound when cancel order popup appears
-    _audioService.playCancelOrderSound();
+    if (widget.shouldPlaySound) {
+      // Delay sound to ensure widget is fully rendered
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted) {
+          _audioService.playCancelOrderSound();
+          print(
+            "CancelledOrderNotificationWidget: Playing sound for order ${widget.order.orderId}",
+          );
+        }
+      });
+    } else {
+      print(
+        "CancelledOrderNotificationWidget: Skipping sound for order ${widget.order.orderId}",
+      );
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant CancelledOrderNotificationWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Stop sound if shouldPlaySound changed from true to false
+    if (oldWidget.shouldPlaySound && !widget.shouldPlaySound) {
+      _audioService.stopSound();
+      print(
+        "CancelledOrderNotificationWidget: Stopping sound for order ${widget.order.orderId}",
+      );
+    }
+  }
+
+  void _handleDismiss() {
+    if (_isDismissed) return;
+
+    print(
+      "CancelledOrderNotificationWidget: Dismiss button clicked for order ${widget.order.orderId}",
+    );
+
+    // Stop the notification sound immediately
+    _audioService.stopSound();
+
+    setState(() {
+      _isDismissed = true;
+    });
+
+    // Dismiss immediately
+    widget.onDismiss();
+  }
+
+  @override
+  void dispose() {
+    // Stop sound when widget is disposed
+    _audioService.stopSound();
+    super.dispose();
   }
 
   @override
@@ -35,6 +87,10 @@ class _CancelledOrderNotificationWidgetState
     final double cardWidth = 450.0;
     final double cardHeight = 520.0;
     final double cardPadding = 16.0;
+
+    if (_isDismissed) {
+      return const SizedBox.shrink();
+    }
 
     return Material(
       color: Colors.transparent,
@@ -84,7 +140,7 @@ class _CancelledOrderNotificationWidgetState
                     ),
                   ),
                   GestureDetector(
-                    onTap: widget.onDismiss,
+                    onTap: _handleDismiss,
                     child: Container(
                       width: 40,
                       height: 40,
@@ -284,24 +340,14 @@ class _CancelledOrderNotificationWidgetState
                     // Close button
                     SizedBox(
                       width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: widget.onDismiss,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          elevation: 5,
-                        ),
-                        child: const Text(
-                          'CLOSE',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.normal,
-                            fontFamily: 'Poppins',
-                          ),
+                      height: 50.0,
+                      child: DebouncedButton(
+                        text: 'CLOSE',
+                        onPressed: _handleDismiss,
+                        backgroundColor: Colors.red,
+                        textColor: Colors.white,
+                        debounceDuration: const Duration(
+                          milliseconds: 800,
                         ),
                       ),
                     ),

@@ -17,19 +17,23 @@ extension HexColor on Color {
 }
 
 class PaymentWidget extends StatefulWidget {
-  final double subtotal; // This is the original, undiscounted subtotal
+  final double subtotal;
   final CustomerDetails? customerDetails;
   final String paymentType;
-  final Function(PaymentDetails) onPaymentConfirmed;
+  final Function(PaymentDetails)? onPaymentConfirmed;
   final VoidCallback? onBack;
+  final Function(String)? onPaymentTypeChanged;
+  final bool isProcessing;
 
   const PaymentWidget({
     super.key,
     required this.subtotal,
     this.customerDetails,
     required this.paymentType,
-    required this.onPaymentConfirmed,
+    this.onPaymentConfirmed,
     this.onBack,
+    this.onPaymentTypeChanged,
+    this.isProcessing = false,
   });
 
   @override
@@ -40,14 +44,6 @@ class _PaymentWidgetState extends State<PaymentWidget> {
   final TextEditingController _amountPaidController = TextEditingController();
   final FocusNode _amountPaidFocusNode = FocusNode();
 
-  // Split payment controllers for Card & Cash
-  final TextEditingController _cardAmountController = TextEditingController();
-  final TextEditingController _cashAmountController = TextEditingController();
-  final FocusNode _cardAmountFocusNode = FocusNode();
-  final FocusNode _cashAmountFocusNode = FocusNode();
-  double _cardAmount = 0.0;
-  double _cashAmount = 0.0;
-
   bool _isPrinterConnected = false;
   bool _isCheckingPrinter = false;
   bool _isCustomAmountMode = false;
@@ -56,18 +52,20 @@ class _PaymentWidgetState extends State<PaymentWidget> {
   double _changeDue = 0.0;
   List<double> _presetAmounts = [];
   bool _isCustomAmountDialerOpen = false;
-  Timer? _printerStatusTimer; // Added for periodic printer status checking
-
+  Timer? _printerStatusTimer;
   double _currentDiscountPercentageForPaymentDetails = 0.0;
 
   OverlayEntry? _changeOverlayEntry;
 
-  // Cash drawer state
   bool _canOpenDrawer = false;
   bool _isDrawerOpening = false;
 
-  // Paid status state
-  bool _isPaid = true; // Default to paid
+  bool get _isPaid => widget.paymentType.toLowerCase() != 'unpaid';
+
+  bool _isCardForRemainingPressed = false;
+  double _cashAmountPaid = 0.0;
+  double _cardAmountPaid = 0.0;
+  double _remainingAmount = 0.0;
 
   @override
   void initState() {
@@ -79,42 +77,28 @@ class _PaymentWidgetState extends State<PaymentWidget> {
     if (widget.paymentType.toLowerCase() == 'card') {
       _isCustomAmountMode = false;
       _amountPaidController.text = _discountedTotal.toStringAsFixed(2);
-    } else if (widget.paymentType.toLowerCase() == 'card & cash') {
-      _isCustomAmountMode = false;
-      _amountPaidController.clear();
-      _cardAmountController.clear();
-      _cashAmountController.clear();
     } else {
       _isCustomAmountMode = false;
       _amountPaidController.clear();
     }
 
     _amountPaidController.addListener(_onAmountPaidChanged);
-    _cardAmountController.addListener(_onSplitPaymentChanged);
-    _cashAmountController.addListener(_onSplitPaymentChanged);
     _calculatePresetAmounts();
-
-    // Start printer status checking when widget initializes
     _startPrinterStatusChecking();
-
-    // Check if cash drawer can be opened
     _checkDrawerAvailability();
   }
 
   void _startPrinterStatusChecking() {
     _checkPrinterStatus();
-
-    // Create a periodic timer and store the reference
     _printerStatusTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
       _checkPrinterStatus();
     });
   }
 
-  // New method to handle the amount returned from the payment dialer.
   void _onPaymentDialerConfirmed(double amount) {
     setState(() {
       _selectedAmount = amount;
-      _isCustomAmountMode = true; // Flag as custom amount from dialer
+      _isCustomAmountMode = true;
       _amountPaidController.text = _selectedAmount.toStringAsFixed(2);
       _isCustomAmountDialerOpen = false;
     });
@@ -129,21 +113,10 @@ class _PaymentWidgetState extends State<PaymentWidget> {
 
   @override
   void dispose() {
-    // Cancel the timer before disposing
     _printerStatusTimer?.cancel();
-
     _amountPaidController.removeListener(_onAmountPaidChanged);
     _amountPaidController.dispose();
     _amountPaidFocusNode.dispose();
-
-    // Dispose split payment controllers
-    _cardAmountController.removeListener(_onSplitPaymentChanged);
-    _cashAmountController.removeListener(_onSplitPaymentChanged);
-    _cardAmountController.dispose();
-    _cashAmountController.dispose();
-    _cardAmountFocusNode.dispose();
-    _cashAmountFocusNode.dispose();
-
     _changeOverlayEntry?.remove();
     super.dispose();
   }
@@ -157,19 +130,6 @@ class _PaymentWidgetState extends State<PaymentWidget> {
         });
         _calculateChange();
       }
-    }
-  }
-
-  void _onSplitPaymentChanged() {
-    if (widget.paymentType.toLowerCase() == 'card & cash') {
-      double cardAmount = double.tryParse(_cardAmountController.text) ?? 0.0;
-      double cashAmount = double.tryParse(_cashAmountController.text) ?? 0.0;
-      setState(() {
-        _cardAmount = cardAmount;
-        _cashAmount = cashAmount;
-        _selectedAmount = cardAmount + cashAmount;
-      });
-      _calculateChange();
     }
   }
 
@@ -188,12 +148,10 @@ class _PaymentWidgetState extends State<PaymentWidget> {
       if (nextRoundTen > exactAmount &&
           !amounts.contains(nextRoundTen) &&
           amounts.length < 4) {
-        // Changed from 3 to 4
         amounts.add(nextRoundTen);
       }
 
       while (amounts.length < 4) {
-        // Changed from 3 to 4
         double lastAmount = amounts.last;
         double nextAmount;
 
@@ -219,7 +177,7 @@ class _PaymentWidgetState extends State<PaymentWidget> {
   }
 
   Future<void> _checkPrinterStatus() async {
-    if (_isCheckingPrinter || !mounted) return; // Add mounted check
+    if (_isCheckingPrinter || !mounted) return;
 
     setState(() {
       _isCheckingPrinter = true;
@@ -233,7 +191,6 @@ class _PaymentWidgetState extends State<PaymentWidget> {
           connectionStatus['bluetooth'] == true;
 
       if (mounted) {
-        // Check mounted before setState
         setState(() {
           _isPrinterConnected = isConnected;
           _isCheckingPrinter = false;
@@ -242,7 +199,6 @@ class _PaymentWidgetState extends State<PaymentWidget> {
     } catch (e) {
       print('Error checking printer status: $e');
       if (mounted) {
-        // Check mounted before setState
         setState(() {
           _isPrinterConnected = false;
           _isCheckingPrinter = false;
@@ -251,16 +207,6 @@ class _PaymentWidgetState extends State<PaymentWidget> {
     }
   }
 
-  void _calculateChange() {
-    setState(() {
-      _changeDue = (_selectedAmount - _discountedTotal).clamp(
-        0.0,
-        double.infinity,
-      );
-    });
-  }
-
-  // Cash drawer methods
   Future<void> _checkDrawerAvailability() async {
     try {
       bool canOpen = await ThermalPrinterService().canOpenDrawer();
@@ -405,8 +351,19 @@ class _PaymentWidgetState extends State<PaymentWidget> {
                     if (widget.onBack != null)
                       Padding(
                         padding: const EdgeInsets.only(right: 3.0),
-                        child: GestureDetector(
-                          onTap: widget.onBack,
+                        child: ElevatedButton(
+                          onPressed: widget.onBack,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.transparent,
+                            foregroundColor: Colors.black,
+                            shadowColor: Colors.transparent,
+                            padding: EdgeInsets.zero,
+                            minimumSize: const Size(45, 45),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(22.5),
+                            ),
+                            elevation: 0,
+                          ),
                           child: SizedBox(
                             width: 45,
                             height: 45,
@@ -446,30 +403,6 @@ class _PaymentWidgetState extends State<PaymentWidget> {
 
               const SizedBox(height: 9),
 
-              // Paid/Unpaid Radio buttons
-              Padding(
-                padding: const EdgeInsets.only(bottom: 7.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    _buildPaidStatusRadioOption(true, 'Paid'),
-                    const SizedBox(width: 20),
-                    _buildPaidStatusRadioOption(false, 'Unpaid'),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 9),
-
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 55.0),
-                child: Divider(
-                  height: 0,
-                  thickness: 3,
-                  color: const Color(0xFFB2B2B2),
-                ),
-              ),
-
               const SizedBox(height: 16),
 
               Expanded(
@@ -481,9 +414,11 @@ class _PaymentWidgetState extends State<PaymentWidget> {
                       children: [
                         const SizedBox(height: 16),
 
-                        if (widget.paymentType.toLowerCase() == 'cash')
+                        if (widget.paymentType.toLowerCase() == 'cash' ||
+                            widget.paymentType.toLowerCase() == 'card & cash')
                           Column(
                             children: [
+                              // Preset amount buttons
                               for (int i = 0; i < _presetAmounts.length; i++)
                                 Padding(
                                   padding: const EdgeInsets.only(
@@ -499,12 +434,7 @@ class _PaymentWidgetState extends State<PaymentWidget> {
                                           () =>
                                               _selectAmount(_presetAmounts[i]),
                                       style: ElevatedButton.styleFrom(
-                                        backgroundColor:
-                                            _selectedAmount ==
-                                                        _presetAmounts[i] &&
-                                                    !_isCustomAmountMode
-                                                ? Colors.black
-                                                : Colors.black,
+                                        backgroundColor: Colors.black,
                                         foregroundColor: Colors.white,
                                         shape: RoundedRectangleBorder(
                                           borderRadius: BorderRadius.circular(
@@ -524,6 +454,8 @@ class _PaymentWidgetState extends State<PaymentWidget> {
                                     ),
                                   ),
                                 ),
+
+                              // Other amount button
                               Padding(
                                 padding: const EdgeInsets.only(
                                   bottom: 12.0,
@@ -560,23 +492,62 @@ class _PaymentWidgetState extends State<PaymentWidget> {
                                           ),
                                         ),
                                         SizedBox(width: 12),
-                                        Icon(
-                                          Icons.dialpad,
-                                          size: 20,
-                                          color: Colors.white,
-                                        ),
+                                        Icon(Icons.dialpad, size: 20),
                                       ],
                                     ),
                                   ),
                                 ),
                               ),
+
+                              // Card for remaining button
+                              if (_remainingAmount > 0)
+                                const SizedBox(height: 12),
+                              if (_remainingAmount > 0)
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16.0,
+                                  ),
+                                  child: SizedBox(
+                                    width: double.infinity,
+                                    height: 65,
+                                    child: ElevatedButton(
+                                      onPressed: _handleCardForRemaining,
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.black,
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                        elevation: 2,
+                                      ),
+                                      child: const Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Icon(Icons.credit_card, size: 20),
+                                          SizedBox(width: 12),
+                                          Text(
+                                            'Card',
+                                            style: TextStyle(
+                                              fontSize: 24,
+                                              fontWeight: FontWeight.bold,
+                                              fontFamily: 'Poppins',
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
                             ],
                           )
                         else if (widget.paymentType.toLowerCase() == 'card')
                           Padding(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 16.0,
-                            ), // apply horizontal padding
+                            ),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
@@ -625,189 +596,32 @@ class _PaymentWidgetState extends State<PaymentWidget> {
                               ],
                             ),
                           )
-                        else if (widget.paymentType.toLowerCase() ==
-                            'card & cash')
+                        else if (widget.paymentType.toLowerCase() == 'unpaid')
                           Padding(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 16.0,
                             ),
-                            child: Column(
-                              children: [
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    const Text(
-                                      'Card Amount',
-                                      style: TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.bold,
-                                        fontFamily: 'Poppins',
-                                      ),
+                            child: Center(
+                              child: Column(
+                                children: [
+                                  Icon(
+                                    Icons.receipt_long_outlined,
+                                    size: 48,
+                                    color: Colors.orange,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'Order will be marked as UNPAID',
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      fontFamily: 'Poppins',
+                                      color: Colors.orange,
                                     ),
-                                    SizedBox(
-                                      width: 120,
-                                      child: TextFormField(
-                                        controller: _cardAmountController,
-                                        focusNode: _cardAmountFocusNode,
-                                        textAlign: TextAlign.right,
-                                        style: const TextStyle(
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.bold,
-                                          fontFamily: 'Poppins',
-                                        ),
-                                        decoration: InputDecoration(
-                                          contentPadding:
-                                              const EdgeInsets.symmetric(
-                                                vertical: 8,
-                                                horizontal: 12,
-                                              ),
-                                          isDense: true,
-                                          prefixText: '£',
-                                          border: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              8,
-                                            ),
-                                            borderSide: const BorderSide(
-                                              color: Colors.grey,
-                                            ),
-                                          ),
-                                          focusedBorder: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              8,
-                                            ),
-                                            borderSide: const BorderSide(
-                                              color: Colors.blue,
-                                              width: 2,
-                                            ),
-                                          ),
-                                          enabledBorder: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              8,
-                                            ),
-                                            borderSide: const BorderSide(
-                                              color: Colors.grey,
-                                            ),
-                                          ),
-                                          filled: true,
-                                          fillColor: Colors.white,
-                                        ),
-                                        keyboardType:
-                                            const TextInputType.numberWithOptions(
-                                              decimal: true,
-                                            ),
-                                        inputFormatters: [
-                                          FilteringTextInputFormatter.allow(
-                                            RegExp(r'^\d*\.?\d{0,2}$'),
-                                          ),
-                                        ],
-                                        readOnly: false,
-                                        onTap: () {},
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 16),
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    const Text(
-                                      'Cash Amount',
-                                      style: TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.bold,
-                                        fontFamily: 'Poppins',
-                                      ),
-                                    ),
-                                    SizedBox(
-                                      width: 120,
-                                      child: TextFormField(
-                                        controller: _cashAmountController,
-                                        focusNode: _cashAmountFocusNode,
-                                        textAlign: TextAlign.right,
-                                        style: const TextStyle(
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.bold,
-                                          fontFamily: 'Poppins',
-                                        ),
-                                        decoration: InputDecoration(
-                                          contentPadding:
-                                              const EdgeInsets.symmetric(
-                                                vertical: 8,
-                                                horizontal: 12,
-                                              ),
-                                          isDense: true,
-                                          prefixText: '£',
-                                          border: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              8,
-                                            ),
-                                            borderSide: const BorderSide(
-                                              color: Colors.grey,
-                                            ),
-                                          ),
-                                          focusedBorder: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              8,
-                                            ),
-                                            borderSide: const BorderSide(
-                                              color: Colors.blue,
-                                              width: 2,
-                                            ),
-                                          ),
-                                          enabledBorder: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              8,
-                                            ),
-                                            borderSide: const BorderSide(
-                                              color: Colors.grey,
-                                            ),
-                                          ),
-                                          filled: true,
-                                          fillColor: Colors.white,
-                                        ),
-                                        keyboardType:
-                                            const TextInputType.numberWithOptions(
-                                              decimal: true,
-                                            ),
-                                        inputFormatters: [
-                                          FilteringTextInputFormatter.allow(
-                                            RegExp(r'^\d*\.?\d{0,2}$'),
-                                          ),
-                                        ],
-                                        readOnly: false,
-                                        onTap: () {},
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 16),
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    const Text(
-                                      'Total Paid',
-                                      style: TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.bold,
-                                        fontFamily: 'Poppins',
-                                        color: Colors.blue,
-                                      ),
-                                    ),
-                                    Text(
-                                      '£${(_cardAmount + _cashAmount).toStringAsFixed(2)}',
-                                      style: const TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.bold,
-                                        fontFamily: 'Poppins',
-                                        color: Colors.blue,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                       ],
@@ -848,6 +662,87 @@ class _PaymentWidgetState extends State<PaymentWidget> {
                       ],
                     ),
                     const SizedBox(height: 10),
+
+                    if (widget.paymentType.toLowerCase() == 'cash' &&
+                        _remainingAmount > 0 &&
+                        !_isCardForRemainingPressed)
+                      Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'Remaining Amount',
+                                style: TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.orange,
+                                ),
+                              ),
+                              Text(
+                                '£${_remainingAmount.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontSize: 22,
+                                  color: Colors.orange,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                        ],
+                      ),
+
+                    if (_isCardForRemainingPressed &&
+                        _cashAmountPaid > 0 &&
+                        _cardAmountPaid > 0)
+                      Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'Cash Paid',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.black,
+                                ),
+                              ),
+                              Text(
+                                '£${_cashAmountPaid.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  color: Colors.black,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 5),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'Card Paid',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.black,
+                                ),
+                              ),
+                              Text(
+                                '£${_cardAmountPaid.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  color: Colors.black,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                        ],
+                      ),
+
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -865,190 +760,215 @@ class _PaymentWidgetState extends State<PaymentWidget> {
                       ],
                     ),
                     const SizedBox(height: 10),
+
+                    // Main payment button and cash drawer button row
                     Row(
                       children: [
                         Expanded(
-                          child: MouseRegion(
-                            cursor: SystemMouseCursors.click,
-                            child: GestureDetector(
-                              onTap:
-                                  (_selectedAmount > 0 ||
-                                          (widget.paymentType.toLowerCase() ==
-                                                  'card' &&
-                                              _amountPaidController
-                                                  .text
-                                                  .isNotEmpty &&
-                                              double.tryParse(
-                                                    _amountPaidController.text,
-                                                  ) !=
-                                                  null &&
-                                              double.parse(
-                                                    _amountPaidController.text,
-                                                  ) >
-                                                  0) ||
-                                          (widget.paymentType.toLowerCase() ==
-                                                  'card & cash' &&
-                                              _cardAmount > 0 &&
-                                              _cashAmount > 0 &&
-                                              (_cardAmount + _cashAmount) > 0))
-                                      ? () async {
-                                        // Special validation for Card & Cash payments
-                                        if (widget.paymentType.toLowerCase() ==
-                                            'card & cash') {
-                                          if (_cardAmount <= 0 ||
-                                              _cashAmount <= 0) {
-                                            CustomPopupService.show(
-                                              context,
-                                              'Please enter both card and cash amounts!',
-                                              type: PopupType.failure,
-                                            );
-                                            return;
-                                          }
-                                          if ((_cardAmount + _cashAmount) <
-                                              _discountedTotal) {
-                                            CustomPopupService.show(
-                                              context,
-                                              'Total amount paid (£${(_cardAmount + _cashAmount).toStringAsFixed(2)}) cannot be less than order total (£${_discountedTotal.toStringAsFixed(2)})!',
-                                              type: PopupType.failure,
-                                            );
-                                            return;
-                                          }
-                                        } else if (_selectedAmount <
-                                            _discountedTotal) {
-                                          CustomPopupService.show(
-                                            context,
-                                            'Amount paid cannot be less than discounted total !',
-                                            type: PopupType.failure,
-                                          );
-                                          return;
-                                        }
-
-                                        if (_changeDue > 0) {
-                                          _showChangeOverlay(_changeDue);
-                                        }
+                          child: ElevatedButton(
+                            onPressed:
+                                (widget.isProcessing ||
+                                        widget.onPaymentConfirmed == null)
+                                    ? null
+                                    : () async {
+                                      if (widget.paymentType.toLowerCase() ==
+                                          'unpaid') {
                                         final paymentDetails = PaymentDetails(
                                           paymentType: widget.paymentType,
-                                          amountReceived: _selectedAmount,
+                                          amountReceived: 0.0,
                                           discountPercentage:
                                               _currentDiscountPercentageForPaymentDetails,
                                           totalCharge: _discountedTotal,
                                           paidStatus: _isPaid,
                                         );
 
-                                        // Debug payment details
-                                        print("🔍 PAYMENT DEBUG:");
+                                        print("🔍 UNPAID ORDER DEBUG:");
                                         print(
                                           "Payment Type: ${paymentDetails.paymentType}",
                                         );
                                         print(
-                                          "Total Amount: £${paymentDetails.amountReceived}",
+                                          "Paid Status: ${paymentDetails.paidStatus}",
                                         );
                                         print(
-                                          "Change Due: £${paymentDetails.changeDue}",
+                                          "Total Amount: £${paymentDetails.totalCharge}",
                                         );
 
-                                        widget.onPaymentConfirmed(
+                                        widget.onPaymentConfirmed?.call(
                                           paymentDetails,
                                         );
+                                        return;
                                       }
-                                      : () {
-                                        String errorMessage =
-                                            'Please enter and choose an amount to pay.';
-                                        if (widget.paymentType.toLowerCase() ==
-                                            'card & cash') {
-                                          errorMessage =
-                                              'Please enter both card and cash amounts.';
-                                        }
+
+                                      if (widget.paymentType.toLowerCase() ==
+                                              'card' &&
+                                          (_amountPaidController.text.isEmpty ||
+                                              double.tryParse(
+                                                    _amountPaidController.text,
+                                                  ) ==
+                                                  null ||
+                                              double.parse(
+                                                    _amountPaidController.text,
+                                                  ) <=
+                                                  0)) {
                                         CustomPopupService.show(
                                           context,
-                                          errorMessage,
+                                          'Please enter a valid amount for card payment!',
                                           type: PopupType.failure,
                                         );
-                                      },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 16,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.black,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Center(
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Text(
-                                        'Charge    £${_discountedTotal.toStringAsFixed(2)}',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 18,
-                                          fontFamily: 'Poppins',
-                                        ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Image.asset(
-                                        'assets/images/printer.png',
-                                        width: 58,
-                                        height: 58,
-                                        color: Colors.white,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
+                                        return;
+                                      }
 
-                        // Cash drawer button (only for cash and mixed payments)
-                        if ((widget.paymentType.toLowerCase() == 'cash' ||
-                                widget.paymentType.toLowerCase() ==
-                                    'card & cash') &&
-                            _canOpenDrawer)
-                          const SizedBox(width: 8),
+                                      if (widget.paymentType.toLowerCase() ==
+                                              'cash' &&
+                                          _selectedAmount <= 0) {
+                                        CustomPopupService.show(
+                                          context,
+                                          'Please select an amount to pay!',
+                                          type: PopupType.failure,
+                                        );
+                                        return;
+                                      }
 
-                        if ((widget.paymentType.toLowerCase() == 'cash' ||
-                                widget.paymentType.toLowerCase() ==
-                                    'card & cash') &&
-                            _canOpenDrawer)
-                          GestureDetector(
-                            onTap: _isDrawerOpening ? null : _openCashDrawer,
-                            child: Container(
-                              width: 70,
-                              height: 50,
-                              decoration: BoxDecoration(
-                                color:
-                                    _isDrawerOpening
-                                        ? Colors.grey
-                                        : const Color(0xFF4CAF50),
+                                      if (_selectedAmount < _discountedTotal) {
+                                        CustomPopupService.show(
+                                          context,
+                                          'Amount paid cannot be less than order total!',
+                                          type: PopupType.failure,
+                                        );
+                                        return;
+                                      }
+
+                                      if (_changeDue > 0) {
+                                        _showChangeOverlay(_changeDue);
+                                      }
+
+                                      final paymentDetails = PaymentDetails(
+                                        paymentType: _getPaymentType(),
+                                        amountReceived: _selectedAmount,
+                                        discountPercentage:
+                                            _currentDiscountPercentageForPaymentDetails,
+                                        totalCharge: _discountedTotal,
+                                        paidStatus: _isPaid,
+                                      );
+
+                                      print("🔍 PAYMENT DEBUG:");
+                                      print(
+                                        "Payment Type: ${paymentDetails.paymentType}",
+                                      );
+                                      print(
+                                        "Paid Status: ${paymentDetails.paidStatus}",
+                                      );
+                                      print(
+                                        "Total Amount: £${paymentDetails.amountReceived}",
+                                      );
+                                      print(
+                                        "Change Due: £${paymentDetails.changeDue}",
+                                      );
+
+                                      widget.onPaymentConfirmed?.call(
+                                        paymentDetails,
+                                      );
+                                    },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor:
+                                  widget.isProcessing
+                                      ? Colors.grey
+                                      : Colors.black,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color:
-                                      _isDrawerOpening
-                                          ? Colors.grey
-                                          : const Color(0xFF2E7D2E),
-                                  width: 2,
-                                ),
                               ),
-                              child: Center(
-                                child:
-                                    _isDrawerOpening
-                                        ? const SizedBox(
+                              elevation: 2,
+                            ),
+                            child:
+                                widget.isProcessing
+                                    ? Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        const SizedBox(
                                           width: 20,
                                           height: 20,
                                           child: CircularProgressIndicator(
-                                            color: Colors.white,
                                             strokeWidth: 2,
+                                            color: Colors.white,
                                           ),
-                                        )
-                                        : const Icon(
-                                          Icons.money,
-                                          color: Colors.white,
-                                          size: 28,
                                         ),
+                                        const SizedBox(width: 10),
+                                        const Text(
+                                          'Processing Order...',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 18,
+                                            fontFamily: 'Poppins',
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                    : Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Text(
+                                          'Charge    £${_discountedTotal.toStringAsFixed(2)}',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 18,
+                                            fontFamily: 'Poppins',
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Image.asset(
+                                          'assets/images/printer.png',
+                                          width: 58,
+                                          height: 58,
+                                          color: Colors.white,
+                                        ),
+                                      ],
+                                    ),
+                          ),
+                        ),
+
+                        // Cash drawer button
+                        if (widget.paymentType.toLowerCase() == 'cash' &&
+                            _canOpenDrawer)
+                          const SizedBox(width: 8),
+                        if (widget.paymentType.toLowerCase() == 'cash' &&
+                            _canOpenDrawer)
+                          ElevatedButton(
+                            onPressed:
+                                _isDrawerOpening ? null : _openCashDrawer,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor:
+                                  _isDrawerOpening
+                                      ? Colors.grey
+                                      : const Color(0xFF4CAF50),
+                              foregroundColor: Colors.white,
+                              minimumSize: const Size(70, 50),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
                               ),
+                              side: BorderSide(
+                                color:
+                                    _isDrawerOpening
+                                        ? Colors.grey
+                                        : const Color(0xFF2E7D2E),
+                                width: 2,
+                              ),
+                              elevation: 2,
                             ),
+                            child:
+                                _isDrawerOpening
+                                    ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                    : const Icon(Icons.money, size: 28),
                           ),
                       ],
                     ),
@@ -1059,7 +979,6 @@ class _PaymentWidgetState extends State<PaymentWidget> {
           ),
         ),
 
-        // Printer status indicator - positioned at top right corner
         Positioned(
           top: 16,
           right: 16,
@@ -1081,7 +1000,6 @@ class _PaymentWidgetState extends State<PaymentWidget> {
           ),
         ),
 
-        // Conditionally render the DialerPage when a custom amount is needed
         if (_isCustomAmountDialerOpen)
           Positioned.fill(
             child: DialerPage(
@@ -1091,93 +1009,62 @@ class _PaymentWidgetState extends State<PaymentWidget> {
                 _onPaymentDialerConfirmed(amount);
               },
               onBack: _onDialerClose,
-              currentOrderType: 'takeaway', // Dummy value for this context
-              onOrderTypeChanged: (type) {}, // Dummy function for this context
+              currentOrderType: 'takeaway',
+              onOrderTypeChanged: (type) {},
             ),
           ),
       ],
     );
   }
 
-  // Radio button for paid/unpaid status
-  Widget _buildPaidStatusRadioOption(bool paidValue, String label) {
-    bool isSelected = _isPaid == paidValue;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: () {
-          setState(() {
-            _isPaid = paidValue;
-          });
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: isSelected ? const Color(0xFFF3D9FF) : Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color:
-                  isSelected ? const Color(0xFFCB6CE6) : Colors.grey.shade300,
-              width: 2,
-            ),
-            boxShadow:
-                isSelected
-                    ? [
-                      BoxShadow(
-                        color: const Color(0xFFCB6CE6).withOpacity(0.2),
-                        spreadRadius: 1,
-                        blurRadius: 3,
-                        offset: const Offset(0, 2),
-                      ),
-                    ]
-                    : null,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 20,
-                height: 20,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color:
-                        isSelected
-                            ? const Color(0xFFCB6CE6)
-                            : Colors.grey.shade400,
-                    width: 2,
-                  ),
-                  color: Colors.white,
-                ),
-                child:
-                    isSelected
-                        ? Center(
-                          child: Container(
-                            width: 10,
-                            height: 10,
-                            decoration: const BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Color(0xFFCB6CE6),
-                            ),
-                          ),
-                        )
-                        : null,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontFamily: 'Poppins',
-                  color:
-                      isSelected ? const Color(0xFFCB6CE6) : Colors.grey[700],
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+  void _handleCardForRemaining() {
+    if (_selectedAmount >= _discountedTotal) {
+      return;
+    }
+
+    setState(() {
+      _isCardForRemainingPressed = true;
+      _cashAmountPaid = _selectedAmount;
+      _remainingAmount = _discountedTotal - _selectedAmount;
+      _cardAmountPaid = _remainingAmount;
+      _selectedAmount = _discountedTotal;
+    });
+    if (widget.onPaymentTypeChanged != null) {
+      widget.onPaymentTypeChanged!('Card & Cash');
+    }
+
+    print("🔍 SPLIT PAYMENT DEBUG:");
+    print("Card for remaining pressed: $_isCardForRemainingPressed");
+    print("Cash amount paid: $_cashAmountPaid");
+    print("Card amount paid: $_cardAmountPaid");
+    print("Payment type will be: ${_getPaymentType()}");
+
+    _calculateChange();
+  }
+
+  void _calculateChange() {
+    setState(() {
+      if (_isCardForRemainingPressed) {
+        _changeDue = 0.0;
+        _remainingAmount = 0.0;
+      } else {
+        _remainingAmount = (_discountedTotal - _selectedAmount).clamp(
+          0.0,
+          double.infinity,
+        );
+        _changeDue = (_selectedAmount - _discountedTotal).clamp(
+          0.0,
+          double.infinity,
+        );
+      }
+    });
+  }
+
+  String _getPaymentType() {
+    print("🔍 GET PAYMENT TYPE DEBUG:");
+    print("widget.paymentType: ${widget.paymentType}");
+    print("_isCardForRemainingPressed: $_isCardForRemainingPressed");
+    print("Returning: ${widget.paymentType}");
+    return widget.paymentType;
   }
 }

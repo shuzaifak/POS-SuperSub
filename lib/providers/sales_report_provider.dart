@@ -62,6 +62,10 @@ class SalesReportProvider with ChangeNotifier {
   bool _showPaidOuts = false;
   bool get showPaidOuts => _showPaidOuts;
 
+  // Postal Codes visibility
+  bool _showPostalCodes = false;
+  bool get showPostalCodes => _showPostalCodes;
+
   // Error handling
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
@@ -105,6 +109,7 @@ class SalesReportProvider with ChangeNotifier {
     _currentTabIndex = index;
     _showItems = false;
     _showPaidOuts = false;
+    _showPostalCodes = false;
     _errorMessage = null;
 
     // UPDATED: No PIN requirement, direct access to all tabs
@@ -227,6 +232,12 @@ class SalesReportProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  // Toggle postal codes visibility
+  void toggleShowPostalCodes() {
+    _showPostalCodes = !_showPostalCodes;
+    notifyListeners();
+  }
+
   Future<void> loadTodaysReport() async {
     if (_isLoading) return;
 
@@ -308,9 +319,7 @@ class SalesReportProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      print(
-        '🔄 Loading weekly report for Year: $_selectedYear, Week: $_selectedWeek with filters',
-      );
+      print('🔄 Loading weekly report for Date: $_selectedDate with filters');
 
       final sourceParam = _sourceFilter != 'All' ? _sourceFilter : null;
       final paymentParam = _paymentFilter != 'All' ? _paymentFilter : null;
@@ -318,8 +327,7 @@ class SalesReportProvider with ChangeNotifier {
           _orderTypeFilter != 'All' ? _orderTypeFilter : null;
 
       final report = await ApiService.getWeeklyReport(
-        _selectedYear,
-        _selectedWeek,
+        _selectedDate, // Changed from (_selectedYear, _selectedWeek) to (_selectedDate)
         source: sourceParam,
         payment: paymentParam,
         orderType: orderTypeParam,
@@ -683,6 +691,7 @@ class SalesReportProvider with ChangeNotifier {
     _selectedMonth = UKTimeService.now().month;
     _showItems = false;
     _showPaidOuts = false;
+    _showPostalCodes = false;
     _errorMessage = null;
     _isInitialized = false;
     notifyListeners();

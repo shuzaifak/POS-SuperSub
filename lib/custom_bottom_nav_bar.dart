@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:epos/widgets/animated_tap_button.dart';
 import 'package:epos/settings_screen.dart';
 import 'package:epos/dynamic_order_list_screen.dart';
 import 'package:epos/website_orders_screen.dart';
@@ -34,18 +35,16 @@ class CustomBottomNavBar extends StatelessWidget {
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
-      child: GestureDetector(
+      child: AnimatedColorButton(
+        backgroundColor: isSelected ? Colors.black : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        padding: const EdgeInsets.symmetric(vertical: 8),
         onTap: () {
           onItemSelected?.call(index);
           onTap();
         },
         child: Container(
           width: 140, // Fixed width for consistent rectangular background
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            color: isSelected ? Colors.black : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-          ),
           child: Stack(
             alignment: Alignment.center,
             clipBehavior: Clip.none,

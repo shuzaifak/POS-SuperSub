@@ -93,14 +93,10 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
 
     switch (state) {
       case AppLifecycleState.resumed:
-        debugPrint("DynamicOrderListScreen: App resumed, resuming polling");
         eposOrdersProvider.resumePolling();
         break;
       case AppLifecycleState.paused:
       case AppLifecycleState.inactive:
-        debugPrint(
-          "DynamicOrderListScreen: App paused/inactive, pausing polling",
-        );
         eposOrdersProvider.pausePolling();
         break;
       case AppLifecycleState.detached:
@@ -116,9 +112,6 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
         .listen((payload) {
           _handleOrderStatusOrDriverChange(payload);
         });
-    debugPrint(
-      "DynamicOrderListScreen: Subscribed to orderStatusOrDriverChangedStream.",
-    );
   }
 
   void _handleOrderStatusOrDriverChange(Map<String, dynamic> payload) {
@@ -127,7 +120,6 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
     final int? newDriverId = payload['new_driver_id'] as int?;
 
     if (orderId == null || newStatusBackend == null) {
-      debugPrint('Socket payload missing order_id or new_status: $payload');
       return;
     }
 
@@ -305,7 +297,8 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _printerStatusTimer?.cancel(); // Add this line
+    _printerStatusTimer?.cancel();
+    _reloadDebounceTimer?.cancel();
     _orderStatusSubscription.cancel();
     _scrollController.dispose();
     super.dispose();
@@ -315,10 +308,6 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
   void didUpdateWidget(covariant DynamicOrderListScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.orderType != oldWidget.orderType) {
-      debugPrint(
-        "DynamicOrderListScreen: orderType changed from ${oldWidget.orderType} to ${widget.orderType}. Reloading orders.",
-      );
-
       // Reset filters based on new order type
       if (widget.orderType.toLowerCase() == 'collection') {
         pickcollect = null; // Remove filters for collection
@@ -354,6 +343,20 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
     }
   }
 
+  // Helper method to group orders by status for divider placement
+  String _getStatusGroup(String status) {
+    switch (status.toLowerCase()) {
+      case 'pending':
+      case 'yellow':
+        return 'pending';
+      case 'ready':
+      case 'green':
+        return 'ready';
+      default:
+        return 'other';
+    }
+  }
+
   // Updated socket handling sort method
   void _sortActiveOrdersByPriority() {
     activeOrders.sort((a, b) {
@@ -371,10 +374,6 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
   }
 
   void _loadOrdersFromProvider() {
-    debugPrint(
-      "DynamicOrderListScreen: _loadOrdersFromProvider called for ${widget.orderType}.",
-    );
-
     final eposOrdersProvider = Provider.of<EposOrdersProvider>(
       context,
       listen: false,
@@ -384,11 +383,6 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
     List<Order> filteredOrders = _getFilteredOrdersFromProvider(
       eposOrdersProvider,
     );
-
-    debugPrint(
-      "DynamicOrderListScreen: Got ${filteredOrders.length} filtered orders from provider.",
-    );
-
     List<Order> tempActive = [];
     List<Order> tempCompleted = [];
 
@@ -416,35 +410,16 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
     });
 
     tempCompleted.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
-    debugPrint(
-      "DynamicOrderListScreen: Filtered and separated into ${tempActive.length} active and ${tempCompleted.length} completed orders.",
-    );
-
     setState(() {
       activeOrders = tempActive;
       completedOrders = tempCompleted;
-
-      debugPrint(
-        "DynamicOrderListScreen: setState called. Active orders: ${activeOrders.length}, Completed orders: ${completedOrders.length}.",
-      );
-
       // Handle selected order logic
       if (activeOrders.isEmpty && completedOrders.isEmpty) {
         _selectedOrder = null;
-        debugPrint(
-          "DynamicOrderListScreen: No orders available, _selectedOrder set to null.",
-        );
       } else if (_selectedOrder == null && activeOrders.isNotEmpty) {
         _selectedOrder = activeOrders.first;
-        debugPrint(
-          "DynamicOrderListScreen: First active order selected by default: ${_selectedOrder!.orderId}",
-        );
       } else if (_selectedOrder == null && completedOrders.isNotEmpty) {
         _selectedOrder = completedOrders.first;
-        debugPrint(
-          "DynamicOrderListScreen: No active orders, first completed order selected by default: ${_selectedOrder?.orderId}",
-        );
       } else if (_selectedOrder != null) {
         // Check if the currently selected order still exists in the lists
         bool selectedOrderExists =
@@ -455,19 +430,10 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
           // Selected order no longer exists, select a new one
           if (activeOrders.isNotEmpty) {
             _selectedOrder = activeOrders.first;
-            debugPrint(
-              "DynamicOrderListScreen: Previously selected order no longer exists, selected first active: ${_selectedOrder!.orderId}",
-            );
           } else if (completedOrders.isNotEmpty) {
             _selectedOrder = completedOrders.first;
-            debugPrint(
-              "DynamicOrderListScreen: Previously selected order no longer exists, selected first completed: ${_selectedOrder!.orderId}",
-            );
           } else {
             _selectedOrder = null;
-            debugPrint(
-              "DynamicOrderListScreen: Previously selected order no longer exists, no orders available",
-            );
           }
         } else {
           // Update the selected order with the latest data from the lists
@@ -481,15 +447,10 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
           );
           if (updatedSelectedOrder.orderId == _selectedOrder!.orderId) {
             _selectedOrder = updatedSelectedOrder;
-            debugPrint(
-              "DynamicOrderListScreen: Selected order updated with latest data: ${_selectedOrder!.orderId}",
-            );
           }
         }
       }
     });
-
-    debugPrint("DynamicOrderListScreen: _loadOrdersFromProvider finished.");
   }
 
   // FIXED: Get filtered orders from provider based on screen type
@@ -683,44 +644,46 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
         return 'assets/images/Kebabs.png';
       case 'WINGS':
         return 'assets/images/Wings.png';
+      case 'DEALS':
+        return 'assets/images/DealsS.png';
       default:
         return 'assets/images/default.png';
     }
   }
 
-  String _mapFromBackendStatus(String backendStatus) {
-    switch (backendStatus.toLowerCase()) {
-      case 'yellow':
-        return 'pending';
-      case 'green':
-        return 'ready';
-      case 'blue':
-        return 'completed';
-      default:
-        return backendStatus; // fallback
-    }
-  }
+  // String _mapFromBackendStatus(String backendStatus) {
+  //   switch (backendStatus.toLowerCase()) {
+  //     case 'yellow':
+  //       return 'pending';
+  //     case 'green':
+  //       return 'ready';
+  //     case 'blue':
+  //       return 'completed';
+  //     default:
+  //       return backendStatus; // fallback
+  //   }
+  // }
 
-  String _nextStatus(String current) {
-    debugPrint("nextStatus: Current status is '$current'.");
-    String newStatus;
-    switch (current.toLowerCase()) {
-      case 'pending':
-        newStatus = 'Ready';
-        break;
-      case 'ready':
-        newStatus =
-            'Completed'; // This generic transition is only used for non-delivery types now
-        break;
-      case 'completed':
-        newStatus = 'Completed'; // Stays completed
-        break;
-      default:
-        newStatus = 'Pending';
-    }
-    debugPrint("nextStatus: Returning '$newStatus'.");
-    return newStatus;
-  }
+  // String _nextStatus(String current) {
+  //   debugPrint("nextStatus: Current status is '$current'.");
+  //   String newStatus;
+  //   switch (current.toLowerCase()) {
+  //     case 'pending':
+  //       newStatus = 'Ready';
+  //       break;
+  //     case 'ready':
+  //       newStatus =
+  //           'Completed'; // This generic transition is only used for non-delivery types now
+  //       break;
+  //     case 'completed':
+  //       newStatus = 'Completed'; // Stays completed
+  //       break;
+  //     default:
+  //       newStatus = 'Pending';
+  //   }
+  //   debugPrint("nextStatus: Returning '$newStatus'.");
+  //   return newStatus;
+  // }
 
   void _updateOrderStatusAndRelist(
     Order orderToUpdate,
@@ -787,6 +750,60 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
     }
   }
 
+  String _getNextStepLabel(Order order) {
+    // Check if this is an offline order first
+    if (order.status.toLowerCase() == 'offline' ||
+        order.orderSource == 'epos_offline') {
+      return 'Sync Order';
+    }
+
+    // Check if this is a delivery order
+    final isDeliveryOrder =
+        ((order.orderSource.toLowerCase() == 'epos' ||
+                order.orderSource.toLowerCase() == 'epos_offline') &&
+            order.orderType.toLowerCase() == 'delivery') ||
+        (order.orderSource.toLowerCase() == 'website' &&
+            order.orderType.toLowerCase() == 'delivery');
+
+    // For completed orders, always show "Completed"
+    if (order.status.toLowerCase() == 'blue' ||
+        order.status.toLowerCase() == 'completed' ||
+        order.status.toLowerCase() == 'delivered') {
+      return 'Completed';
+    }
+
+    // Handle different order types and their next steps
+    if (isDeliveryOrder) {
+      switch (order.status.toLowerCase()) {
+        case 'pending':
+        case 'yellow':
+          return 'Ready'; // Show Mark Ready for pending delivery orders
+        case 'ready':
+        case 'green':
+          // For delivery orders that are ready
+          if (order.driverId != null && order.driverId! > 0) {
+            return 'Complete'; // Driver assigned, can mark complete
+          } else {
+            return 'On Its Way'; // Waiting for driver assignment, show next visual step
+          }
+        default:
+          return 'Ready';
+      }
+    } else {
+      // For dine-in, takeaway, collection orders
+      switch (order.status.toLowerCase()) {
+        case 'pending':
+        case 'yellow':
+          return 'Ready'; // Next step for pending orders
+        case 'ready':
+        case 'green':
+          return 'Complete'; // Next step for ready orders
+        default:
+          return 'Ready';
+      }
+    }
+  }
+
   // // Helper to get order count for each nav item
   // String? _getNotificationCount(int index, Map<String, int> currentActiveOrdersCount) {
   //   int count = 0;
@@ -836,10 +853,13 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
     bool anyNonDefaultOptionFound = false;
 
     // Check if it's parentheses format (EPOS): "Item Name (Size: Large, Crust: Thin)"
-    final optionMatch = RegExp(r'\((.*?)\)').firstMatch(description);
-    if (optionMatch != null && optionMatch.group(1) != null) {
-      // EPOS format with parentheses
-      String optionsString = optionMatch.group(1)!;
+    // For deals with nested parentheses, we need to find the last closing parenthesis
+    int firstParen = description.indexOf('(');
+    int lastParen = description.lastIndexOf(')');
+
+    if (firstParen != -1 && lastParen != -1 && lastParen > firstParen) {
+      // Extract content between first opening and last closing parenthesis
+      String optionsString = description.substring(firstParen + 1, lastParen);
       foundOptionsSyntax = true;
       optionsList = _smartSplitOptions(optionsString);
     } else if (description.contains('\n') || description.contains(':')) {
@@ -1039,10 +1059,25 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
       }
     }
 
+    // Handle deal-specific parsing (Selected Pizzas, Selected Shawarmas, etc.)
+    if (description.contains('Selected Pizzas') ||
+        description.contains('Selected Shawarmas') ||
+        description.contains('Pizza (') ||
+        description.contains('Shawarma:') ||
+        description.contains('Burger:') ||
+        description.contains('Calzone:') ||
+        description.contains('Fries:') ||
+        description.contains('Drink (')) {
+      anyNonDefaultOptionFound = true;
+
+      // Extract deal selections and add them to a special field
+      options['dealSelections'] = optionsList;
+    }
+
     options['hasOptions'] = anyNonDefaultOptionFound;
 
     print(
-      '🔍 DynamicOrdersScreen: Parsed result - hasOptions: ${options['hasOptions']}, size: ${options['size']}, crust: ${options['crust']}, base: ${options['base']}, toppings: ${options['toppings']}, sauceDips: ${options['sauceDips']}',
+      '🔍 DynamicOrdersScreen: Parsed result - hasOptions: ${options['hasOptions']}, size: ${options['size']}, crust: ${options['crust']}, base: ${options['base']}, toppings: ${options['toppings']}, sauceDips: ${options['sauceDips']}, dealSelections: ${options['dealSelections']}',
     );
 
     return options;
@@ -1342,16 +1377,47 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
           }
         }
 
-        final allOrdersForDisplay = [...liveActiveOrders];
+        // Group active orders by status and add dividers between different statuses
+        final allOrdersForDisplay = <Order>[];
+        if (liveActiveOrders.isNotEmpty) {
+          String? currentStatus;
+          for (int i = 0; i < liveActiveOrders.length; i++) {
+            final order = liveActiveOrders[i];
+            final orderStatus = _getStatusGroup(order.status);
+
+            // Add divider if status changes (except for the first order)
+            if (currentStatus != null && currentStatus != orderStatus) {
+              allOrdersForDisplay.add(
+                Order(
+                  orderId: -2, // Different ID for status dividers
+                  paymentType: '',
+                  transactionId: '',
+                  orderType: '',
+                  status: 'status_divider',
+                  createdAt: UKTimeService.now(),
+                  changeDue: 0.0,
+                  orderSource: '',
+                  customerName: '',
+                  orderTotalPrice: 0.0,
+                  items: [],
+                ),
+              );
+            }
+
+            currentStatus = orderStatus;
+            allOrdersForDisplay.add(order);
+          }
+        }
+
         if (liveCompletedOrders.isNotEmpty) {
-          // Add divider placeholder
+          // Add divider placeholder for completed orders
           allOrdersForDisplay.add(
             Order(
               orderId: -1,
               paymentType: '',
               transactionId: '',
               orderType: '',
-              status: '',
+              status: 'completed_divider',
               createdAt: UKTimeService.now(),
               changeDue: 0.0,
               orderSource: '',
@@ -1487,8 +1553,9 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
                                           final order =
                                               allOrdersForDisplay[index];
 
-                                          // Handle the divider placeholder
-                                          if (order.orderId == -1) {
+                                          // Handle divider placeholders
+                                          if (order.orderId == -1 ||
+                                              order.orderId == -2) {
                                             return const Padding(
                                               padding: EdgeInsets.symmetric(
                                                 vertical: 10.0,
@@ -1502,15 +1569,12 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
                                           }
 
                                           int? serialNumber;
-                                          // Only show serial number for active orders
+                                          // Only show serial number for active orders (used for timer logic only)
                                           if (liveActiveOrders.contains(
                                             order,
                                           )) {
                                             serialNumber =
-                                                liveActiveOrders.indexOf(
-                                                  order,
-                                                ) +
-                                                1;
+                                                1; // Just set to 1, won't display the number
                                           }
 
                                           return GestureDetector(
@@ -1533,15 +1597,9 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
                                               ),
                                               child: Row(
                                                 children: [
+                                                  // Numbering removed as requested - just empty space
                                                   if (serialNumber != null)
-                                                    Text(
-                                                      '$serialNumber',
-                                                      style: const TextStyle(
-                                                        fontSize: 50,
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                      ),
-                                                    )
+                                                    const SizedBox(width: 0)
                                                   else
                                                     const SizedBox(width: 0),
 
@@ -1602,103 +1660,140 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
                                                   ],
 
                                                   // Status update button
-                                                  GestureDetector(
-                                                    onTap: () async {
-                                                      // Check if this is an offline order first
-                                                      if (order.status
-                                                                  .toLowerCase() ==
-                                                              'offline' ||
-                                                          order.orderSource ==
-                                                              'epos_offline') {
-                                                        await _syncSingleOfflineOrder(
-                                                          order,
-                                                        );
-                                                        return;
-                                                      }
-
-                                                      final isDeliveryRelevantOrder =
-                                                          ((order.orderSource
-                                                                          .toLowerCase() ==
-                                                                      'epos' ||
-                                                                  order.orderSource
-                                                                          .toLowerCase() ==
-                                                                      'epos_offline') &&
-                                                              order.orderType
-                                                                      .toLowerCase() ==
-                                                                  'delivery') ||
-                                                          (order.orderSource
-                                                                      .toLowerCase() ==
-                                                                  'website' &&
-                                                              order.orderType
-                                                                      .toLowerCase() ==
-                                                                  'delivery');
-
-                                                      if (isDeliveryRelevantOrder) {
+                                                  SizedBox(
+                                                    width: 200,
+                                                    height: 80,
+                                                    child: ElevatedButton(
+                                                      onPressed: () async {
+                                                        // Check if this is an offline order first
                                                         if (order.status
                                                                     .toLowerCase() ==
-                                                                'yellow' ||
-                                                            order.status
-                                                                    .toLowerCase() ==
-                                                                'pending') {
-                                                          _updateOrderStatusAndRelist(
+                                                                'offline' ||
+                                                            order.orderSource ==
+                                                                'epos_offline') {
+                                                          await _syncSingleOfflineOrder(
                                                             order,
-                                                            'Ready',
                                                           );
-                                                        } else {
-                                                          CustomPopupService.show(
-                                                            context,
-                                                            "Delivery order status can only be set to 'Ready' from EPOS.",
-                                                            type:
-                                                                PopupType
-                                                                    .failure,
-                                                          );
+                                                          return;
                                                         }
-                                                      } else {
+
+                                                        final isDeliveryRelevantOrder =
+                                                            ((order.orderSource
+                                                                            .toLowerCase() ==
+                                                                        'epos' ||
+                                                                    order.orderSource
+                                                                            .toLowerCase() ==
+                                                                        'epos_offline') &&
+                                                                order.orderType
+                                                                        .toLowerCase() ==
+                                                                    'delivery') ||
+                                                            (order.orderSource
+                                                                        .toLowerCase() ==
+                                                                    'website' &&
+                                                                order.orderType
+                                                                        .toLowerCase() ==
+                                                                    'delivery');
+
+                                                        // For completed orders, don't allow further changes
                                                         if (order.status
-                                                                    .toLowerCase() !=
-                                                                'completed' &&
+                                                                    .toLowerCase() ==
+                                                                'blue' ||
                                                             order.status
-                                                                    .toLowerCase() !=
-                                                                'blue' &&
+                                                                    .toLowerCase() ==
+                                                                'completed' ||
                                                             order.status
-                                                                    .toLowerCase() !=
+                                                                    .toLowerCase() ==
                                                                 'delivered') {
-                                                          final uiFriendlyStatus =
-                                                              _mapFromBackendStatus(
-                                                                order.status,
-                                                              );
-                                                          final newStatus =
-                                                              _nextStatus(
-                                                                uiFriendlyStatus,
-                                                              );
-                                                          _updateOrderStatusAndRelist(
-                                                            order,
-                                                            newStatus,
-                                                          );
+                                                          return; // Do nothing for completed orders
                                                         }
-                                                      }
-                                                    },
-                                                    child: Container(
-                                                      width: 200,
-                                                      height: 80,
-                                                      alignment:
-                                                          Alignment.center,
-                                                      padding:
-                                                          const EdgeInsets.symmetric(
-                                                            horizontal: 14,
-                                                            vertical: 10,
-                                                          ),
-                                                      decoration: BoxDecoration(
-                                                        color:
+
+                                                        if (isDeliveryRelevantOrder) {
+                                                          // For delivery orders
+                                                          if (order.status
+                                                                      .toLowerCase() ==
+                                                                  'yellow' ||
+                                                              order.status
+                                                                      .toLowerCase() ==
+                                                                  'pending') {
+                                                            _updateOrderStatusAndRelist(
+                                                              order,
+                                                              'Ready',
+                                                            );
+                                                          } else if (order
+                                                                      .status
+                                                                      .toLowerCase() ==
+                                                                  'ready' ||
+                                                              order.status
+                                                                      .toLowerCase() ==
+                                                                  'green') {
+                                                            // For delivery orders that are ready, show message that driver assignment is needed
+                                                            if (order.driverId ==
+                                                                    null ||
+                                                                order.driverId! <=
+                                                                    0) {
+                                                              CustomPopupService.show(
+                                                                context,
+                                                                "Delivery order is ready. Driver assignment needed from dispatch system.",
+                                                                type:
+                                                                    PopupType
+                                                                        .success,
+                                                              );
+                                                            } else {
+                                                              CustomPopupService.show(
+                                                                context,
+                                                                "Delivery order is on its way. Status managed by dispatch system.",
+                                                                type:
+                                                                    PopupType
+                                                                        .success,
+                                                              );
+                                                            }
+                                                          }
+                                                        } else {
+                                                          // For non-delivery orders (dine-in, takeaway, collection)
+                                                          if (order.status
+                                                                      .toLowerCase() ==
+                                                                  'yellow' ||
+                                                              order.status
+                                                                      .toLowerCase() ==
+                                                                  'pending') {
+                                                            _updateOrderStatusAndRelist(
+                                                              order,
+                                                              'Ready',
+                                                            );
+                                                          } else if (order
+                                                                      .status
+                                                                      .toLowerCase() ==
+                                                                  'ready' ||
+                                                              order.status
+                                                                      .toLowerCase() ==
+                                                                  'green') {
+                                                            _updateOrderStatusAndRelist(
+                                                              order,
+                                                              'Completed',
+                                                            );
+                                                          }
+                                                        }
+                                                      },
+                                                      style: ElevatedButton.styleFrom(
+                                                        backgroundColor:
                                                             order.statusColor,
-                                                        borderRadius:
-                                                            BorderRadius.circular(
-                                                              50,
+                                                        padding:
+                                                            const EdgeInsets.symmetric(
+                                                              horizontal: 14,
+                                                              vertical: 10,
                                                             ),
+                                                        shape: RoundedRectangleBorder(
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                50,
+                                                              ),
+                                                        ),
+                                                        elevation: 4.0,
                                                       ),
                                                       child: Text(
-                                                        order
-                                                            .getDisplayStatusLabel(),
+                                                        _getNextStepLabel(
+                                                          order,
+                                                        ), // Use the new method here
                                                         style: const TextStyle(
                                                           fontSize: 25,
                                                           color: Colors.black,
@@ -1993,7 +2088,7 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
                                                     child: Row(
                                                       crossAxisAlignment:
                                                           CrossAxisAlignment
-                                                              .center,
+                                                              .start,
                                                       children: [
                                                         Expanded(
                                                           flex: 6,
@@ -2042,7 +2137,29 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
                                                                                 FontStyle.normal,
                                                                           ),
                                                                           overflow:
-                                                                              TextOverflow.ellipsis,
+                                                                              item.description.contains(
+                                                                                        'Selected Pizzas',
+                                                                                      ) ||
+                                                                                      item.description.contains(
+                                                                                        'Selected Shawarmas',
+                                                                                      ) ||
+                                                                                      item.description.contains(
+                                                                                        'Deal',
+                                                                                      )
+                                                                                  ? TextOverflow.visible
+                                                                                  : TextOverflow.ellipsis,
+                                                                          maxLines:
+                                                                              item.description.contains(
+                                                                                        'Selected Pizzas',
+                                                                                      ) ||
+                                                                                      item.description.contains(
+                                                                                        'Selected Shawarmas',
+                                                                                      ) ||
+                                                                                      item.description.contains(
+                                                                                        'Deal',
+                                                                                      )
+                                                                                  ? null
+                                                                                  : 1,
                                                                         ),
                                                                       if (hasOptions) ...[
                                                                         if (selectedSize !=
@@ -2158,6 +2275,34 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
                                                                                 TextOverflow.ellipsis,
                                                                           ),
                                                                         ],
+
+                                                                        // Display deal selections
+                                                                        if (itemOptions['dealSelections'] !=
+                                                                            null)
+                                                                          ...(itemOptions['dealSelections']
+                                                                                  as List<
+                                                                                    String
+                                                                                  >)
+                                                                              .map(
+                                                                                (
+                                                                                  dealSelection,
+                                                                                ) => Text(
+                                                                                  dealSelection,
+                                                                                  style: const TextStyle(
+                                                                                    fontSize:
+                                                                                        15,
+                                                                                    fontFamily:
+                                                                                        'Poppins',
+                                                                                    color:
+                                                                                        Colors.black,
+                                                                                  ),
+                                                                                  maxLines:
+                                                                                      null,
+                                                                                  overflow:
+                                                                                      TextOverflow.visible,
+                                                                                ),
+                                                                              )
+                                                                              .toList(),
                                                                       ],
                                                                     ],
                                                                   ),

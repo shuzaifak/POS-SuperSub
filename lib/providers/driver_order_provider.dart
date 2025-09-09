@@ -14,6 +14,7 @@ class DriverOrderProvider with ChangeNotifier {
   Timer? _pollTimer;
   Timer? _colorUpdateTimer; // New timer for live color updates
   String _selectedDate = DateFormat('yyyy-MM-dd').format(UKTimeService.now());
+  bool _isDisposed = false;
 
   List<Order> get orders => _orders;
   bool get isLoading => _isLoading;
@@ -29,6 +30,10 @@ class DriverOrderProvider with ChangeNotifier {
 
     // Poll for new data every 30 seconds
     _pollTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      if (_isDisposed) {
+        timer.cancel();
+        return;
+      }
       loadOrders(
         showLoading: false,
       ); // Don't show loading indicator for polling
@@ -36,6 +41,10 @@ class DriverOrderProvider with ChangeNotifier {
 
     // Update colors every 60 seconds for live time-based changes
     _colorUpdateTimer = Timer.periodic(const Duration(seconds: 60), (timer) {
+      if (_isDisposed) {
+        timer.cancel();
+        return;
+      }
       _updateColorsLive();
     });
   }
@@ -47,10 +56,12 @@ class DriverOrderProvider with ChangeNotifier {
 
   // Method to update colors live without fetching new data
   void _updateColorsLive() {
-    // Just notify listeners to trigger color recalculation
-    // The statusColor getter will automatically calculate new colors based on current time
-    print('🎨 Live color update triggered at ${UKTimeService.now()}');
-    notifyListeners();
+    if (!_isDisposed) {
+      // Just notify listeners to trigger color recalculation
+      // The statusColor getter will automatically calculate new colors based on current time
+      print('🎨 Live color update triggered at ${UKTimeService.now()}');
+      notifyListeners();
+    }
   }
 
   void setSelectedDate(String date) {
@@ -64,7 +75,7 @@ class DriverOrderProvider with ChangeNotifier {
     if (showLoading) {
       _isLoading = true;
       _error = null;
-      notifyListeners();
+      if (!_isDisposed) notifyListeners();
     }
 
     try {
@@ -159,7 +170,7 @@ class DriverOrderProvider with ChangeNotifier {
         _isLoading = false;
       }
       // Always notify listeners to ensure UI updates
-      notifyListeners();
+      if (!_isDisposed) notifyListeners();
     }
   }
 
@@ -174,6 +185,7 @@ class DriverOrderProvider with ChangeNotifier {
 
       final orderDateTime = DateTime(
         today.year,
+
         today.month,
         today.day,
         hour,
@@ -190,6 +202,7 @@ class DriverOrderProvider with ChangeNotifier {
 
   @override
   void dispose() {
+    _isDisposed = true;
     stopPolling();
     super.dispose();
   }

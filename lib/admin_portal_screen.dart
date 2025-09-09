@@ -12,9 +12,9 @@ import '../models/order.dart';
 import '../widgets/live_updating_pill.dart';
 import '../widgets/items_table_widget.dart';
 import '../widgets/paidouts_table_widget.dart';
+import '../widgets/postal_codes_table_widget.dart';
 import 'package:epos/services/uk_time_service.dart';
 import 'package:epos/services/custom_popup_service.dart';
-
 
 class AdminPortalScreen extends StatefulWidget {
   const AdminPortalScreen({Key? key}) : super(key: key);
@@ -49,114 +49,115 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: Container(
-          width: 300,
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(15),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.admin_panel_settings,
-                size: 48,
-                color: Colors.black,
+      builder:
+          (context) => Dialog(
+            backgroundColor: Colors.transparent,
+            child: Container(
+              width: 300,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(15),
               ),
-              const SizedBox(height: 16),
-              Text(
-                'Admin Portal',
-                style: GoogleFonts.poppins(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Enter PIN to access admin features',
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  color: Colors.grey.shade600,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 20),
-              TextField(
-                controller: _pinController,
-                obscureText: true,
-                keyboardType: TextInputType.number,
-                maxLength: 4,
-                textAlign: TextAlign.center,
-                style: GoogleFonts.poppins(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 8,
-                ),
-                decoration: InputDecoration(
-                  hintText: '••••',
-                  hintStyle: GoogleFonts.poppins(
-                    color: Colors.grey.shade400,
-                    letterSpacing: 8,
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: Colors.grey.shade300),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: Colors.black),
-                  ),
-                  counterText: '',
-                ),
-                onSubmitted: (pin) => _validatePin(pin),
-              ),
-              const SizedBox(height: 20),
-              Row(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Expanded(
-                    child: TextButton(
-                      onPressed: () {
-                        Navigator.of(context).pop();
-                        Navigator.of(context).pop(); // Go back to settings
-                      },
-                      child: Text(
-                        'Cancel',
-                        style: GoogleFonts.poppins(
-                          color: Colors.grey.shade600,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
+                  Icon(
+                    Icons.admin_panel_settings,
+                    size: 48,
+                    color: Colors.black,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Admin Portal',
+                    style: GoogleFonts.poppins(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => _validatePin(_pinController.text),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.black,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      child: Text(
-                        'Access',
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Enter PIN to access admin features',
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      color: Colors.grey.shade600,
                     ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 20),
+                  TextField(
+                    controller: _pinController,
+                    obscureText: true,
+                    keyboardType: TextInputType.number,
+                    maxLength: 4,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.poppins(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 8,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: '••••',
+                      hintStyle: GoogleFonts.poppins(
+                        color: Colors.grey.shade400,
+                        letterSpacing: 8,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: Colors.black),
+                      ),
+                      counterText: '',
+                    ),
+                    onSubmitted: (pin) => _validatePin(pin),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                            Navigator.of(context).pop(); // Go back to settings
+                          },
+                          child: Text(
+                            'Cancel',
+                            style: GoogleFonts.poppins(
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => _validatePin(_pinController.text),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.black,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: Text(
+                            'Access',
+                            style: GoogleFonts.poppins(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
+            ),
           ),
-        ),
-      ),
     );
   }
 
@@ -179,6 +180,10 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
     _isInitialized = true;
     final provider = Provider.of<SalesReportProvider>(context, listen: false);
     await provider.initialize();
+    await provider.loadDailyReport();
+    await provider.loadWeeklyReport();
+    await provider.loadMonthlyReport();
+    await provider.loadDriverReport();
   }
 
   void _showErrorMessage(String message) {
@@ -230,9 +235,7 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
             Positioned.fill(
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-                child: Container(
-                  color: Colors.black.withOpacity(0.3),
-                ),
+                child: Container(color: Colors.black.withOpacity(0.3)),
               ),
             ),
           ],
@@ -254,9 +257,7 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
                 _buildTabNavigation(),
 
                 // Content
-                Expanded(
-                  child: _buildTabContent(),
-                ),
+                Expanded(child: _buildTabContent()),
               ],
             ),
           ),
@@ -326,65 +327,52 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
 
   Widget _buildTabNavigation() {
     final tabs = [
-      "Driver Management",
       "Daily Report",
       "Weekly Report",
       "Monthly Report",
       "Drivers Report",
+      "Driver Management",
     ];
 
     return Container(
       padding: const EdgeInsets.all(20),
       child: Row(
-        children: tabs.asMap().entries.map((entry) {
-          final index = entry.key;
-          final title = entry.value;
-          final isSelected = _selectedTab == index;
+        children:
+            tabs.asMap().entries.map((entry) {
+              final index = entry.key;
+              final title = entry.value;
+              final isSelected = _selectedTab == index;
 
-          return Expanded(
-            child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  _selectedTab = index;
-                });
-
-                // Load appropriate data when switching tabs
-                final provider = Provider.of<SalesReportProvider>(context, listen: false);
-                switch (index) {
-                  case 1:
-                    provider.loadDailyReport();
-                    break;
-                  case 2:
-                    provider.loadWeeklyReport();
-                    break;
-                  case 3:
-                    provider.loadMonthlyReport();
-                    break;
-                  case 4:
-                    provider.loadDriverReport();
-                    break;
-                }
-              },
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 2),
-                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                decoration: BoxDecoration(
-                  color: isSelected ? Colors.black : Colors.grey.shade200,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  title,
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.poppins(
-                    color: isSelected ? Colors.white : Colors.black,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
+              return Expanded(
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _selectedTab = index;
+                    });
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 2),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 8,
+                      horizontal: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isSelected ? Colors.black : Colors.grey.shade200,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      title,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.poppins(
+                        color: isSelected ? Colors.white : Colors.black,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
-          );
-        }).toList(),
+              );
+            }).toList(),
       ),
     );
   }
@@ -392,17 +380,17 @@ class _AdminPortalScreenState extends State<AdminPortalScreen> {
   Widget _buildTabContent() {
     switch (_selectedTab) {
       case 0:
-        return _buildDriverManagement();
-      case 1:
         return _buildSalesReportTab(1); // Daily
-      case 2:
+      case 1:
         return _buildSalesReportTab(2); // Weekly
-      case 3:
+      case 2:
         return _buildSalesReportTab(3); // Monthly
-      case 4:
+      case 3:
         return _buildSalesReportTab(4); // Driver Report
+      case 4:
+        return _buildDriverManagement(); // Driver Management - moved to last
       default:
-        return _buildDriverManagement();
+        return _buildSalesReportTab(1); // Default to Daily
     }
   }
 
@@ -442,9 +430,7 @@ class _AdminDriverManagementState extends State<AdminDriverManagement> {
           ),
           const SizedBox(height: 20),
           // Content
-          Expanded(
-            child: _buildDriverTabContent(),
-          ),
+          Expanded(child: _buildDriverTabContent()),
         ],
       ),
     );
@@ -493,6 +479,7 @@ class _AdminDriverManagementState extends State<AdminDriverManagement> {
     }
   }
 }
+
 class AddDriverTab extends StatefulWidget {
   const AddDriverTab({Key? key}) : super(key: key);
 
@@ -558,7 +545,9 @@ class _AddDriverTabState extends State<AddDriverTab> {
                           if (value == null || value.isEmpty) {
                             return 'Email is required';
                           }
-                          if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
+                          if (!RegExp(
+                            r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
+                          ).hasMatch(value)) {
                             return 'Invalid email format';
                           }
                           return null;
@@ -613,7 +602,10 @@ class _AddDriverTabState extends State<AddDriverTab> {
                     TextButton(
                       onPressed: _clearForm,
                       style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
                         backgroundColor: Colors.grey.shade600,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
@@ -631,28 +623,32 @@ class _AddDriverTabState extends State<AddDriverTab> {
                     ElevatedButton(
                       onPressed: _isLoading ? null : _addDriver,
                       style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
                         backgroundColor: Colors.green,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
-                      child: _isLoading
-                          ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2,
-                        ),
-                      )
-                          : Text(
-                        'Add Driver',
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+                      child:
+                          _isLoading
+                              ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                              : Text(
+                                'Add Driver',
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                     ),
                   ],
                 ),
@@ -674,10 +670,7 @@ class _AddDriverTabState extends State<AddDriverTab> {
       controller: controller,
       obscureText: obscureText,
       validator: validator,
-      style: GoogleFonts.poppins(
-        fontSize: 14,
-        color: Colors.black87,
-      ),
+      style: GoogleFonts.poppins(fontSize: 14, color: Colors.black87),
       decoration: InputDecoration(
         hintText: hintText,
         hintStyle: GoogleFonts.poppins(
@@ -700,11 +693,11 @@ class _AddDriverTabState extends State<AddDriverTab> {
           borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: Colors.red),
         ),
-        errorStyle: GoogleFonts.poppins(
-          fontSize: 12,
-          color: Colors.red,
+        errorStyle: GoogleFonts.poppins(fontSize: 12, color: Colors.red),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         filled: true,
         fillColor: Colors.white,
       ),
@@ -732,7 +725,8 @@ class _AddDriverTabState extends State<AddDriverTab> {
         email: _emailController.text,
         username: _usernameController.text,
         password: _passwordController.text,
-        phoneNumber: _phoneController.text.isNotEmpty ? _phoneController.text : null,
+        phoneNumber:
+            _phoneController.text.isNotEmpty ? _phoneController.text : null,
       );
 
       if (mounted) {
@@ -823,10 +817,7 @@ class _DeactivateDriverTabState extends State<DeactivateDriverTab> {
             children: [
               TextField(
                 controller: _usernameController,
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  color: Colors.black87,
-                ),
+                style: GoogleFonts.poppins(fontSize: 14, color: Colors.black87),
                 decoration: InputDecoration(
                   hintText: 'Enter Username',
                   hintStyle: GoogleFonts.poppins(
@@ -845,7 +836,10 @@ class _DeactivateDriverTabState extends State<DeactivateDriverTab> {
                     borderRadius: BorderRadius.circular(8),
                     borderSide: const BorderSide(color: Colors.red),
                   ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   filled: true,
                   fillColor: Colors.white,
                 ),
@@ -859,7 +853,10 @@ class _DeactivateDriverTabState extends State<DeactivateDriverTab> {
                       _usernameController.clear();
                     },
                     style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
                       backgroundColor: Colors.grey.shade600,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -875,30 +872,37 @@ class _DeactivateDriverTabState extends State<DeactivateDriverTab> {
                   ),
                   const SizedBox(width: 12),
                   ElevatedButton(
-                    onPressed: _isLoading || !_isButtonEnabled ? null : _deactivateDriver,
+                    onPressed:
+                        _isLoading || !_isButtonEnabled
+                            ? null
+                            : _deactivateDriver,
                     style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
                       backgroundColor: Colors.red,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
                     ),
-                    child: _isLoading
-                        ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2,
-                      ),
-                    )
-                        : Text(
-                      'Deactivate',
-                      style: GoogleFonts.poppins(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                    child:
+                        _isLoading
+                            ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                            : Text(
+                              'Deactivate',
+                              style: GoogleFonts.poppins(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                   ),
                 ],
               ),
@@ -999,7 +1003,9 @@ class _DriverPortalTabState extends State<DriverPortalTab>
                   onTap: _selectDate,
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 8),
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                     decoration: BoxDecoration(
                       border: Border.all(color: Colors.grey.shade300),
                       borderRadius: BorderRadius.circular(8),
@@ -1029,57 +1035,58 @@ class _DriverPortalTabState extends State<DriverPortalTab>
             ),
             const SizedBox(height: 20),
             Expanded(
-              child: provider.isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : provider.error != null
-                  ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      'Error: ${provider.error}',
-                      style: GoogleFonts.poppins(
-                        color: Colors.red,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: () => provider.loadOrders(),
-                      child: Text(
-                        'Retry',
-                        style: GoogleFonts.poppins(
-                          fontWeight: FontWeight.w600,
+              child:
+                  provider.isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : provider.error != null
+                      ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              'Error: ${provider.error}',
+                              style: GoogleFonts.poppins(
+                                color: Colors.red,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              onPressed: () => provider.loadOrders(),
+                              child: Text(
+                                'Retry',
+                                style: GoogleFonts.poppins(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                      : provider.orders.isEmpty
+                      ? Center(
+                        child: Text(
+                          'No orders found for selected date',
+                          style: GoogleFonts.poppins(
+                            fontSize: 16,
+                            color: Colors.grey,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      )
+                      : SingleChildScrollView(
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey.shade200),
+                          ),
+                          child: _buildOrdersGrid(provider.orders),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              )
-                  : provider.orders.isEmpty
-                  ? Center(
-                child: Text(
-                  'No orders found for selected date',
-                  style: GoogleFonts.poppins(
-                    fontSize: 16,
-                    color: Colors.grey,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              )
-                  : SingleChildScrollView(
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade50,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.shade200),
-                  ),
-                  child: _buildOrdersGrid(provider.orders),
-                ),
-              ),
             ),
           ],
         );
@@ -1119,11 +1126,7 @@ class _DriverPortalTabState extends State<DriverPortalTab>
               else
                 const Expanded(child: SizedBox()),
               if (i < 2)
-                Container(
-                  width: 1,
-                  height: 100,
-                  color: Colors.grey.shade300,
-                ),
+                Container(width: 1, height: 100, color: Colors.grey.shade300),
             ],
           ],
         ),
@@ -1158,7 +1161,6 @@ class _DriverPortalTabState extends State<DriverPortalTab>
   }
 
   void _showOrderDetails(Order order) {
-
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -1219,35 +1221,30 @@ class _DriverPortalTabState extends State<DriverPortalTab>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         // Customer Information
-                        _buildDetailSection(
-                          'Customer Information',
-                          [
-                            _buildDetailRow(
-                                'Name', order.customerEmail ?? 'N/A'),
-                            // This now contains customer_name
-                            _buildDetailRow(
-                                'Phone', order.phoneNumber ?? 'N/A'),
-                            _buildDetailRow(
-                                'Address', _buildFullAddress(order)),
-                          ],
-                        ),
+                        _buildDetailSection('Customer Information', [
+                          _buildDetailRow('Name', order.customerEmail ?? 'N/A'),
+                          // This now contains customer_name
+                          _buildDetailRow('Phone', order.phoneNumber ?? 'N/A'),
+                          _buildDetailRow('Address', _buildFullAddress(order)),
+                        ]),
                         const SizedBox(height: 20),
                         // Order Information
-                        _buildDetailSection(
-                          'Order Information',
-                          [
-                            _buildDetailRow('Status', order.statusLabel),
-                            _buildDetailRow('Total', '£${order.orderTotalPrice}'),
-                            _buildDetailRow('Time',
-                                DateFormat('HH:mm - dd/MM/yyyy').format(
-                                    order.createdAt)),
-                          ],
-                        ),
+                        _buildDetailSection('Order Information', [
+                          _buildDetailRow('Status', order.statusLabel),
+                          _buildDetailRow('Total', '£${order.orderTotalPrice}'),
+                          _buildDetailRow(
+                            'Time',
+                            DateFormat(
+                              'HH:mm - dd/MM/yyyy',
+                            ).format(order.createdAt),
+                          ),
+                        ]),
                         const SizedBox(height: 20),
                         // Items
                         _buildDetailSection(
                           'Items',
-                          order.items.map((item) => _buildItemRow(item))
+                          order.items
+                              .map((item) => _buildItemRow(item))
                               .toList(),
                         ),
                       ],
@@ -1283,9 +1280,7 @@ class _DriverPortalTabState extends State<DriverPortalTab>
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: Colors.grey.shade200),
           ),
-          child: Column(
-            children: children,
-          ),
+          child: Column(children: children),
         ),
       ],
     );
@@ -1311,10 +1306,7 @@ class _DriverPortalTabState extends State<DriverPortalTab>
           Expanded(
             child: Text(
               value,
-              style: GoogleFonts.poppins(
-                fontSize: 14,
-                color: Colors.black87,
-              ),
+              style: GoogleFonts.poppins(fontSize: 14, color: Colors.black87),
             ),
           ),
         ],
@@ -1385,8 +1377,8 @@ class _DriverPortalTabState extends State<DriverPortalTab>
 
   String _buildFullAddress(Order order) {
     final parts = <String>[];
-    if (order.streetAddress?.isNotEmpty == true) parts.add(
-        order.streetAddress!);
+    if (order.streetAddress?.isNotEmpty == true)
+      parts.add(order.streetAddress!);
     if (order.city?.isNotEmpty == true) parts.add(order.city!);
     if (order.county?.isNotEmpty == true) parts.add(order.county!);
     if (order.postalCode?.isNotEmpty == true) parts.add(order.postalCode!);
@@ -1429,7 +1421,8 @@ class _DriverPortalTabState extends State<DriverPortalTab>
 class AdminSalesReport extends StatelessWidget {
   final int reportType;
 
-  const AdminSalesReport({Key? key, required this.reportType}) : super(key: key);
+  const AdminSalesReport({Key? key, required this.reportType})
+    : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -1443,9 +1436,7 @@ class AdminSalesReport extends StatelessWidget {
         });
 
         if (provider.isLoading) {
-          return const Center(
-            child: CircularProgressIndicator(),
-          );
+          return const Center(child: CircularProgressIndicator());
         }
 
         return SingleChildScrollView(
@@ -1453,7 +1444,11 @@ class AdminSalesReport extends StatelessWidget {
           child: Column(
             children: [
               // Date/Period selectors based on report type
-              _buildDateSelector(context, provider, reportType), // Pass context here
+              _buildDateSelector(
+                context,
+                provider,
+                reportType,
+              ), // Pass context here
               const SizedBox(height: 20),
 
               // Report Title
@@ -1471,8 +1466,7 @@ class AdminSalesReport extends StatelessWidget {
               const SizedBox(height: 20),
 
               // Items section (not for driver report)
-              if (reportType != 4)
-                _buildItemsSection(provider),
+              if (reportType != 4) _buildItemsSection(provider),
             ],
           ),
         );
@@ -1482,15 +1476,24 @@ class AdminSalesReport extends StatelessWidget {
 
   String _getReportTitle(int reportType) {
     switch (reportType) {
-      case 1: return 'Daily Report';
-      case 2: return 'Weekly Report';
-      case 3: return 'Monthly Report';
-      case 4: return 'Drivers Report';
-      default: return 'Report';
+      case 1:
+        return 'Daily Report';
+      case 2:
+        return 'Weekly Report';
+      case 3:
+        return 'Monthly Report';
+      case 4:
+        return 'Drivers Report';
+      default:
+        return 'Report';
     }
   }
 
-  Widget _buildDateSelector(BuildContext context, SalesReportProvider provider, int reportType) {
+  Widget _buildDateSelector(
+    BuildContext context,
+    SalesReportProvider provider,
+    int reportType,
+  ) {
     switch (reportType) {
       case 1:
         return _buildDailyDateSelector(context, provider);
@@ -1505,7 +1508,10 @@ class AdminSalesReport extends StatelessWidget {
     }
   }
 
-  Widget _buildDailyDateSelector(BuildContext context, SalesReportProvider provider) {
+  Widget _buildDailyDateSelector(
+    BuildContext context,
+    SalesReportProvider provider,
+  ) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -1547,18 +1553,23 @@ class AdminSalesReport extends StatelessWidget {
         const SizedBox(width: 10),
         _buildActionButton(
           provider.isThermalPrinting ? 'Printing...' : 'Print Report',
-          provider.isThermalPrinting ? null : () => _printThermalReport(context, provider),
+          provider.isThermalPrinting
+              ? null
+              : () => _printThermalReport(context, provider),
         ),
       ],
     );
   }
 
-  Widget _buildWeeklySelector(BuildContext context, SalesReportProvider provider) {
+  Widget _buildWeeklySelector(
+    BuildContext context,
+    SalesReportProvider provider,
+  ) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Text(
-          'Year:',
+          'Select Date:',
           style: GoogleFonts.poppins(
             fontSize: 14,
             fontWeight: FontWeight.w500,
@@ -1566,103 +1577,28 @@ class AdminSalesReport extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 10),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.grey.shade400),
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Text(
-            provider.selectedYear.toString(),
-            style: GoogleFonts.poppins(
-              fontSize: 12,
-              fontWeight: FontWeight.w400,
+        GestureDetector(
+          onTap: () => _selectDate(context, provider),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey.shade400),
+              borderRadius: BorderRadius.circular(4),
             ),
-          ),
-        ),
-        const SizedBox(width: 20),
-        Text(
-          'Week No.:',
-          style: GoogleFonts.poppins(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: Colors.black87,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Container(
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.grey.shade400),
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              InkWell(
-                onTap: () {
-                  if (provider.selectedWeek > 1) {
-                    provider.setSelectedWeek(provider.selectedWeek - 1);
-                  } else if (provider.selectedYear > 2020) {
-                    provider.setSelectedYear(provider.selectedYear - 1);
-                    provider.setSelectedWeek(52);
-                  }
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                  child: Icon(
-                    Icons.remove,
-                    size: 16,
-                    color: (provider.selectedWeek > 1 || provider.selectedYear > 2020)
-                        ? Colors.black87
-                        : Colors.grey.shade400,
-                  ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                decoration: BoxDecoration(
-                  border: Border.symmetric(
-                    vertical: BorderSide(color: Colors.grey.shade400),
-                  ),
-                ),
-                child: Text(
-                  provider.selectedWeek.toString(),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  DateFormat('dd/MM/yyyy').format(provider.selectedDate),
                   style: GoogleFonts.poppins(
                     fontSize: 12,
                     fontWeight: FontWeight.w400,
                   ),
                 ),
-              ),
-              InkWell(
-                onTap: () {
-                  final currentYear = UKTimeService.now().year;
-                  final currentWeek = _getWeekNumber(UKTimeService.now());
-
-                  if (provider.selectedYear < currentYear) {
-                    if (provider.selectedWeek < 52) {
-                      provider.setSelectedWeek(provider.selectedWeek + 1);
-                    } else {
-                      provider.setSelectedYear(provider.selectedYear + 1);
-                      provider.setSelectedWeek(1);
-                    }
-                  } else if (provider.selectedYear == currentYear) {
-                    if (provider.selectedWeek < currentWeek) {
-                      provider.setSelectedWeek(provider.selectedWeek + 1);
-                    }
-                  }
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                  child: Icon(
-                    Icons.add,
-                    size: 16,
-                    color: _canIncreaseWeek(provider)
-                        ? Colors.black87
-                        : Colors.grey.shade400,
-                  ),
-                ),
-              ),
-            ],
+                const SizedBox(width: 5),
+                const Icon(Icons.calendar_today, size: 16),
+              ],
+            ),
           ),
         ),
         const SizedBox(width: 15),
@@ -1670,16 +1606,31 @@ class AdminSalesReport extends StatelessWidget {
         const SizedBox(width: 10),
         _buildActionButton(
           provider.isThermalPrinting ? 'Printing...' : 'Print Report',
-          provider.isThermalPrinting ? null : () => _printThermalReport(context, provider),
+          provider.isThermalPrinting
+              ? null
+              : () => _printThermalReport(context, provider),
         ),
       ],
     );
   }
 
-  Widget _buildMonthlySelector(BuildContext context, SalesReportProvider provider) {
+  Widget _buildMonthlySelector(
+    BuildContext context,
+    SalesReportProvider provider,
+  ) {
     final months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
     ];
 
     return Row(
@@ -1727,18 +1678,19 @@ class AdminSalesReport extends StatelessWidget {
           child: DropdownButtonHideUnderline(
             child: DropdownButton<int>(
               value: provider.selectedMonth,
-              items: months.asMap().entries.map((entry) {
-                return DropdownMenuItem<int>(
-                  value: entry.key + 1,
-                  child: Text(
-                    entry.value,
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-                );
-              }).toList(),
+              items:
+                  months.asMap().entries.map((entry) {
+                    return DropdownMenuItem<int>(
+                      value: entry.key + 1,
+                      child: Text(
+                        entry.value,
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    );
+                  }).toList(),
               onChanged: (month) {
                 if (month != null) {
                   provider.setSelectedMonth(month);
@@ -1752,13 +1704,18 @@ class AdminSalesReport extends StatelessWidget {
         const SizedBox(width: 10),
         _buildActionButton(
           provider.isThermalPrinting ? 'Printing...' : 'Print Report',
-          provider.isThermalPrinting ? null : () => _printThermalReport(context, provider),
+          provider.isThermalPrinting
+              ? null
+              : () => _printThermalReport(context, provider),
         ),
       ],
     );
   }
 
-  Widget _buildDriverDateSelector(BuildContext context, SalesReportProvider provider) {
+  Widget _buildDriverDateSelector(
+    BuildContext context,
+    SalesReportProvider provider,
+  ) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -1800,14 +1757,19 @@ class AdminSalesReport extends StatelessWidget {
         const SizedBox(width: 10),
         _buildActionButton(
           provider.isThermalPrinting ? 'Printing...' : 'Print Report',
-          provider.isThermalPrinting ? null : () => _printThermalReport(context, provider),
+          provider.isThermalPrinting
+              ? null
+              : () => _printThermalReport(context, provider),
         ),
       ],
     );
   }
 
-// UPDATE the _selectDate method to accept context parameter:
-  Future<void> _selectDate(BuildContext context, SalesReportProvider provider) async {
+  // UPDATE the _selectDate method to accept context parameter:
+  Future<void> _selectDate(
+    BuildContext context,
+    SalesReportProvider provider,
+  ) async {
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: provider.selectedDate,
@@ -1837,24 +1799,23 @@ class AdminSalesReport extends StatelessWidget {
     return ElevatedButton(
       onPressed: onPressed,
       style: ElevatedButton.styleFrom(
-        backgroundColor: onPressed != null ? Colors.black : Colors.grey.shade400,
+        backgroundColor:
+            onPressed != null ? Colors.black : Colors.grey.shade400,
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(4),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       ),
       child: Text(
         text,
-        style: GoogleFonts.poppins(
-          fontSize: 12,
-          fontWeight: FontWeight.w500,
-        ),
+        style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w500),
       ),
     );
   }
 
-  Future<void> _printThermalReport(BuildContext context, SalesReportProvider provider) async {
+  Future<void> _printThermalReport(
+    BuildContext context,
+    SalesReportProvider provider,
+  ) async {
     try {
       await provider.printThermalReport();
 
@@ -1903,7 +1864,7 @@ class AdminSalesReport extends StatelessWidget {
             'Filter by Source:',
             provider.sourceFilter,
             _getSourceOptions(provider),
-                (value) => provider.setFilters(source: value),
+            (value) => provider.setFilters(source: value),
           ),
         ),
         const SizedBox(width: 20),
@@ -1912,7 +1873,7 @@ class AdminSalesReport extends StatelessWidget {
             'Filter by Payment Type:',
             provider.paymentFilter,
             _getPaymentOptions(provider),
-                (value) => provider.setFilters(payment: value),
+            (value) => provider.setFilters(payment: value),
           ),
         ),
         const SizedBox(width: 20),
@@ -1921,7 +1882,7 @@ class AdminSalesReport extends StatelessWidget {
             'Filter by Order Type:',
             provider.orderTypeFilter,
             _getOrderTypeOptions(provider),
-                (value) => provider.setFilters(orderType: value),
+            (value) => provider.setFilters(orderType: value),
           ),
         ),
       ],
@@ -1929,11 +1890,11 @@ class AdminSalesReport extends StatelessWidget {
   }
 
   Widget _buildFilterDropdown(
-      String label,
-      String value,
-      List<String> options,
-      Function(String) onChanged,
-      ) {
+    String label,
+    String value,
+    List<String> options,
+    Function(String) onChanged,
+  ) {
     final currentValue = options.contains(value) ? value : 'All';
 
     return Column(
@@ -1959,18 +1920,19 @@ class AdminSalesReport extends StatelessWidget {
             child: DropdownButton<String>(
               value: currentValue,
               isExpanded: true,
-              items: options.map((option) {
-                return DropdownMenuItem<String>(
-                  value: option,
-                  child: Text(
-                    option,
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-                );
-              }).toList(),
+              items:
+                  options.map((option) {
+                    return DropdownMenuItem<String>(
+                      value: option,
+                      child: Text(
+                        option,
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    );
+                  }).toList(),
               onChanged: (newValue) {
                 if (newValue != null) {
                   onChanged(newValue);
@@ -1987,9 +1949,7 @@ class AdminSalesReport extends StatelessWidget {
     if (provider.isLoading) {
       return Container(
         height: 300,
-        child: const Center(
-          child: CircularProgressIndicator(),
-        ),
+        child: const Center(child: CircularProgressIndicator()),
       );
     }
 
@@ -2021,7 +1981,10 @@ class AdminSalesReport extends StatelessWidget {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.black,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(4),
                   ),
@@ -2049,16 +2012,10 @@ class AdminSalesReport extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Left side - Summary
-        Expanded(
-          flex: 1,
-          child: _buildSummaryCard(provider),
-        ),
+        Expanded(flex: 1, child: _buildSummaryCard(provider)),
         const SizedBox(width: 20),
         // Right side - Charts
-        Expanded(
-          flex: 2,
-          child: _buildChartsSection(provider),
-        ),
+        Expanded(flex: 2, child: _buildChartsSection(provider)),
       ],
     );
   }
@@ -2085,22 +2042,68 @@ class AdminSalesReport extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 15),
-          _buildSummaryItem('Period:', _getPeriodText(provider, report), Colors.purple),
-          _buildSummaryItem('Total Sales Amount:', _getFormattedAmount(report?['total_sales'] ?? report?['total_sales_amount']), Colors.purple),
+          _buildSummaryItem(
+            'Period:',
+            _getPeriodText(provider, report),
+            Colors.purple,
+          ),
+          _buildSummaryItem(
+            'Total Sales Amount:',
+            _getFormattedAmount(
+              report?['total_sales'] ?? report?['total_sales_amount'],
+            ),
+            Colors.purple,
+          ),
           if (report?['total_orders_placed'] != null)
-            _buildSummaryItem('Total Orders Placed:', report!['total_orders_placed'].toString(), Colors.purple),
+            _buildSummaryItem(
+              'Total Orders Placed:',
+              report!['total_orders_placed'].toString(),
+              Colors.purple,
+            ),
           if (_hasPaidOutsData(report))
-            _buildSummaryItem('Total Paid Outs:', '-${_getFormattedAmount(_getPaidOutsValue(report))}', Colors.red),
+            _buildSummaryItem(
+              'Total Paid Outs:',
+              '-${_getFormattedAmount(_getPaidOutsValue(report))}',
+              Colors.red,
+            ),
           if (_hasDiscountData(report))
-            _buildSummaryItem('Total Discount:', '-${_getFormattedAmount(report?['total_discount'])}', Colors.orange),
+            _buildSummaryItem(
+              'Total Discount:',
+              '-${_getFormattedAmount(report?['total_discount'])}',
+              Colors.orange,
+            ),
           if (_hasPaidOutsData(report) || _hasDiscountData(report))
-            _buildSummaryItem('Net Sales Amount:', _getFormattedAmount(_getNetSalesAmount(report)), Colors.green),
-          _buildSummaryItem('Sales Growth (vs. Last Week):', _getGrowthText(report), Colors.purple),
-          _buildSummaryItem('Sales Growth (vs. Last Week):', _getGrowthAmount(report), Colors.purple),
-          _buildSummaryItem('Most Sold Item:', _getMostSoldItem(report), Colors.purple),
+            _buildSummaryItem(
+              'Net Sales Amount:',
+              _getFormattedAmount(_getNetSalesAmount(report)),
+              Colors.green,
+            ),
+          _buildSummaryItem(
+            'Sales Growth (vs. Last Week):',
+            _getGrowthText(report),
+            Colors.purple,
+          ),
+          _buildSummaryItem(
+            'Sales Growth (vs. Last Week):',
+            _getGrowthAmount(report),
+            Colors.purple,
+          ),
+          _buildSummaryItem(
+            'Most Sold Item:',
+            _getMostSoldItem(report),
+            Colors.purple,
+          ),
           if (provider.currentTabIndex != 4)
-            _buildSummaryItem('Most Sold Category:', _getMostSoldCategory(report), Colors.purple),
-          _buildSummaryItem('Most Delivered Area:', _getMostDeliveredArea(report), Colors.purple),
+            _buildSummaryItem(
+              'Most Sold Category:',
+              _getMostSoldCategory(report),
+              Colors.purple,
+            ),
+          _buildSummaryItem(
+            'Most Delivered Area:',
+            _getMostDeliveredArea(report),
+            Colors.purple,
+          ),
         ],
       ),
     );
@@ -2147,26 +2150,18 @@ class AdminSalesReport extends StatelessWidget {
         // Top row charts
         Row(
           children: [
-            Expanded(
-              child: _buildGrowthChart(report),
-            ),
+            Expanded(child: _buildGrowthChart(report)),
             const SizedBox(width: 20),
-            Expanded(
-              child: _buildPaymentMethodsChart(report),
-            ),
+            Expanded(child: _buildPaymentMethodsChart(report)),
           ],
         ),
         const SizedBox(height: 30),
         // Bottom row charts
         Row(
           children: [
-            Expanded(
-              child: _buildOrderTypesChart(report),
-            ),
+            Expanded(child: _buildOrderTypesChart(report)),
             const SizedBox(width: 20),
-            Expanded(
-              child: _buildOrderSourcesChart(report),
-            ),
+            Expanded(child: _buildOrderSourcesChart(report)),
           ],
         ),
       ],
@@ -2203,7 +2198,10 @@ class AdminSalesReport extends StatelessWidget {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.black,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(4),
                       ),
@@ -2223,13 +2221,44 @@ class AdminSalesReport extends StatelessWidget {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.orange.shade600,
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(4),
                         ),
                       ),
                       child: Text(
-                        provider.showPaidOuts ? 'Hide Paid Outs' : 'Show Paid Outs',
+                        provider.showPaidOuts
+                            ? 'Hide Paid Outs'
+                            : 'Show Paid Outs',
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (_hasPostalCodesData(provider.getCurrentReport())) ...[
+                    const SizedBox(width: 10),
+                    ElevatedButton(
+                      onPressed: provider.toggleShowPostalCodes,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue.shade600,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      child: Text(
+                        provider.showPostalCodes
+                            ? 'Hide Postal Codes'
+                            : 'Show Postal Codes',
                         style: GoogleFonts.poppins(
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
@@ -2250,6 +2279,10 @@ class AdminSalesReport extends StatelessWidget {
           const SizedBox(height: 20),
           PaidOutsTableWidget(report: provider.getCurrentReport()),
         ],
+        if (provider.showPostalCodes) ...[
+          const SizedBox(height: 20),
+          PostalCodesTableWidget(report: provider.getCurrentReport()),
+        ],
       ],
     );
   }
@@ -2261,10 +2294,7 @@ class AdminSalesReport extends StatelessWidget {
       return Center(
         child: Text(
           'No driver report data available',
-          style: GoogleFonts.poppins(
-            fontSize: 14,
-            color: Colors.grey.shade600,
-          ),
+          style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey.shade600),
         ),
       );
     }
@@ -2276,7 +2306,7 @@ class AdminSalesReport extends StatelessWidget {
           'Driver Delivery Locations',
           ['Driver Name', 'Street Address', 'City', 'County'],
           report['driver_delivery_locations'] ?? [],
-              (item) => [
+          (item) => [
             item['driver_name']?.toString() ?? 'N/A',
             item['street_address']?.toString() ?? 'N/A',
             item['city']?.toString() ?? 'N/A',
@@ -2291,7 +2321,7 @@ class AdminSalesReport extends StatelessWidget {
           'Driver Order Summary',
           ['Driver Name', 'Total Orders'],
           report['driver_order_summary'] ?? [],
-              (item) => [
+          (item) => [
             item['driver_name']?.toString() ?? 'N/A',
             item['total_orders']?.toString() ?? '0',
           ],
@@ -2301,11 +2331,11 @@ class AdminSalesReport extends StatelessWidget {
   }
 
   Widget _buildDriverTable(
-      String title,
-      List<String> headers,
-      List<dynamic> data,
-      List<String> Function(dynamic) rowMapper,
-      ) {
+    String title,
+    List<String> headers,
+    List<dynamic> data,
+    List<String> Function(dynamic) rowMapper,
+  ) {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -2338,22 +2368,21 @@ class AdminSalesReport extends StatelessWidget {
           // Headers
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade200,
-            ),
+            decoration: BoxDecoration(color: Colors.grey.shade200),
             child: Row(
-              children: headers.map((header) {
-                return Expanded(
-                  child: Text(
-                    header,
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
-                    ),
-                  ),
-                );
-              }).toList(),
+              children:
+                  headers.map((header) {
+                    return Expanded(
+                      child: Text(
+                        header,
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    );
+                  }).toList(),
             ),
           ),
           // Data rows
@@ -2372,25 +2401,29 @@ class AdminSalesReport extends StatelessWidget {
             ...data.map((item) {
               final rowData = rowMapper(item);
               return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
                   border: Border(
                     bottom: BorderSide(color: Colors.grey.shade200),
                   ),
                 ),
                 child: Row(
-                  children: rowData.map((cellData) {
-                    return Expanded(
-                      child: Text(
-                        cellData,
-                        style: GoogleFonts.poppins(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w400,
-                          color: Colors.black87,
-                        ),
-                      ),
-                    );
-                  }).toList(),
+                  children:
+                      rowData.map((cellData) {
+                        return Expanded(
+                          child: Text(
+                            cellData,
+                            style: GoogleFonts.poppins(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w400,
+                              color: Colors.black87,
+                            ),
+                          ),
+                        );
+                      }).toList(),
                 ),
               );
             }).toList(),
@@ -2412,12 +2445,16 @@ class AdminSalesReport extends StatelessWidget {
     return provider.getAvailableOrderTypeOptions();
   }
 
-  String _getPeriodText(SalesReportProvider provider, Map<String, dynamic>? report) {
+  String _getPeriodText(
+    SalesReportProvider provider,
+    Map<String, dynamic>? report,
+  ) {
     if (report == null) return 'N/A';
 
     switch (provider.currentTabIndex) {
       case 1:
-        return report['date']?.toString() ?? DateFormat('yyyy-MM-dd').format(provider.selectedDate);
+        return report['date']?.toString() ??
+            DateFormat('yyyy-MM-dd').format(provider.selectedDate);
       case 2:
         final period = report['period'];
         if (period != null && period is Map) {
@@ -2537,15 +2574,20 @@ class AdminSalesReport extends StatelessWidget {
 
   Widget _buildPaymentMethodsChart(Map<String, dynamic>? report) {
     final paymentData = _getPaymentMethodsData(report);
-    final paymentTypes = report?['sales_by_payment_type'] as List<dynamic>? ?? [];
+    final paymentTypes =
+        report?['sales_by_payment_type'] as List<dynamic>? ?? [];
 
-    final paymentLabels = paymentTypes
-        .where((payment) => payment is Map && payment['payment_type'] != null)
-        .map((payment) => payment['payment_type'].toString().toUpperCase())
-        .where((label) => label.isNotEmpty)
-        .toList();
+    final paymentLabels =
+        paymentTypes
+            .where(
+              (payment) => payment is Map && payment['payment_type'] != null,
+            )
+            .map((payment) => payment['payment_type'].toString().toUpperCase())
+            .where((label) => label.isNotEmpty)
+            .toList();
 
-    final labels = paymentLabels.isNotEmpty ? paymentLabels : ['CARD', 'CASH', 'COD'];
+    final labels =
+        paymentLabels.isNotEmpty ? paymentLabels : ['CARD', 'CASH', 'COD'];
 
     final colors = <Color>[];
     final baseColors = [
@@ -2575,19 +2617,13 @@ class AdminSalesReport extends StatelessWidget {
           height: 80,
           width: 80,
           child: CustomPaint(
-            painter: PieChartPainter(
-              data: paymentData,
-              colors: colors,
-            ),
+            painter: PieChartPainter(data: paymentData, colors: colors),
           ),
         ),
         const SizedBox(height: 8),
         _buildChartLegend([
           for (int i = 0; i < labels.length && i < colors.length; i++)
-            {
-              'label': labels[i],
-              'color': colors[i],
-            },
+            {'label': labels[i], 'color': colors[i]},
         ]),
       ],
     );
@@ -2678,30 +2714,31 @@ class AdminSalesReport extends StatelessWidget {
     return Wrap(
       spacing: 8,
       runSpacing: 4,
-      children: items.map((item) {
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                color: item['color'],
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(width: 4),
-            Text(
-              item['label'],
-              style: GoogleFonts.poppins(
-                fontSize: 8,
-                fontWeight: FontWeight.w400,
-                color: Colors.black54,
-              ),
-            ),
-          ],
-        );
-      }).toList(),
+      children:
+          items.map((item) {
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: item['color'],
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  item['label'],
+                  style: GoogleFonts.poppins(
+                    fontSize: 8,
+                    fontWeight: FontWeight.w400,
+                    color: Colors.black54,
+                  ),
+                ),
+              ],
+            );
+          }).toList(),
     );
   }
 
@@ -2742,7 +2779,8 @@ class AdminSalesReport extends StatelessWidget {
 
     for (var orderType in orderTypes) {
       if (orderType is! Map) continue;
-      final amount = double.tryParse(orderType['total']?.toString() ?? '0') ?? 0;
+      final amount =
+          double.tryParse(orderType['total']?.toString() ?? '0') ?? 0;
       if (amount > 0) {
         amounts.add(amount);
         total += amount;
@@ -2761,7 +2799,9 @@ class AdminSalesReport extends StatelessWidget {
     if (orderTypes == null || orderTypes.isEmpty) return [];
 
     return orderTypes
-        .where((orderType) => orderType is Map && orderType['order_type'] != null)
+        .where(
+          (orderType) => orderType is Map && orderType['order_type'] != null,
+        )
         .map((orderType) => orderType['order_type'].toString().toUpperCase())
         .where((label) => label.isNotEmpty)
         .toList();
@@ -2817,10 +2857,7 @@ class AdminSalesReport extends StatelessWidget {
     return labels.asMap().entries.map((entry) {
       final index = entry.key;
       final label = entry.value;
-      return {
-        'label': label,
-        'color': colors[index % colors.length],
-      };
+      return {'label': label, 'color': colors[index % colors.length]};
     }).toList();
   }
 
@@ -2837,45 +2874,35 @@ class AdminSalesReport extends StatelessWidget {
     return labels.asMap().entries.map((entry) {
       final index = entry.key;
       final label = entry.value;
-      return {
-        'label': label,
-        'color': colors[index % colors.length],
-      };
+      return {'label': label, 'color': colors[index % colors.length]};
     }).toList();
-  }
-
-
-  bool _canIncreaseWeek(SalesReportProvider provider) {
-    final currentYear = UKTimeService.now().year;
-    final currentWeek = _getWeekNumber(UKTimeService.now());
-
-    if (provider.selectedYear < currentYear) {
-      return provider.selectedWeek < 52;
-    } else if (provider.selectedYear == currentYear) {
-      return provider.selectedWeek < currentWeek;
-    }
-    return false;
-  }
-
-  static int _getWeekNumber(DateTime date) {
-    int dayOfYear = int.parse(date.difference(DateTime(date.year, 1, 1)).inDays.toString()) + 1;
-    return ((dayOfYear - date.weekday + 10) / 7).floor();
   }
 
   // Helper methods for paid outs functionality
   bool _hasPaidOutsData(Map<String, dynamic>? report) {
     if (report == null) return false;
-    
+
     final paidouts = report['paidouts'];
     if (paidouts is List && paidouts.isNotEmpty) {
       return true;
     }
-    
+
     if (paidouts != null && paidouts is! List) {
       final amount = double.tryParse(paidouts.toString()) ?? 0.0;
       return amount > 0;
     }
-    
+
+    return false;
+  }
+
+  bool _hasPostalCodesData(Map<String, dynamic>? report) {
+    if (report == null) return false;
+
+    final postalCodes = report['deliveries_by_postal_code'];
+    if (postalCodes is List && postalCodes.isNotEmpty) {
+      return true;
+    }
+
     return false;
   }
 
@@ -2889,9 +2916,9 @@ class AdminSalesReport extends StatelessWidget {
 
   double _getPaidOutsValue(Map<String, dynamic>? report) {
     if (report == null) return 0.0;
-    
+
     final paidouts = report['paidouts'];
-    
+
     if (paidouts is List) {
       double total = 0.0;
       for (final paidOut in paidouts) {
@@ -2906,29 +2933,31 @@ class AdminSalesReport extends StatelessWidget {
       }
       return total;
     }
-    
+
     if (paidouts is String) {
       return double.tryParse(paidouts) ?? 0.0;
     } else if (paidouts is num) {
       return paidouts.toDouble();
     }
-    
+
     return 0.0;
   }
 
   double _getNetSalesAmount(Map<String, dynamic>? report) {
     if (report == null) return 0.0;
-    
-    final totalSales = double.tryParse(
-      (report['total_sales'] ?? report['total_sales_amount'] ?? 0).toString(),
-    ) ?? 0.0;
-    
+
+    final totalSales =
+        double.tryParse(
+          (report['total_sales'] ?? report['total_sales_amount'] ?? 0)
+              .toString(),
+        ) ??
+        0.0;
+
     final paidOuts = _getPaidOutsValue(report);
-    
-    final discount = double.tryParse(
-      (report['total_discount'] ?? 0).toString(),
-    ) ?? 0.0;
-    
+
+    final discount =
+        double.tryParse((report['total_discount'] ?? 0).toString()) ?? 0.0;
+
     return totalSales - paidOuts - discount;
   }
 }
@@ -2952,19 +2981,21 @@ class DonutChartPainter extends CustomPainter {
     const strokeWidth = 8.0;
 
     // Background circle
-    final backgroundPaint = Paint()
-      ..color = backgroundColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth;
+    final backgroundPaint =
+        Paint()
+          ..color = backgroundColor
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = strokeWidth;
 
     canvas.drawCircle(center, radius - strokeWidth / 2, backgroundPaint);
 
     // Progress arc
-    final progressPaint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round;
+    final progressPaint =
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = strokeWidth
+          ..strokeCap = StrokeCap.round;
 
     const startAngle = -math.pi / 2;
     final sweepAngle = 2 * math.pi * value;
@@ -2986,10 +3017,7 @@ class PieChartPainter extends CustomPainter {
   final List<double> data;
   final List<Color> colors;
 
-  PieChartPainter({
-    required this.data,
-    required this.colors,
-  });
+  PieChartPainter({required this.data, required this.colors});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -3000,9 +3028,10 @@ class PieChartPainter extends CustomPainter {
 
     for (int i = 0; i < data.length && i < colors.length; i++) {
       final sweepAngle = 2 * math.pi * data[i];
-      final paint = Paint()
-        ..color = colors[i]
-        ..style = PaintingStyle.fill;
+      final paint =
+          Paint()
+            ..color = colors[i]
+            ..style = PaintingStyle.fill;
 
       canvas.drawArc(
         Rect.fromCircle(center: center, radius: radius),

@@ -1,5 +1,3 @@
-// lib/customer_details_widget.dart - Updated version
-
 import 'package:flutter/material.dart';
 import 'package:epos/models/order_models.dart';
 import 'package:epos/services/order_api_service.dart';
@@ -11,7 +9,7 @@ class CustomerDetailsWidget extends StatefulWidget {
   final String orderType;
   final Function(CustomerDetails) onCustomerDetailsSubmitted;
   final VoidCallback? onBack;
-  final CustomerDetails? initialCustomerData; // NEW: Add initial data parameter
+  final CustomerDetails? initialCustomerData;
 
   const CustomerDetailsWidget({
     super.key,
@@ -19,7 +17,7 @@ class CustomerDetailsWidget extends StatefulWidget {
     required this.orderType,
     required this.onCustomerDetailsSubmitted,
     this.onBack,
-    this.initialCustomerData, // NEW: Add to constructor
+    this.initialCustomerData,
   });
 
   @override
@@ -41,7 +39,7 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
   void initState() {
     super.initState();
 
-    // NEW: Populate fields with initial data if provided
+    // Populate fields with initial data
     _populateInitialData();
 
     // Add listeners to text controllers to update button states
@@ -53,7 +51,7 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
     _postalCodeController.addListener(_updateButtonStates);
   }
 
-  // NEW: Method to populate fields with initial data
+  // Method to populate fields with initial data
   void _populateInitialData() {
     if (widget.initialCustomerData != null) {
       final data = widget.initialCustomerData!;
@@ -112,6 +110,20 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
         _postalCodeController.text.trim().isNotEmpty;
   }
 
+  // Helper method to get display text for order type
+  String _getDisplayOrderType() {
+    String orderType = widget.orderType.toLowerCase();
+    switch (orderType) {
+      case 'collection':
+      case 'takeaway':
+        return 'COLLECTION';
+      case 'delivery':
+        return 'DELIVERY';
+      default:
+        return widget.orderType.toUpperCase();
+    }
+  }
+
   final RegExp _nameRegExp = RegExp(r"^[a-zA-Z\s-']+$");
   final RegExp _emailRegExp = RegExp(
     r"^[a-zA-Z0-9.a-zA-Z0-9.!#$%&'*+-/=?^_`{|}~]+@[a-zA-Z0-9]+\.[a-zA-Z]+",
@@ -130,8 +142,9 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
     switch (fieldType) {
       case 'name':
       case 'phone':
-      case 'email':
         return orderType == 'delivery';
+      case 'email':
+        return false; // Email is now optional for all order types
       case 'address':
       case 'city':
       case 'postal':
@@ -240,14 +253,13 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
 
   @override
   Widget build(BuildContext context) {
-    bool isTakeawayOrCollection =
-        widget.orderType.toLowerCase() == 'takeaway' ||
-        widget.orderType.toLowerCase() == 'collection';
+    bool isCollectionOrTakeaway =
+        widget.orderType.toLowerCase() == 'collection' ||
+        widget.orderType.toLowerCase() == 'takeaway';
     bool hasDetails = _hasCustomerDetails();
 
     return GestureDetector(
       onTap: () {
-        // This line unfocuses the current focus node, effectively closing the keyboard.
         FocusScope.of(context).unfocus();
       },
       child: Column(
@@ -259,15 +271,23 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
                 if (widget.onBack != null)
                   Padding(
                     padding: const EdgeInsets.only(right: 3.0),
-                    child: GestureDetector(
-                      onTap: widget.onBack,
-                      child: SizedBox(
+                    child: ElevatedButton(
+                      onPressed: widget.onBack,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.transparent,
+                        foregroundColor: Colors.black.withOpacity(0.1),
+                        shadowColor: Colors.transparent,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(22.5),
+                        ),
+                        padding: EdgeInsets.zero,
+                        minimumSize: const Size(45, 45),
+                      ),
+                      child: Image.asset(
+                        'assets/images/bArrow.png',
+                        fit: BoxFit.contain,
                         width: 45,
                         height: 45,
-                        child: Image.asset(
-                          'assets/images/bArrow.png',
-                          fit: BoxFit.contain,
-                        ),
                       ),
                     ),
                   ),
@@ -283,7 +303,7 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
                         borderRadius: BorderRadius.circular(25),
                       ),
                       child: Text(
-                        'Customer Details  (${widget.orderType.toUpperCase()})',
+                        'Customer Details (${_getDisplayOrderType()})',
                         style: const TextStyle(
                           fontSize: 23,
                           fontWeight: FontWeight.bold,
@@ -297,12 +317,10 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
               ],
             ),
           ),
+
           const SizedBox(height: 9),
 
-          // Show information message for takeaway orders
-          if (widget.orderType.toLowerCase() == 'takeaway' ||
-              widget.orderType.toLowerCase() == 'collection')
-            // Divider
+          if (isCollectionOrTakeaway)
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 42.0),
               child: Divider(thickness: 2, color: Colors.grey),
@@ -310,7 +328,6 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
 
           const SizedBox(height: 30),
 
-          // Form content in center
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20.0),
@@ -329,7 +346,6 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
                     child: SingleChildScrollView(
                       child: Column(
                         children: [
-                          // Phone Field (moved to top)
                           Container(
                             margin: const EdgeInsets.only(bottom: 20),
                             child: Row(
@@ -380,12 +396,10 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
                                     ),
                                     keyboardType: TextInputType.phone,
                                     validator: (value) {
-                                      // Only validate if field is required or if user entered something
                                       if (_isFieldRequired('phone') &&
                                           (value == null || value.isEmpty)) {
                                         return 'Please enter phone number';
                                       }
-                                      // If user entered something, validate format
                                       if (value != null &&
                                           value.isNotEmpty &&
                                           !_validateUKPhoneNumber(value)) {
@@ -396,15 +410,25 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
                                   ),
                                 ),
                                 const SizedBox(width: 10),
-                                Container(
-                                  height: 60,
-                                  width: 60,
-                                  decoration: BoxDecoration(
-                                    color: Colors.black,
-                                    borderRadius: BorderRadius.circular(15),
+                                ElevatedButton(
+                                  onPressed:
+                                      _isSearching ? null : _searchCustomer,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor:
+                                        _isSearching
+                                            ? Colors.grey
+                                            : Colors.black,
+                                    foregroundColor: Colors.white.withOpacity(
+                                      0.3,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(15),
+                                    ),
+                                    minimumSize: const Size(60, 60),
+                                    padding: EdgeInsets.zero,
                                   ),
-                                  child: IconButton(
-                                    icon:
+                                  child: Center(
+                                    child:
                                         _isSearching
                                             ? const CircularProgressIndicator(
                                               color: Colors.white,
@@ -414,15 +438,12 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
                                               color: Colors.white,
                                               size: 28,
                                             ),
-                                    onPressed:
-                                        _isSearching ? null : _searchCustomer,
                                   ),
                                 ),
                               ],
                             ),
                           ),
 
-                          // Name Field
                           Container(
                             margin: const EdgeInsets.only(bottom: 20),
                             child: TextFormField(
@@ -461,12 +482,10 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
                                 ),
                               ),
                               validator: (value) {
-                                // Only validate if field is required or if user entered something
                                 if (_isFieldRequired('name') &&
                                     (value == null || value.isEmpty)) {
                                   return 'Please enter customer name';
                                 }
-                                // If user entered something, validate format
                                 if (value != null &&
                                     value.isNotEmpty &&
                                     !_nameRegExp.hasMatch(value)) {
@@ -477,7 +496,6 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
                             ),
                           ),
 
-                          // Email Field
                           Container(
                             margin: const EdgeInsets.only(bottom: 20),
                             child: TextFormField(
@@ -514,12 +532,6 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
                               ),
                               keyboardType: TextInputType.emailAddress,
                               validator: (value) {
-                                // Only validate if field is required or if user entered something
-                                if (_isFieldRequired('email') &&
-                                    (value == null || value.isEmpty)) {
-                                  return 'Email is required for delivery';
-                                }
-                                // If user entered something, validate format
                                 if (value != null &&
                                     value.isNotEmpty &&
                                     !_emailRegExp.hasMatch(value)) {
@@ -530,7 +542,6 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
                             ),
                           ),
 
-                          // Address fields (only for delivery)
                           if (widget.orderType.toLowerCase() == 'delivery') ...[
                             Container(
                               margin: const EdgeInsets.only(bottom: 20),
@@ -678,7 +689,7 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
               ),
             ),
           ),
-          // --- ADD THE HORIZONTAL DIVIDER  ---
+
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 55.0),
             child: Divider(
@@ -704,7 +715,7 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
                       ),
                     ),
                     Text(
-                      '${widget.subtotal.toStringAsFixed(2)}',
+                      '£${widget.subtotal.toStringAsFixed(2)}',
                       style: const TextStyle(
                         fontSize: 22,
                         fontFamily: 'Poppins',
@@ -716,43 +727,35 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
 
                 Row(
                   children: [
-                    // Skip button for takeaway/collection orders
-                    if (isTakeawayOrCollection) ...[
+                    if (isCollectionOrTakeaway) ...[
                       Expanded(
-                        child: MouseRegion(
-                          cursor: SystemMouseCursors.click,
-                          child: GestureDetector(
-                            onTap: () {
-                              // Skip customer details - create empty customer details
-                              final customerDetails = CustomerDetails(
-                                name: 'Walk-in Customer',
-                                phoneNumber: 'N/A',
-                                email: null,
-                                streetAddress: null,
-                                city: null,
-                                postalCode: null,
-                              );
-                              widget.onCustomerDetailsSubmitted(
-                                customerDetails,
-                              );
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 20),
-                              decoration: BoxDecoration(
-                                color: Colors.black,
-                                borderRadius: BorderRadius.circular(15),
-                              ),
-                              child: const Center(
-                                child: Text(
-                                  'Skip',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 22,
-                                    fontFamily: 'Poppins',
-                                  ),
-                                ),
-                              ),
+                        child: ElevatedButton(
+                          onPressed: () {
+                            final customerDetails = CustomerDetails(
+                              name: 'Walk-in Customer',
+                              phoneNumber: 'N/A',
+                              email: null,
+                              streetAddress: null,
+                              city: null,
+                              postalCode: null,
+                            );
+                            widget.onCustomerDetailsSubmitted(customerDetails);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.black,
+                            foregroundColor: Colors.white.withOpacity(0.3),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(15),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 20),
+                          ),
+                          child: const Text(
+                            'Skip',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 22,
+                              fontFamily: 'Poppins',
                             ),
                           ),
                         ),
@@ -760,70 +763,63 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
                       const SizedBox(width: 10),
                     ],
 
-                    // Next button
                     Expanded(
-                      child: MouseRegion(
-                        cursor: SystemMouseCursors.click,
-                        child: GestureDetector(
-                          onTap: () {
-                            if (isTakeawayOrCollection && !hasDetails) {
-                              CustomPopupService.show(
-                                context,
-                                "Please enter customer details to Continue or use Skip button",
-                                type: PopupType.success,
-                              );
-                              return;
-                            }
+                      child: ElevatedButton(
+                        onPressed: () {
+                          if (isCollectionOrTakeaway && !hasDetails) {
+                            CustomPopupService.show(
+                              context,
+                              "Please enter customer details to Continue or use Skip button",
+                              type: PopupType.success,
+                            );
+                            return;
+                          }
 
-                            if (_formKey.currentState!.validate()) {
-                              final customerDetails = CustomerDetails(
-                                name:
-                                    _nameController.text.trim().isEmpty
-                                        ? 'Walk-in Customer'
-                                        : _nameController.text.trim(),
-                                phoneNumber:
-                                    _phoneController.text.trim().isEmpty
-                                        ? 'N/A'
-                                        : _phoneController.text.trim(),
-                                email:
-                                    _emailController.text.trim().isEmpty
-                                        ? null
-                                        : _emailController.text.trim(),
-                                streetAddress:
-                                    _addressController.text.trim().isEmpty
-                                        ? null
-                                        : _addressController.text.trim(),
-                                city:
-                                    _cityController.text.trim().isEmpty
-                                        ? null
-                                        : _cityController.text.trim(),
-                                postalCode:
-                                    _postalCodeController.text.trim().isEmpty
-                                        ? null
-                                        : _postalCodeController.text.trim(),
-                              );
-                              widget.onCustomerDetailsSubmitted(
-                                customerDetails,
-                              );
-                            }
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 20),
-                            decoration: BoxDecoration(
-                              color: Colors.black,
-                              borderRadius: BorderRadius.circular(15),
-                            ),
-                            child: const Center(
-                              child: Text(
-                                'Next',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 22,
-                                  fontFamily: 'Poppins',
-                                ),
-                              ),
-                            ),
+                          if (_formKey.currentState!.validate()) {
+                            final customerDetails = CustomerDetails(
+                              name:
+                                  _nameController.text.trim().isEmpty
+                                      ? 'Walk-in Customer'
+                                      : _nameController.text.trim(),
+                              phoneNumber:
+                                  _phoneController.text.trim().isEmpty
+                                      ? 'N/A'
+                                      : _phoneController.text.trim(),
+                              email:
+                                  _emailController.text.trim().isEmpty
+                                      ? null
+                                      : _emailController.text.trim(),
+                              streetAddress:
+                                  _addressController.text.trim().isEmpty
+                                      ? null
+                                      : _addressController.text.trim(),
+                              city:
+                                  _cityController.text.trim().isEmpty
+                                      ? null
+                                      : _cityController.text.trim(),
+                              postalCode:
+                                  _postalCodeController.text.trim().isEmpty
+                                      ? null
+                                      : _postalCodeController.text.trim(),
+                            );
+                            widget.onCustomerDetailsSubmitted(customerDetails);
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.black,
+                          foregroundColor: Colors.white.withOpacity(0.3),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(15),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 20),
+                        ),
+                        child: const Text(
+                          'Next',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 22,
+                            fontFamily: 'Poppins',
                           ),
                         ),
                       ),

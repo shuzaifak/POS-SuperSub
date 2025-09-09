@@ -1,4 +1,4 @@
-// lib/services/api_service.dart (Fixed paid outs methods)
+// lib/services/api_service.dart
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/food_item.dart';
@@ -11,6 +11,32 @@ class ApiService {
   static const String alternativeProxy =
       "https://corsproxy.io/?https://thevillage-backend.onrender.com";
 
+  // Method to mark order as paid
+  static Future<bool> markOrderAsPaid(int orderId) async {
+    final url = Uri.parse("$baseUrl/item/set-paid-status");
+    try {
+      final response = await http.put(
+        url,
+        headers: BrandInfo.getDefaultHeaders(),
+        body: jsonEncode({'order_id': orderId, 'paid_status': true}),
+      );
+      print("markOrderAsPaid: Response Code: ${response.statusCode}");
+
+      if (response.statusCode == 200) {
+        print("Order $orderId marked as paid successfully");
+        return true;
+      } else {
+        print(
+          "Failed to mark order as paid: ${response.statusCode} - ${response.body}",
+        );
+        return false;
+      }
+    } catch (e) {
+      print("Error marking order as paid: $e");
+      return false;
+    }
+  }
+
   static Future<List<FoodItem>> fetchMenuItems() async {
     final url = Uri.parse("$baseUrl/item/items");
     try {
@@ -22,6 +48,32 @@ class ApiService {
 
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
+
+        for (var item in data) {
+          String category =
+              (item['type'] as String?) ?? (item['Type'] as String?) ?? '';
+          String name =
+              (item['title'] as String?) ??
+              (item['item_name'] as String?) ??
+              '';
+          if (category.toLowerCase().contains('pizza')) {
+            print('🍕 PIZZA ITEM:');
+            print('  Category: "$category"');
+            print('  Name: "$name"');
+            print('  Price Options: ${item['price']}');
+            if (item['price'] is Map) {
+              Map<String, dynamic> priceOptions =
+                  item['price'] as Map<String, dynamic>;
+              print('  Available Sizes: ${priceOptions.keys.toList()}');
+              priceOptions.forEach((size, price) {
+                print('    Size "$size": £$price');
+              });
+            }
+            print('  Raw JSON: $item');
+            print('  ---');
+          }
+        }
+
         return data.map((json) => FoodItem.fromJson(json)).toList();
       } else {
         throw Exception(
@@ -481,21 +533,29 @@ class ApiService {
     int itemId,
     bool availability,
   ) async {
-    final url = Uri.parse(
-      'https://proxy.corsfix.com/?url=https://thevillage-backend.onrender.com/item/set-availability',
-    );
+    // Use consistent CORS proxy like other methods
+    final primaryUrl = Uri.parse("$alternativeProxy/item/set-availability");
     print(
-      "setItemAvailability (PUT): Attempting to update item availability for ID: $itemId to $availability",
+      "ApiService: Attempting to update item availability for ID: $itemId to $availability",
     );
 
     try {
-      final response = await http.put(
-        url,
-        headers: BrandInfo.getDefaultHeaders(),
-        body: json.encode({'item_id': itemId, 'availability': availability}),
-      );
+      final response = await http
+          .put(
+            primaryUrl,
+            headers: BrandInfo.getDefaultHeaders(),
+            body: json.encode({
+              'item_id': itemId,
+              'availability': availability,
+            }),
+          )
+          .timeout(
+            const Duration(seconds: 10),
+          ); // Add timeout for production reliability
 
-      print("setItemAvailability (PUT): Response Code: ${response.statusCode}");
+      print(
+        "ApiService: setItemAvailability Response Code: ${response.statusCode}",
+      );
 
       if (response.statusCode == 200) {
         final Map<String, dynamic> responseData = json.decode(response.body);
@@ -507,15 +567,76 @@ class ApiService {
           );
         }
       } else {
-        final errorBody = json.decode(response.body);
+        // Handle error response more safely for release mode
+        String errorMessage = 'Unknown error';
+        try {
+          final errorBody = json.decode(response.body);
+          errorMessage = errorBody['message'] ?? 'Unknown error';
+        } catch (parseError) {
+          print("ApiService: Failed to parse error response: $parseError");
+          errorMessage =
+              response.body.isNotEmpty ? response.body : 'Network error';
+        }
         throw Exception(
-          'Failed to set item availability: ${response.statusCode} - ${errorBody['message'] ?? 'Unknown error'}',
+          'Failed to set item availability: ${response.statusCode} - $errorMessage',
         );
       }
     } catch (e) {
-      print("setItemAvailability (PUT): Error setting item availability: $e");
-      throw Exception('Error setting item availability: $e');
+      print("ApiService: Primary proxy failed for setItemAvailability: $e");
+      // Try fallback method like other API calls
+      return await _setItemAvailabilityFallback(itemId, availability);
     }
+  }
+
+  // Fallback method for setItemAvailability with multiple proxy attempts
+  static Future<FoodItem> _setItemAvailabilityFallback(
+    int itemId,
+    bool availability,
+  ) async {
+    final fallbackProxies = [
+      "https://cors-anywhere.herokuapp.com/https://thevillage-backend.onrender.com/item/set-availability",
+      "https://api.allorigins.win/raw?url=https://thevillage-backend.onrender.com/item/set-availability",
+      "https://proxy.corsfix.com/?url=https://thevillage-backend.onrender.com/item/set-availability",
+    ];
+
+    for (String proxyUrl in fallbackProxies) {
+      try {
+        print(
+          "ApiService: Trying fallback proxy for setItemAvailability: $proxyUrl",
+        );
+
+        final response = await http
+            .put(
+              Uri.parse(proxyUrl),
+              headers: BrandInfo.getDefaultHeaders(),
+              body: json.encode({
+                'item_id': itemId,
+                'availability': availability,
+              }),
+            )
+            .timeout(const Duration(seconds: 10));
+
+        print("ApiService: Fallback proxy response: ${response.statusCode}");
+
+        if (response.statusCode == 200) {
+          final Map<String, dynamic> responseData = json.decode(response.body);
+          if (responseData.containsKey('item')) {
+            return FoodItem.fromJson(responseData['item']);
+          } else {
+            throw Exception(
+              'Failed to set item availability: "item" key missing in response.',
+            );
+          }
+        }
+      } catch (e) {
+        print("ApiService: Fallback proxy $proxyUrl failed: $e");
+        continue;
+      }
+    }
+
+    throw Exception(
+      "All proxy services failed for item availability update. Please check your internet connection.",
+    );
   }
 
   static Future<Map<String, dynamic>> getTodaysReport({
@@ -626,30 +747,33 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> getWeeklyReport(
-    int year,
-    int week, {
+    DateTime date, { // Changed from (int year, int week) to (DateTime date)
     String? source,
     String? payment,
     String? orderType,
   }) async {
     const String proxy = "https://corsproxy.io/?";
     const String backend = "https://thevillage-backend.onrender.com";
-    final String endpoint = "/admin/sales-report/weekly2/$year/$week";
+    final String dateStr =
+        "${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
+    final String endpoint =
+        "/admin/sales-report/weekly2/$dateStr"; // Updated endpoint
 
     final Map<String, String> queryParams = {};
 
-    // FIXED: Don't convert to lowercase - use exact case as provided
     if (source != null && source != 'All') queryParams['source'] = source;
     if (payment != null && payment != 'All') queryParams['payment'] = payment;
-    if (orderType != null && orderType != 'All') {
+    if (orderType != null && orderType != 'All')
       queryParams['orderType'] = orderType;
-    }
 
     final Uri backendUri = Uri.parse(
       backend + endpoint,
     ).replace(queryParameters: queryParams);
     final String encodedBackend = Uri.encodeComponent(backendUri.toString());
     final Uri url = Uri.parse(proxy + encodedBackend);
+
+    print("getWeeklyReport: Final URL: $url");
+    print("getWeeklyReport: Date: $dateStr");
 
     try {
       final response = await http.get(
@@ -760,6 +884,53 @@ class ApiService {
     } catch (e) {
       print("getDriverReport: Exception: $e");
       throw Exception("Error fetching driver report: $e");
+    }
+  }
+
+  static Future<Map<String, dynamic>> addItem({
+    required String itemName,
+    required String type,
+    required String description,
+    required double price,
+    required List<String> toppings,
+    required bool website,
+  }) async {
+    final url = Uri.parse("$baseUrl/item/add-items");
+    print("addItem: Attempting to add new item: $itemName");
+
+    try {
+      final requestBody = {
+        "item_name": itemName,
+        "type": type,
+        "description": description,
+        "price": price,
+        "toppings": toppings,
+        "website": website,
+      };
+
+      print("addItem: Request body: ${jsonEncode(requestBody)}");
+
+      final response = await http.post(
+        url,
+        headers: BrandInfo.getDefaultHeaders(),
+        body: jsonEncode(requestBody),
+      );
+
+      print("addItem: Response Code: ${response.statusCode}");
+      print("addItem: Response Body: ${response.body}");
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        print("addItem: Successfully added item");
+        return data;
+      } else {
+        throw Exception(
+          "Failed to add item: ${response.statusCode} - ${response.body}",
+        );
+      }
+    } catch (e) {
+      print("addItem: Error adding item: $e");
+      throw Exception("Error adding item: $e");
     }
   }
 }

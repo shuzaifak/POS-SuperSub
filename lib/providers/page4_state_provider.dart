@@ -87,6 +87,7 @@ class Page4StateProvider extends ChangeNotifier {
 
   // Current active order type
   String _currentOrderType = 'collection';
+  bool _isDisposed = false;
 
   String get currentOrderType => _currentOrderType;
 
@@ -150,42 +151,42 @@ class Page4StateProvider extends ChangeNotifier {
       _orderTypeStates[orderType] = OrderTypeState();
     }
 
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   // Methods to update current order type's state
   void updateCartItems(List<CartItem> items) {
     _currentState.cartItems = List.from(items);
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   void addCartItem(CartItem item) {
     _currentState.cartItems.add(item);
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   void removeCartItem(int index) {
     if (index >= 0 && index < _currentState.cartItems.length) {
       _currentState.cartItems.removeAt(index);
-      notifyListeners();
+      _safeNotifyListeners();
     }
   }
 
   void updateCartItem(int index, CartItem item) {
     if (index >= 0 && index < _currentState.cartItems.length) {
       _currentState.cartItems[index] = item;
-      notifyListeners();
+      _safeNotifyListeners();
     }
   }
 
   void clearCart() {
     _currentState.cartItems.clear();
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   void updateCustomerDetails(CustomerDetails? details) {
     _currentState.customerDetails = details;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   void updateOrderType(String orderType, String subType) {
@@ -195,17 +196,17 @@ class Page4StateProvider extends ChangeNotifier {
 
   void updatePaymentType(String paymentType) {
     _currentState.selectedPaymentType = paymentType;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   void updateProcessedFirstStep(bool processed) {
     _currentState.hasProcessedFirstStep = processed;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   void updateShowPayment(bool show) {
     _currentState.showPayment = show;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   void updateDiscountState({
@@ -219,7 +220,7 @@ class Page4StateProvider extends ChangeNotifier {
     if (amount != null) _currentState.discountAmount = amount;
     if (showPage != null) _currentState.showDiscountPage = showPage;
     if (wasShown != null) _currentState.wasDiscountPageShown = wasShown;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   void updateUIState({
@@ -233,7 +234,7 @@ class Page4StateProvider extends ChangeNotifier {
     if (editMode != null) _currentState.isEditMode = editMode;
     if (searchExpanded != null)
       _currentState.isSearchBarExpanded = searchExpanded;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   // NEW: Modal state management
@@ -248,7 +249,7 @@ class Page4StateProvider extends ChangeNotifier {
       _currentState.editingCartIndex = null;
     }
 
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   // NEW: Comment editing state management
@@ -260,12 +261,12 @@ class Page4StateProvider extends ChangeNotifier {
     if (editingIndex == null) {
       _currentState.commentEditingText = '';
     }
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   void resetCurrentOrderType() {
     _currentState.reset();
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   void resetAllOrderTypes() {
@@ -274,7 +275,7 @@ class Page4StateProvider extends ChangeNotifier {
     }
     _currentOrderType = 'collection';
     _takeawaySubType = 'collection';
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   // Legacy method name kept for compatibility
@@ -299,5 +300,15 @@ class Page4StateProvider extends ChangeNotifier {
       'editingCartIndex': _currentState.editingCartIndex,
       'appliedDiscountPercentage': _currentState.appliedDiscountPercentage,
     };
+  }
+
+  void _safeNotifyListeners() {
+    if (!_isDisposed) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    super.dispose();
   }
 }

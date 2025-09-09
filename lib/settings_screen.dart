@@ -8,8 +8,7 @@ import '../services/api_service.dart';
 import 'package:epos/custom_bottom_nav_bar.dart';
 import 'admin_portal_screen.dart';
 import 'package:epos/services/custom_popup_service.dart';
-import 'package:provider/provider.dart';
-import 'package:epos/providers/item_availability_provider.dart';
+import 'edit_items_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   final int initialBottomNavItemIndex;
@@ -547,7 +546,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildOfflineItemsItem() {
     return GestureDetector(
-      onTap: _showOfflineItemsDialog,
+      onTap: _showEditItemsScreen,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
         decoration: BoxDecoration(
@@ -559,7 +558,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             const Text(
-              'Offline Items',
+              'Edit Items',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
@@ -580,18 +579,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   child: Row(
                     children: [
-                      Icon(
-                        Icons.do_not_disturb_on,
-                        color: Colors.red.shade600,
-                        size: 16,
-                      ),
+                      Icon(Icons.edit, color: Colors.blue.shade600, size: 16),
                       const SizedBox(width: 6),
                       Text(
-                        'View',
+                        'Manage',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
-                          color: Colors.red.shade700,
+                          color: Colors.blue.shade700,
                         ),
                       ),
                     ],
@@ -618,168 +613,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Future<void> _showOfflineItemsDialog() async {
-    return showDialog<void>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        // Use Consumer to automatically update when provider changes
-        return Consumer<ItemAvailabilityProvider>(
-          builder: (context, itemProvider, child) {
-            final currentOfflineItems = itemProvider.offlineItems;
-            final isLoading = itemProvider.isLoading;
-
-            return AlertDialog(
-              backgroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              title: Padding(
-                padding: const EdgeInsets.only(top: 16.0),
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Text(
-                      'Offline Items',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              content: Container(
-                width: double.maxFinite,
-                height: 400,
-                child:
-                    isLoading
-                        ? const Center(child: CircularProgressIndicator())
-                        : currentOfflineItems.isEmpty
-                        ? const Center(
-                          child: Text(
-                            'All items are available!',
-                            style: TextStyle(fontSize: 16, color: Colors.grey),
-                          ),
-                        )
-                        : ListView.builder(
-                          itemCount: currentOfflineItems.length,
-                          itemBuilder: (context, index) {
-                            final item = currentOfflineItems[index];
-
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 12),
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: Colors.grey.shade50,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: Colors.grey.shade300),
-                              ),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          item.name,
-                                          style: const TextStyle(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w600,
-                                            color: Colors.black87,
-                                          ),
-                                        ),
-                                        Text(
-                                          'Category: ${item.category}',
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            color: Colors.grey.shade600,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Transform.scale(
-                                    scale: 0.8,
-                                    child: Switch(
-                                      value: item.availability,
-                                      onChanged: (value) async {
-                                        // Use the provider method for consistent updates
-                                        await itemProvider
-                                            .updateItemAvailability(
-                                              dialogContext,
-                                              item.id,
-                                              value,
-                                            );
-                                      },
-                                      activeColor: Colors.green,
-                                      activeTrackColor: Colors.green.shade300,
-                                      inactiveThumbColor: Colors.grey.shade400,
-                                      inactiveTrackColor: Colors.grey.shade300,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-              ),
-              actions: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    TextButton.icon(
-                      onPressed: () async {
-                        // Add refresh functionality
-                        await itemProvider.refresh();
-                        CustomPopupService.show(
-                          dialogContext,
-                          'Items refreshed from server',
-                          type: PopupType.success,
-                        );
-                      },
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Refresh'),
-                      style: TextButton.styleFrom(foregroundColor: Colors.blue),
-                    ),
-                    ElevatedButton(
-                      onPressed: () => Navigator.of(dialogContext).pop(),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.black,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 12,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        elevation: 0,
-                      ),
-                      child: const Text(
-                        'Close',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            );
-          },
-        );
-      },
+  void _showEditItemsScreen() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const EditItemsScreen()),
     );
   }
 
@@ -1188,8 +1025,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Switch(
                 value: value,
                 onChanged: onChanged,
-                activeColor: Colors.yellow,
-                activeTrackColor: Colors.purple.shade300,
+                activeColor: Colors.white,
+                activeTrackColor: Colors.green,
                 inactiveThumbColor: Colors.grey.shade400,
                 inactiveTrackColor: Colors.grey.shade300,
                 materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -1361,88 +1198,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
             // Header
             Container(
               padding: const EdgeInsets.all(20),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  // Menu icon
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    child: Column(
-                      children: [
-                        Container(
-                          width: 32,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: Colors.black,
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Container(
-                          width: 32,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: Colors.black,
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Container(
-                          width: 32,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: Colors.black,
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                      ],
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 32,
+                    vertical: 16,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Text(
+                    'Settings',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                  // Settings title
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 32,
-                      vertical: 16,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Text(
-                      'Settings',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  // Toggle switches (decorative, matching the image)
-                  Row(
-                    children: [
-                      Transform.scale(
-                        scale: 1.0,
-                        child: Switch(
-                          value: false,
-                          onChanged: null,
-                          activeColor: Colors.yellow,
-                          inactiveThumbColor: Colors.grey.shade400,
-                          inactiveTrackColor: Colors.grey.shade300,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Transform.scale(
-                        scale: 1.0,
-                        child: Switch(
-                          value: true,
-                          onChanged: null,
-                          activeColor: Colors.yellow,
-                          activeTrackColor: Colors.green,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                ),
               ),
             ),
             const SizedBox(height: 40),

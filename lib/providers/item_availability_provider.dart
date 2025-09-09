@@ -14,7 +14,8 @@ class ItemAvailabilityProvider with ChangeNotifier {
   static ItemAvailabilityProvider? _instance;
 
   factory ItemAvailabilityProvider() {
-    return _instance ??= ItemAvailabilityProvider._internal();
+    _instance ??= ItemAvailabilityProvider._internal();
+    return _instance!;
   }
 
   ItemAvailabilityProvider._internal() {
@@ -36,11 +37,11 @@ class ItemAvailabilityProvider with ChangeNotifier {
       final items = await ApiService.fetchMenuItems();
       _allItems = items;
       print(
-        '✅ ItemAvailabilityProvider: Menu items fetched: ${_allItems.length}',
+        'ItemAvailabilityProvider: Menu items fetched: ${_allItems.length}',
       );
     } catch (e) {
       _error = e.toString();
-      print('❌ ItemAvailabilityProvider: Error fetching items: $_error');
+      print('ItemAvailabilityProvider: Error fetching items: $_error');
     } finally {
       _isLoading = false;
       notifyListeners(); // Notify UI that loading has finished
@@ -53,59 +54,83 @@ class ItemAvailabilityProvider with ChangeNotifier {
     int itemId,
     bool newAvailability,
   ) async {
-    final int itemIndex = _allItems.indexWhere((item) => item.id == itemId);
-    if (itemIndex == -1) {
-      CustomPopupService.show(
-        context,
-        'Item not found in list.',
-        type: PopupType.failure,
-      );
-      return;
-    }
-
-    // Store original item for potential rollback
-    final FoodItem originalItem = _allItems[itemIndex];
-
-    // Immediate optimistic update - this will reflect everywhere instantly
-    final FoodItem updatedItem = originalItem.copyWith(
-      availability: newAvailability,
-    );
-    _allItems[itemIndex] = updatedItem;
-    notifyListeners(); // This notifies ALL listeners immediately
-
-    print(
-      '🔄 Optimistically updated ${originalItem.name} availability to $newAvailability',
-    );
-
     try {
-      // Make API call
-      await ApiService.setItemAvailability(itemId, newAvailability);
+      final int itemIndex = _allItems.indexWhere((item) => item.id == itemId);
+      if (itemIndex == -1) {
+        if (context.mounted) {
+          CustomPopupService.show(
+            context,
+            'Item not found in list.',
+            type: PopupType.failure,
+          );
+        }
+        return;
+      }
 
+      // Store original item for potential rollback
+      final FoodItem originalItem = _allItems[itemIndex];
+
+      // Immediate optimistic update - this will reflect everywhere instantly
+      final FoodItem updatedItem = originalItem.copyWith(
+        availability: newAvailability,
+      );
+      _allItems[itemIndex] = updatedItem;
+      notifyListeners(); // This notifies ALL listeners immediately
+
+      // Production-safe logging
       print(
-        '✅ Server confirmed ${originalItem.name} availability: $newAvailability',
+        'ItemAvailabilityProvider: Optimistically updated ${originalItem.name} availability to $newAvailability',
       );
 
-      CustomPopupService.show(
-        context,
-        '${originalItem.name} ${newAvailability ? 'enabled' : 'disabled'}!',
-        type: PopupType.success,
-      );
+      try {
+        // Make API call with timeout for release mode reliability
+        await ApiService.setItemAvailability(itemId, newAvailability)
+            .timeout(const Duration(seconds: 15)); // Increased timeout for production
 
-      // Optionally refresh from server to ensure consistency
-      // Uncomment the line below if you want to sync with server after each update
-      // await _refreshSingleItem(itemId);
+        // Production-safe logging
+        print(
+          'ItemAvailabilityProvider: Server confirmed ${originalItem.name} availability: $newAvailability',
+        );
+
+        if (context.mounted) {
+          CustomPopupService.show(
+            context,
+            '${originalItem.name} ${newAvailability ? 'enabled' : 'disabled'}!',
+            type: PopupType.success,
+          );
+        }
+
+        // Optionally refresh from server to ensure consistency
+        // Uncomment the line below if you want to sync with server after each update
+        // await _refreshSingleItem(itemId);
+      } catch (e) {
+        // Production-safe logging
+        print('ItemAvailabilityProvider: Failed to update ${originalItem.name} on server: $e');
+
+        // Revert optimistic update on error - ensure we're still in valid state
+        if (itemIndex < _allItems.length && _allItems[itemIndex].id == itemId) {
+          _allItems[itemIndex] = originalItem;
+          notifyListeners(); // This reverts the change everywhere
+        }
+
+        if (context.mounted) {
+          CustomPopupService.show(
+            context,
+            'Failed to update ${originalItem.name} availability. Please check your internet connection.',
+            type: PopupType.failure,
+          );
+        }
+      }
     } catch (e) {
-      print('❌ Failed to update ${originalItem.name} on server: $e');
-
-      // Revert optimistic update on error
-      _allItems[itemIndex] = originalItem;
-      notifyListeners(); // This reverts the change everywhere
-
-      CustomPopupService.show(
-        context,
-        'Failed to update ${originalItem.name} availability.',
-        type: PopupType.failure,
-      );
+      // Catch-all for any unexpected errors
+      print('ItemAvailabilityProvider: Unexpected error in updateItemAvailability: $e');
+      if (context.mounted) {
+        CustomPopupService.show(
+          context,
+          'An unexpected error occurred. Please try again.',
+          type: PopupType.failure,
+        );
+      }
     }
   }
 

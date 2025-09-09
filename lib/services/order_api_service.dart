@@ -253,23 +253,38 @@ class OrderApiService {
         break;
     }
 
+    final requestBody = {
+      'order_id': orderId,
+      'status': statusToSend,
+      'driver_id': null,
+    };
+
+    print('🔍 OrderApiService: Updating order status');
+    print('🔍 URL: $url');
+    print('🔍 Headers: ${BrandInfo.getDefaultHeaders()}');
+    print('🔍 Request Body: ${jsonEncode(requestBody)}');
+    print('🔍 Order ID: $orderId, Internal Status: $newStatus, Backend Status: $statusToSend');
+
     try {
       final response = await http.post(
         url,
         headers: BrandInfo.getDefaultHeaders(), // Using brand headers
-        body: jsonEncode(<String, dynamic>{
-          'order_id': orderId,
-          'status': statusToSend,
-          'driver_id': null,
-        }),
+        body: jsonEncode(requestBody),
       );
 
+      print('🔍 Response Status Code: ${response.statusCode}');
+      print('🔍 Response Body: ${response.body}');
+
       if (response.statusCode == 200 || response.statusCode == 201) {
+        print('✅ Order status update successful');
         return true;
       } else {
+        print('❌ Order status update failed - Status Code: ${response.statusCode}');
+        print('❌ Response: ${response.body}');
         return false;
       }
     } catch (e) {
+      print('❌ Order status update exception: $e');
       return false;
     }
   }

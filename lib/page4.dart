@@ -7,6 +7,7 @@ import 'package:epos/models/food_item.dart';
 import 'package:epos/services/api_service.dart';
 import 'package:epos/food_item_details_model.dart';
 import 'package:epos/models/cart_item.dart';
+import 'dart:async';
 import 'dart:math';
 import 'dart:ui';
 import 'package:epos/dynamic_order_list_screen.dart';
@@ -25,7 +26,6 @@ import 'package:epos/services/custom_popup_service.dart';
 import 'package:epos/providers/item_availability_provider.dart';
 import 'package:epos/providers/offline_provider.dart';
 import 'package:epos/services/offline_order_manager.dart';
-import 'package:epos/services/connectivity_service.dart';
 
 class Page4 extends StatefulWidget {
   final String? initialSelectedServiceImage;
@@ -48,6 +48,7 @@ class _Page4State extends State<Page4> {
   List<FoodItem> foodItems = [];
   String _takeawaySubType = 'takeaway';
   bool isLoading = false;
+  bool _isProcessingPayment = false;
   final List<CartItem> _cartItems = [];
   bool _isModalOpen = false;
   FoodItem? _modalFoodItem;
@@ -58,7 +59,6 @@ class _Page4State extends State<Page4> {
   late String _actualOrderType;
   bool _showPayment = false;
   CustomerDetails? _customerDetails;
-  bool _isEditMode = false;
   bool _canScrollLeft = false;
   bool _canScrollRight = true;
   final ScrollController _categoryScrollController = ScrollController();
@@ -68,6 +68,7 @@ class _Page4State extends State<Page4> {
   double _appliedDiscountPercentage = 0.0;
   double _discountAmount = 0.0;
   bool _showDiscountPage = false;
+  bool _isProcessingUnpaid = false;
   final ScrollController _scrollController = ScrollController();
   int? _editingCommentIndex;
   final TextEditingController _commentEditingController =
@@ -86,7 +87,14 @@ class _Page4State extends State<Page4> {
   final TextEditingController _editPostalCodeController =
       TextEditingController();
   final GlobalKey<FormState> _editFormKey = GlobalKey<FormState>();
+  final TextEditingController _pinController = TextEditingController();
+  int _selectedShawarmaSubcategory = 0;
+  final List<String> _shawarmaSubcategories = [
+    'Donner & Shawarma kebab',
+    'Shawarma & kebab trays',
+  ];
 
+  bool _showAddItemModal = false;
   void _scrollCategoriesLeft() {
     _categoryScrollController.animateTo(
       _categoryScrollController.offset - 200,
@@ -134,6 +142,159 @@ class _Page4State extends State<Page4> {
     setState(() {
       _isEditingCustomerDetails = true;
     });
+  }
+
+  void _validatePin(String pin) {
+    if (pin == '2840') {
+      Navigator.of(context).pop();
+      setState(() {});
+      // Proceed to discount page
+      setState(() {
+        _showDiscountPage = true;
+      });
+    } else {
+      CustomPopupService.show(
+        context,
+        'Invalid PIN. Please try again.',
+        type: PopupType.failure,
+      );
+      _pinController.clear();
+    }
+  }
+
+  void _showPinDialog() {
+    _pinController.clear();
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (context) => Stack(
+            children: [
+              // Background blur
+              Positioned.fill(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 10.0, sigmaY: 10.0),
+                  child: Container(color: Colors.black.withOpacity(0.3)),
+                ),
+              ),
+              // Dialog
+              Dialog(
+                backgroundColor: Colors.transparent,
+                child: Container(
+                  width: 300,
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.admin_panel_settings,
+                        size: 48,
+                        color: Colors.black,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Admin Portal',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                          fontFamily: 'Poppins',
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Enter PIN to access admin features',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey.shade600,
+                          fontFamily: 'Poppins',
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 20),
+                      TextField(
+                        controller: _pinController,
+                        obscureText: true,
+                        keyboardType: TextInputType.number,
+                        maxLength: 4,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 8,
+                          fontFamily: 'Poppins',
+                        ),
+                        decoration: InputDecoration(
+                          hintText: '••••',
+                          hintStyle: TextStyle(
+                            color: Colors.grey.shade400,
+                            letterSpacing: 8,
+                            fontFamily: 'Poppins',
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(color: Colors.black),
+                          ),
+                          counterText: '',
+                        ),
+                        onSubmitted: (pin) => _validatePin(pin),
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextButton(
+                              onPressed: () {
+                                Navigator.of(context).pop();
+                              },
+                              child: Text(
+                                'Cancel',
+                                style: TextStyle(
+                                  color: Colors.grey.shade600,
+                                  fontWeight: FontWeight.w500,
+                                  fontFamily: 'Poppins',
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed:
+                                  () => _validatePin(_pinController.text),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.black,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              child: Text(
+                                'Access',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w500,
+                                  fontFamily: 'Poppins',
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+    );
   }
 
   void _saveCustomerDetails() {
@@ -366,19 +527,23 @@ class _Page4State extends State<Page4> {
   }
 
   final List<Category> categories = [
+    Category(name: 'DEALS', image: 'assets/images/deals.png'),
     Category(name: 'PIZZA', image: 'assets/images/PizzasS.png'),
+    Category(name: 'CALZONES', image: 'assets/images/CalzonesS.png'),
+    Category(name: 'SHAWARMAS', image: 'assets/images/ShawarmaS.png'),
     Category(name: 'BURGERS', image: 'assets/images/BurgersS.png'),
     Category(name: 'GARLIC BREAD', image: 'assets/images/GarlicBreadS.png'),
     Category(name: 'WRAPS', image: 'assets/images/WrapsS.png'),
     Category(name: 'KIDS MEAL', image: 'assets/images/KidsMealS.png'),
     Category(name: 'SIDES', image: 'assets/images/SidesS.png'),
     Category(name: 'MILKSHAKE', image: 'assets/images/MilkshakeS.png'),
+    Category(name: 'COFFEE', image: 'assets/images/Coffee.png'),
     Category(name: 'DRINKS', image: 'assets/images/DrinksS.png'),
     Category(name: 'DIPS', image: 'assets/images/DipsS.png'),
-    Category(name: 'CHICKEN', image: 'assets/images/Chicken.png'),
-    Category(name: 'DESSERTS', image: 'assets/images/Desserts.png'),
-    Category(name: 'KEBABS', image: 'assets/images/Kebabs.png'),
-    Category(name: 'WINGS', image: 'assets/images/Wings.png'),
+    // Category(name: 'CHICKEN', image: 'assets/images/Chicken.png'),
+    // Category(name: 'DESSERTS', image: 'assets/images/Desserts.png'),
+    // Category(name: 'KEBABS', image: 'assets/images/Kebabs.png'),
+    // Category(name: 'WINGS', image: 'assets/images/Wings.png'),
   ];
 
   String _toTitleCase(String text) {
@@ -396,9 +561,73 @@ class _Page4State extends State<Page4> {
         .join(' ');
   }
 
+  Widget _buildItemDescription(FoodItem item, Color textColor) {
+    final description = item.description!;
+
+    // Check if this is a Shawarma & kebab tray item that contains "Tray" text
+    if (item.subType == 'Shawarma & kebab trays' &&
+        description.toLowerCase().contains('tray')) {
+      // Split the description to find "Tray" word and make it bold and larger
+      final words = description.split(' ');
+      List<TextSpan> spans = [];
+
+      for (String word in words) {
+        if (word.toLowerCase().contains('tray')) {
+          // Make "Tray" word bold and larger
+          spans.add(
+            TextSpan(
+              text: '$word ',
+              style: TextStyle(
+                fontSize: 18, // Increased from 14
+                fontWeight: FontWeight.bold, // Made bold
+                color: textColor.withOpacity(0.9), // Slightly more visible
+                fontFamily: 'Poppins',
+              ),
+            ),
+          );
+        } else {
+          // Regular styling for other words
+          spans.add(
+            TextSpan(
+              text: '$word ',
+              style: TextStyle(
+                fontSize: 14,
+                color: textColor.withOpacity(0.7),
+                fontFamily: 'Poppins',
+              ),
+            ),
+          );
+        }
+      }
+
+      return RichText(
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        text: TextSpan(children: spans),
+      );
+    } else {
+      // Default description styling for other items
+      return Text(
+        description,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 14,
+          color: textColor.withOpacity(0.7),
+          fontFamily: 'Poppins',
+        ),
+      );
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+
+    // Add automatic recovery mechanism - check for empty items periodically
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startMenuItemHealthCheck();
+    });
 
     // Get the state provider
     final stateProvider = Provider.of<Page4StateProvider>(
@@ -408,9 +637,7 @@ class _Page4State extends State<Page4> {
 
     // IMPORTANT: Switch to the correct order type FIRST before loading state
     final incomingOrderType = widget.selectedOrderType;
-    debugPrint(
-      "📋 Page4 initializing with incoming order type: $incomingOrderType",
-    );
+    print("Page4 initializing with incoming order type: $incomingOrderType");
 
     // Determine the correct order type and sub type
     String actualOrderType;
@@ -433,15 +660,17 @@ class _Page4State extends State<Page4> {
               : 'takeaway';
     }
 
-    // Switch to the correct order type in the provider
-    stateProvider.switchToOrderType(actualOrderType, takeawaySubType);
+    // Defer switching to the correct order type until after the build phase
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      stateProvider.switchToOrderType(actualOrderType, takeawaySubType);
+    });
 
-    // NOW load the state for this specific order type
+    // Set initial values that don't require notifyListeners
     selectedServiceImage = widget.initialSelectedServiceImage ?? 'TakeAway.png';
     _actualOrderType = actualOrderType;
     _takeawaySubType = takeawaySubType;
 
-    // Load state from the provider (now correctly switched to the right order type)
+    // Load current state from the provider for the current order type
     _cartItems.clear(); // Clear first to avoid duplicates
     _cartItems.addAll(stateProvider.cartItems);
     _customerDetails = stateProvider.customerDetails;
@@ -455,7 +684,6 @@ class _Page4State extends State<Page4> {
     selectedCategory = stateProvider.selectedCategory;
     _searchQuery = stateProvider.searchQuery;
     _searchController.text = _searchQuery;
-    _isEditMode = stateProvider.isEditMode;
     _isSearchBarExpanded = stateProvider.isSearchBarExpanded;
 
     // NEW: Load modal state
@@ -469,16 +697,16 @@ class _Page4State extends State<Page4> {
 
     foodItems = widget.foodItems;
 
-    debugPrint("📋 Page4 initialized with ${foodItems.length} food items");
-    debugPrint("📋 Actual Order Type: $_actualOrderType");
-    debugPrint("📋 Cart Items: ${_cartItems.length}");
-    debugPrint("📋 Customer Details: ${_customerDetails?.name ?? 'None'}");
-    debugPrint("📋 Has Processed First Step: $_hasProcessedFirstStep");
-    debugPrint("📋 Modal Open: $_isModalOpen");
-    debugPrint("📋 Search Query: '$_searchQuery'");
+    print("Page4 initialized with ${foodItems.length} food items");
+    print("Page4 Actual Order Type: $_actualOrderType");
+    print("Page4 Cart Items: ${_cartItems.length}");
+    print("Page4 Customer Details: ${_customerDetails?.name ?? 'None'}");
+    print("Page4 Has Processed First Step: $_hasProcessedFirstStep");
+    print("Page4 Modal Open: $_isModalOpen");
+    print("Page4 Search Query: '$_searchQuery'");
 
     final categoriesInData = foodItems.map((e) => e.category).toSet();
-    debugPrint("📂 Categories in data: $categoriesInData");
+    print("Page4 Categories in data: $categoriesInData");
 
     SchedulerBinding.instance.addPostFrameCallback((_) {
       _getLeftPanelDimensions();
@@ -532,7 +760,6 @@ class _Page4State extends State<Page4> {
     stateProvider.updateUIState(
       category: selectedCategory,
       search: _searchQuery,
-      editMode: _isEditMode,
       searchExpanded: _isSearchBarExpanded,
     );
 
@@ -580,10 +807,18 @@ class _Page4State extends State<Page4> {
   }
 
   @override
+  void deactivate() {
+    // Skip state saving during deactivation to avoid build cycle conflicts
+    // State should already be saved during normal user interactions throughout the widget lifecycle
+    debugPrint(
+      '🔄 Page4: Widget deactivating - state already saved during normal lifecycle',
+    );
+    super.deactivate();
+  }
+
+  @override
   void dispose() {
-    if (mounted) {
-      _saveCurrentState();
-    }
+    // State is saved throughout normal widget lifecycle, no need to save during disposal
 
     _categoryScrollController.removeListener(_updateScrollButtonVisibility);
     _categoryScrollController.dispose();
@@ -593,6 +828,7 @@ class _Page4State extends State<Page4> {
     _commentEditingController.dispose();
     _commentFocusNode.dispose();
     _scrollController.dispose();
+    _pinController.dispose();
 
     // Add these new disposals
     _editNameController.dispose();
@@ -619,32 +855,107 @@ class _Page4State extends State<Page4> {
   void fetchItems() async {
     try {
       final items = await ApiService.fetchMenuItems();
-      debugPrint(" Items fetched: ${items.length}");
+      print("Page4: Items fetched successfully: ${items.length}");
 
       final categoriesInData = items.map((e) => e.category).toSet();
-      debugPrint(" 📂 Categories in data: $categoriesInData");
+      print("Page4: Categories in data: $categoriesInData");
 
       setState(() {
         foodItems = items;
         isLoading = false;
       });
-    } catch (e) {
-      debugPrint(' Error fetching items: $e');
+
+      // Also update the ItemAvailabilityProvider if items were fetched successfully
       if (mounted) {
-        CustomPopupService.show(
+        final itemProvider = Provider.of<ItemAvailabilityProvider>(
           context,
-          'Failed to load menu items',
-          type: PopupType.failure,
+          listen: false,
         );
+        if (itemProvider.allItems.isEmpty) {
+          print("Page4: Updating ItemAvailabilityProvider with fetched items");
+          itemProvider.refresh();
+        }
+      }
+    } catch (e) {
+      print('Page4: Error fetching items: $e');
+      setState(() {
+        isLoading = false;
+      });
+
+      if (mounted) {
+        // Only show error popup if we don't have any fallback data
+        final hasAnyData = widget.foodItems.isNotEmpty || foodItems.isNotEmpty;
+        if (!hasAnyData) {
+          CustomPopupService.show(
+            context,
+            'Failed to load menu items. Please check your internet connection and try again.',
+            type: PopupType.failure,
+          );
+        } else {
+          print("Page4: Using fallback data while connection is restored");
+        }
       }
     }
   }
 
-  double _calculateTotalPrice() {
+  // Production-safe menu item health check
+  void _startMenuItemHealthCheck() {
+    if (!mounted) return;
+
+    // Check every 30 seconds if menu items are available
+    Timer.periodic(const Duration(seconds: 30), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      final itemProvider = Provider.of<ItemAvailabilityProvider>(
+        context,
+        listen: false,
+      );
+      final providerHasItems = itemProvider.allItems.isNotEmpty;
+      final widgetHasItems = widget.foodItems.isNotEmpty;
+      final localHasItems = foodItems.isNotEmpty;
+
+      // If all sources are empty, try to refresh
+      if (!providerHasItems && !widgetHasItems && !localHasItems) {
+        print(
+          "🚨 Page4 Health Check: All menu item sources empty! Attempting recovery...",
+        );
+
+        // Try to refresh the provider first
+        itemProvider.refresh();
+
+        // Also try local fetch as backup
+        fetchItems();
+      }
+
+      // If provider is empty but we have local data, sync it
+      if (!providerHasItems && (widgetHasItems || localHasItems)) {
+        print(
+          "🔄 Page4 Health Check: Provider empty but local data available, syncing...",
+        );
+        itemProvider.refresh();
+      }
+    });
+  }
+
+  double _calculateCartItemsTotal() {
     double total = 0.0;
     for (var item in _cartItems) {
       total += item.pricePerUnit * item.quantity;
     }
+    return total;
+  }
+
+  double _calculateTotalPrice() {
+    double total = _calculateCartItemsTotal();
+
+    // Add delivery charge for delivery orders
+    if (_actualOrderType.toLowerCase() == 'delivery') {
+      total += 1.50;
+    }
+
     return total;
   }
 
@@ -975,7 +1286,7 @@ class _Page4State extends State<Page4> {
               controller: _editEmailController,
               style: const TextStyle(fontSize: 14, fontFamily: 'Poppins'),
               decoration: InputDecoration(
-                labelText: 'Email *',
+                labelText: 'Email (Optional)',
                 labelStyle: const TextStyle(
                   fontSize: 12,
                   fontFamily: 'Poppins',
@@ -1000,10 +1311,10 @@ class _Page4State extends State<Page4> {
               ),
               keyboardType: TextInputType.emailAddress,
               validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Email is required for delivery';
-                }
-                if (!_emailRegExp.hasMatch(value)) {
+                // Email is now optional - only validate format if provided
+                if (value != null &&
+                    value.isNotEmpty &&
+                    !_emailRegExp.hasMatch(value)) {
                   return 'Enter a valid email address';
                 }
                 return null;
@@ -1198,8 +1509,14 @@ class _Page4State extends State<Page4> {
     required String value,
     bool isAddress = false,
   }) {
+    double getMaxWidth() {
+      if (isAddress) return double.infinity;
+      if (label == 'Email') return 250;
+      return 200;
+    }
+
     return Container(
-      constraints: BoxConstraints(maxWidth: isAddress ? double.infinity : 200),
+      constraints: BoxConstraints(maxWidth: getMaxWidth()),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -1218,7 +1535,7 @@ class _Page4State extends State<Page4> {
                   TextSpan(
                     text: '$label: ',
                     style: const TextStyle(
-                      fontSize: 12,
+                      fontSize: 15,
                       fontWeight: FontWeight.bold, // Made bold
                       color: Colors.black87,
                       fontFamily: 'Poppins',
@@ -1227,7 +1544,7 @@ class _Page4State extends State<Page4> {
                   TextSpan(
                     text: value,
                     style: const TextStyle(
-                      fontSize: 12,
+                      fontSize: 15,
                       fontWeight: FontWeight.normal,
                       color: Colors.black87,
                       fontFamily: 'Poppins',
@@ -1291,15 +1608,20 @@ class _Page4State extends State<Page4> {
     return Scaffold(
       backgroundColor: Colors.white,
       body: GestureDetector(
+        behavior: HitTestBehavior.translucent,
         onTap: () {
+          // Dismiss keyboard when tapping outside
           FocusScope.of(context).unfocus();
-          // if (_isSearchBarExpanded) {
-          //   setState(() {
-          //     _isSearchBarExpanded = false;
-          //     _searchController.clear();
-          //     _searchQuery = '';
-          //   });
-          // }
+          _searchFocusNode.unfocus();
+
+          // Collapse search bar if expanded
+          if (_isSearchBarExpanded) {
+            setState(() {
+              _isSearchBarExpanded = false;
+              _searchController.clear();
+              _searchQuery = '';
+            });
+          }
         },
         child: Column(
           children: [
@@ -1318,9 +1640,7 @@ class _Page4State extends State<Page4> {
                                 children: [
                                   _buildSearchBar(),
                                   _buildCategoryTabs(),
-
                                   const SizedBox(height: 20),
-
                                   Container(
                                     margin: const EdgeInsets.symmetric(
                                       horizontal: 40,
@@ -1332,9 +1652,11 @@ class _Page4State extends State<Page4> {
                                       borderRadius: BorderRadius.circular(30),
                                     ),
                                   ),
+                                  _buildShawarmaSubcategoryTabs(),
                                   Expanded(child: _buildItemGrid()),
                                 ],
                               ),
+
                               if (_isModalOpen)
                                 Positioned.fill(
                                   child: BackdropFilter(
@@ -1386,32 +1708,67 @@ class _Page4State extends State<Page4> {
                       top: modalTopOffset,
                       width: modalActualWidth,
                       height: modalActualHeight,
-                      child: FoodItemDetailsModal(
-                        foodItem: _modalFoodItem!,
-                        onAddToCart: _handleItemAdditionOrUpdate,
-                        onClose: () {
-                          setState(() {
-                            _isModalOpen = false;
-                            _modalFoodItem = null;
-                            _editingCartIndex = null;
-                          });
+                      child: Consumer<ItemAvailabilityProvider>(
+                        builder: (context, itemProvider, child) {
+                          final List<FoodItem> providerItems =
+                              itemProvider.allItems;
+                          final List<FoodItem> allAvailableItems =
+                              providerItems.isNotEmpty
+                                  ? providerItems
+                                  : (widget.foodItems.isNotEmpty
+                                      ? widget.foodItems
+                                      : foodItems);
 
-                          // NEW: Save modal state to provider
-                          final stateProvider = Provider.of<Page4StateProvider>(
-                            context,
-                            listen: false,
-                          );
-                          stateProvider.updateModalState(
-                            isOpen: false,
-                            foodItem: null,
-                            editingIndex: null,
+                          return FoodItemDetailsModal(
+                            foodItem: _modalFoodItem!,
+                            allFoodItems: allAvailableItems,
+                            onAddToCart: _handleItemAdditionOrUpdate,
+                            onClose: () {
+                              setState(() {
+                                _isModalOpen = false;
+                                _modalFoodItem = null;
+                                _editingCartIndex = null;
+                              });
+
+                              // NEW: Save modal state to provider
+                              final stateProvider =
+                                  Provider.of<Page4StateProvider>(
+                                    context,
+                                    listen: false,
+                                  );
+                              stateProvider.updateModalState(
+                                isOpen: false,
+                                foodItem: null,
+                                editingIndex: null,
+                              );
+                            },
+                            initialCartItem:
+                                _editingCartIndex != null
+                                    ? _cartItems[_editingCartIndex!]
+                                    : null,
+                            isEditing: _editingCartIndex != null,
                           );
                         },
-                        initialCartItem:
-                            _editingCartIndex != null
-                                ? _cartItems[_editingCartIndex!]
-                                : null,
-                        isEditing: _editingCartIndex != null,
+                      ),
+                    ),
+
+                  // Add Item Modal
+                  if (_showAddItemModal)
+                    Positioned.fill(
+                      child: Container(
+                        color: Colors.black.withOpacity(0.5),
+                        child: Center(
+                          child: SingleChildScrollView(
+                            child: Container(
+                              margin: EdgeInsets.all(20),
+                              constraints: BoxConstraints(
+                                maxWidth: 500,
+                                maxHeight:
+                                    MediaQuery.of(context).size.height * 0.8,
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                 ],
@@ -1431,9 +1788,12 @@ class _Page4State extends State<Page4> {
 
   String _getCategoryIcon(String categoryName) {
     switch (categoryName.toUpperCase()) {
+      case 'DEALS':
+        return 'assets/images/deals.png';
       case 'PIZZA':
         return 'assets/images/PizzasS.png';
       case 'SHAWARMAS':
+      case 'SHAWARMA':
         return 'assets/images/ShawarmaS.png';
       case 'BURGERS':
         return 'assets/images/BurgersS.png';
@@ -1453,14 +1813,14 @@ class _Page4State extends State<Page4> {
         return 'assets/images/MilkshakeS.png';
       case 'DIPS':
         return 'assets/images/DipsS.png';
-      case 'DESSERTS':
-        return 'assets/images/Desserts.png';
-      case 'CHICKEN':
-        return 'assets/images/Chicken.png';
-      case 'KEBABS':
-        return 'assets/images/Kebabs.png';
-      case 'WINGS':
-        return 'assets/images/Wings.png';
+      // case 'DESSERTS':
+      //   return 'assets/images/Desserts.png';
+      // case 'CHICKEN':
+      //   return 'assets/images/Chicken.png';
+      // case 'KEBABS':
+      //   return 'assets/images/Kebabs.png';
+      // case 'WINGS':
+      //   return 'assets/images/Wings.png';
       default:
         return 'assets/images/default.png';
     }
@@ -1487,32 +1847,7 @@ class _Page4State extends State<Page4> {
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  child: GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _isEditMode = !_isEditMode;
-                      });
-                    },
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: _isEditMode ? Colors.black : Colors.transparent,
-                        borderRadius: BorderRadius.circular(30),
-                      ),
-                      child: Image.asset(
-                        'assets/images/EDIT.png',
-                        color: _isEditMode ? Colors.white : null,
-                      ),
-                    ),
-                  ),
-                ),
+            child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
               ],
             ),
           ),
@@ -1724,14 +2059,120 @@ class _Page4State extends State<Page4> {
     });
   }
 
+  Widget _buildShawarmaSubcategoryTabs() {
+    if (selectedCategory >= 0 &&
+        selectedCategory < categories.length &&
+        categories[selectedCategory].name.toLowerCase() == 'shawarmas') {
+      return Container(
+        padding: const EdgeInsets.only(
+          left: 80,
+          right: 80,
+          top: 15,
+          bottom: 15,
+        ),
+        child: Row(
+          children: [
+            for (int i = 0; i < _shawarmaSubcategories.length; i++)
+              Padding(
+                padding: EdgeInsets.only(
+                  right: i < _shawarmaSubcategories.length - 1 ? 20 : 0,
+                ),
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _selectedShawarmaSubcategory = i;
+                    });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color:
+                          _selectedShawarmaSubcategory == i
+                              ? const Color(0xFFCB6CE6)
+                              : Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color:
+                            _selectedShawarmaSubcategory == i
+                                ? const Color(0xFFCB6CE6)
+                                : Colors.grey.shade300,
+                        width: 2,
+                      ),
+                    ),
+                    child: Text(
+                      _shawarmaSubcategories[i],
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontFamily: 'Poppins',
+                        color:
+                            _selectedShawarmaSubcategory == i
+                                ? Colors.white
+                                : Colors.black,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+    return const SizedBox.shrink();
+  }
+
   Widget _buildItemGrid() {
     return Consumer<ItemAvailabilityProvider>(
       builder: (context, itemProvider, child) {
-        final List<FoodItem> allFoodItems = itemProvider.allItems;
+        final List<FoodItem> providerItems = itemProvider.allItems;
         final bool isLoading = itemProvider.isLoading;
 
+        // ROBUST FALLBACK: Use provider items if available, otherwise fallback to widget.foodItems
+        final List<FoodItem> allFoodItems =
+            providerItems.isNotEmpty
+                ? providerItems
+                : (widget.foodItems.isNotEmpty ? widget.foodItems : foodItems);
+
+        // Production-safe logging
+        if (providerItems.isEmpty && widget.foodItems.isNotEmpty) {
+          print(
+            '⚠️ Page4: Provider items empty, falling back to widget.foodItems (${widget.foodItems.length} items)',
+          );
+        }
+        if (providerItems.isEmpty &&
+            foodItems.isNotEmpty &&
+            widget.foodItems.isEmpty) {
+          print(
+            '⚠️ Page4: Provider items empty, falling back to local foodItems (${foodItems.length} items)',
+          );
+        }
+
+        // Show loading only if we have no data at all
         if (isLoading && allFoodItems.isEmpty) {
           return const Center(child: CircularProgressIndicator());
+        }
+
+        // If still no items available, try to trigger a refresh
+        if (allFoodItems.isEmpty) {
+          print(
+            '🔄 Page4: No items available, attempting to refresh ItemAvailabilityProvider',
+          );
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            itemProvider.refresh();
+          });
+          return const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Loading menu items...'),
+              ],
+            ),
+          );
         }
 
         if (categories.isEmpty ||
@@ -1747,7 +2188,11 @@ class _Page4State extends State<Page4> {
         final selectedCategoryName = categories[selectedCategory].name;
 
         String mappedCategoryKey;
-        if (selectedCategoryName.toLowerCase() == 'shawarmas') {
+        if (selectedCategoryName.toLowerCase() == 'deals') {
+          mappedCategoryKey = 'Deals';
+        } else if (selectedCategoryName.toLowerCase() == 'calzones') {
+          mappedCategoryKey = 'Calzones';
+        } else if (selectedCategoryName.toLowerCase() == 'shawarmas') {
           mappedCategoryKey = 'Shawarma';
         } else if (selectedCategoryName.toLowerCase() == 'kids meal') {
           mappedCategoryKey = 'KidsMeal';
@@ -1761,6 +2206,15 @@ class _Page4State extends State<Page4> {
           (item) =>
               item.category.toLowerCase() == mappedCategoryKey.toLowerCase(),
         );
+
+        // Filter by subcategory for Shawarma items
+        if (selectedCategoryName.toLowerCase() == 'shawarmas') {
+          final selectedSubcategory =
+              _shawarmaSubcategories[_selectedShawarmaSubcategory];
+          currentItems = currentItems.where(
+            (item) => item.subType?.trim() == selectedSubcategory.trim(),
+          );
+        }
 
         if (_searchQuery.isNotEmpty) {
           final lowerCaseQuery = _searchQuery.toLowerCase();
@@ -1800,171 +2254,125 @@ class _Page4State extends State<Page4> {
           itemBuilder: (context, index) {
             final item = filteredItems[index];
 
-            // Determine colors based on edit mode and availability
-            final Color containerColor =
-                _isEditMode
-                    ? (item.availability
-                        ? const Color(0xFFF2D9F9)
-                        : Colors.grey.shade300)
-                    : const Color(
-                      0xFFF2D9F9,
-                    ); // Always normal color when not in edit mode
+            // Always use normal color and text since edit mode is removed
+            final Color containerColor = const Color(0xFFF2D9F9);
+            final Color textColor = Colors.black;
 
-            final Color textColor =
-                _isEditMode
-                    ? (item.availability ? Colors.black : Colors.grey.shade600)
-                    : Colors.black; // Always black when not in edit mode
-
-            return GestureDetector(
-              onTap: () {
-                if (!_isEditMode) {
-                  // IMPORTANT: The system still prevents adding unavailable items.
-                  if (!item.availability) {
-                    CustomPopupService.show(
-                      context,
-                      '${item.name} is currently unavailable',
-                      type: PopupType.failure,
-                    );
-                    return;
-                  }
-
-                  bool requiresCustomerDetails =
-                      (_actualOrderType.toLowerCase() == 'delivery' ||
-                          _actualOrderType.toLowerCase() == 'takeaway' ||
-                          _actualOrderType.toLowerCase() == 'collection');
-
-                  if (requiresCustomerDetails && _customerDetails == null) {
-                    CustomPopupService.show(
-                      context,
-                      'Please enter customer details first.',
-                      type: PopupType.failure,
-                    );
-                    return;
-                  }
-
-                  setState(() {
-                    _isModalOpen = true;
-                    _modalFoodItem = item;
-                    _editingCartIndex = null;
-                  });
-
-                  final stateProvider = Provider.of<Page4StateProvider>(
+            return ElevatedButton(
+              onPressed: () {
+                // Check item availability
+                if (!item.availability) {
+                  CustomPopupService.show(
                     context,
-                    listen: false,
+                    '${item.name} is currently unavailable',
+                    type: PopupType.failure,
                   );
-                  stateProvider.updateModalState(
-                    isOpen: true,
-                    foodItem: item,
-                    editingIndex: null,
-                  );
-
-                  SchedulerBinding.instance.addPostFrameCallback((_) {
-                    _getLeftPanelDimensions();
-                  });
+                  return;
                 }
+
+                bool requiresCustomerDetails =
+                    (_actualOrderType.toLowerCase() == 'delivery' ||
+                        _actualOrderType.toLowerCase() == 'takeaway' ||
+                        _actualOrderType.toLowerCase() == 'collection');
+
+                if (requiresCustomerDetails && _customerDetails == null) {
+                  CustomPopupService.show(
+                    context,
+                    'Please enter customer details first.',
+                    type: PopupType.failure,
+                  );
+                  return;
+                }
+
+                setState(() {
+                  _isModalOpen = true;
+                  _modalFoodItem = item;
+                  _editingCartIndex = null;
+                });
+
+                final stateProvider = Provider.of<Page4StateProvider>(
+                  context,
+                  listen: false,
+                );
+                stateProvider.updateModalState(
+                  isOpen: true,
+                  foodItem: item,
+                  editingIndex: null,
+                );
+
+                SchedulerBinding.instance.addPostFrameCallback((_) {
+                  _getLeftPanelDimensions();
+                });
               },
-              child: Container(
-                decoration: BoxDecoration(
-                  color: containerColor,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: containerColor,
+                padding: const EdgeInsets.fromLTRB(14.0, 5.0, 22.0, 5.0),
+                shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(19),
                 ),
-                child: Stack(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(14.0, 5.0, 22.0, 5.0),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  _toTitleCase(item.name),
-                                  maxLines: 3,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 20,
-                                    fontFamily: 'Poppins',
-                                    color: textColor,
-                                  ),
+                elevation: 4.0,
+              ),
+              child: Stack(
+                children: [
+                  Row(
+                    children: [
+                      // Display item image if available
+                      if (item.image.isNotEmpty)
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Image.network(
+                            item.image,
+                            width: 60,
+                            height: 60,
+                            fit: BoxFit.cover,
+                            errorBuilder:
+                                (context, error, stackTrace) => const Icon(
+                                  Icons.image_not_supported,
+                                  size: 60,
                                 ),
-                                // Only show availability status in edit mode
-                                if (_isEditMode)
-                                  Text(
-                                    item.availability
-                                        ? 'Available'
-                                        : 'Unavailable',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontFamily: 'Poppins',
-                                      color:
-                                          item.availability
-                                              ? Colors.green[700]
-                                              : Colors.red[700],
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          // Show the "+" button when not in edit mode
-                          if (!_isEditMode)
-                            MouseRegion(
-                              cursor: SystemMouseCursors.click,
-                              child: Container(
-                                width: 41,
-                                height: 47,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFD887EF),
-                                  borderRadius: BorderRadius.circular(9),
-                                ),
-                                child: const Icon(
-                                  Icons.add,
-                                  color: Colors.black,
-                                  size: 43,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-
-                    // Show the toggle button only in edit mode
-                    if (_isEditMode)
-                      Positioned(
-                        top: 8,
-                        right: 8,
-                        child: MouseRegion(
-                          cursor: SystemMouseCursors.click,
-                          child: GestureDetector(
-                            onTap: () {
-                              itemProvider.updateItemAvailability(
-                                context,
-                                item.id,
-                                !item.availability,
-                              );
-                            },
-                            child: Container(
-                              width: 30,
-                              height: 30,
-                              decoration: BoxDecoration(
-                                color: Colors.grey[400],
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                item.availability ? Icons.remove : Icons.add,
-                                color: Colors.white,
-                                size: 20,
-                              ),
-                            ),
                           ),
                         ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _toTitleCase(item.name),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 20,
+                                fontFamily: 'Poppins',
+                                color: textColor,
+                              ),
+                            ),
+                            if (item.description != null &&
+                                item.description!.isNotEmpty)
+                              _buildItemDescription(item, textColor),
+                          ],
+                        ),
                       ),
-                  ],
-                ),
+                      const SizedBox(width: 10),
+                      // Show the "+" button
+                      Container(
+                        width: 41,
+                        height: 47,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFD887EF),
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        child: const Icon(
+                          Icons.add,
+                          color: Colors.black,
+                          size: 43,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             );
           },
@@ -2019,19 +2427,35 @@ class _Page4State extends State<Page4> {
         subtotal: _getFinalTotal(),
         customerDetails: _customerDetails,
         paymentType: _selectedPaymentType,
-        onPaymentConfirmed: (PaymentDetails paymentDetails) {
-          _handleOrderCompletion(
-            customerDetails: safeCustomerDetails,
-            paymentDetails: paymentDetails,
-          );
-        },
-        onBack: () {
-          setState(() {
-            _showPayment = false;
-            _hasProcessedFirstStep = false;
-            _selectedPaymentType = '';
-          });
-        },
+        isProcessing: _isProcessingPayment, // Pass loading state
+        onPaymentConfirmed:
+            _isProcessingPayment
+                ? null
+                : (PaymentDetails paymentDetails) {
+                  _handleOrderCompletion(
+                    customerDetails: safeCustomerDetails,
+                    paymentDetails: paymentDetails,
+                  );
+                },
+        onBack:
+            _isProcessingPayment
+                ? null
+                : () {
+                  setState(() {
+                    _showPayment = false;
+                    _hasProcessedFirstStep = false;
+                    _selectedPaymentType = '';
+                  });
+                },
+        onPaymentTypeChanged:
+            _isProcessingPayment
+                ? null
+                : (String newPaymentType) {
+                  setState(() {
+                    _selectedPaymentType = newPaymentType;
+                  });
+                  print("🔍 PAGE4 PAYMENT TYPE UPDATED: $_selectedPaymentType");
+                },
       );
     }
 
@@ -2277,7 +2701,10 @@ class _Page4State extends State<Page4> {
   }
 
   Widget _buildCartSummaryContent() {
-    double subtotal = _calculateTotalPrice();
+    double cartItemsTotal = _calculateCartItemsTotal();
+    double deliveryCharge =
+        (_actualOrderType.toLowerCase() == 'delivery') ? 1.50 : 0.0;
+    double subtotal = cartItemsTotal + deliveryCharge;
     double currentDiscountAmount = _calculateDiscountAmount();
     double finalTotal = subtotal - currentDiscountAmount;
 
@@ -2412,6 +2839,27 @@ class _Page4State extends State<Page4> {
                       }
                     }
 
+                    // Handle deal-specific options display
+                    List<String> dealOptions = [];
+                    if (item.foodItem.category == 'Deals' && hasOptions) {
+                      for (var option in item.selectedOptions!) {
+                        // Parse deal-specific options (updated patterns including grouped selections)
+                        if (option.contains('Pizza') ||
+                            option.contains('Shawarma') ||
+                            option.contains('Burger') ||
+                            option.contains('Calzone') ||
+                            option.contains('Drink') ||
+                            option.contains('Sauces') ||
+                            option.contains('Options') ||
+                            option.contains('Fries') ||
+                            option.contains('Selected') ||
+                            option.contains('Size') ||
+                            option.contains('Chips')) {
+                          dealOptions.add(option);
+                        }
+                      }
+                    }
+
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 12.0),
                       child: Column(
@@ -2528,6 +2976,29 @@ class _Page4State extends State<Page4> {
                                                             TextOverflow
                                                                 .ellipsis,
                                                       ),
+                                                    // Display deal-specific options
+                                                    if (dealOptions.isNotEmpty)
+                                                      ...dealOptions
+                                                          .map(
+                                                            (
+                                                              dealOption,
+                                                            ) => Text(
+                                                              dealOption,
+                                                              style: const TextStyle(
+                                                                fontSize: 15,
+                                                                fontFamily:
+                                                                    'Poppins',
+                                                                color:
+                                                                    Colors
+                                                                        .black,
+                                                              ),
+                                                              maxLines: 2,
+                                                              overflow:
+                                                                  TextOverflow
+                                                                      .ellipsis,
+                                                            ),
+                                                          )
+                                                          .toList(),
                                                     // Display meal information
                                                     if (isMeal &&
                                                         selectedDrink !=
@@ -2650,7 +3121,6 @@ class _Page4State extends State<Page4> {
                                             ),
                                           ),
                                           const SizedBox(width: 35),
-                                          // Edit button
                                           MouseRegion(
                                             cursor: SystemMouseCursors.click,
                                             child: GestureDetector(
@@ -2850,6 +3320,50 @@ class _Page4State extends State<Page4> {
 
             const SizedBox(height: 10),
 
+            // Show delivery charges for delivery orders
+            if (_actualOrderType.toLowerCase() == 'delivery') ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Items Total',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    Text(
+                      '£${cartItemsTotal.toStringAsFixed(2)}',
+                      style: const TextStyle(fontSize: 20),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 5),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Delivery Charges',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    Text(
+                      '£${deliveryCharge.toStringAsFixed(2)}',
+                      style: const TextStyle(fontSize: 20),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 5),
+            ],
+
             // Show discount information if applied
             if (_appliedDiscountPercentage > 0) ...[
               Padding(
@@ -2918,40 +3432,46 @@ class _Page4State extends State<Page4> {
             Row(
               children: [
                 Expanded(
-                  child: GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _selectedPaymentType = 'cash';
-                      });
-                      _proceedToNextStep();
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 18,
-                      ),
-                      decoration: BoxDecoration(
-                        color:
-                            _selectedPaymentType == 'cash'
-                                ? Colors.grey[300]
-                                : Colors.black,
-                        borderRadius: BorderRadius.circular(8),
-                        border:
-                            _selectedPaymentType == 'cash'
-                                ? Border.all(color: Colors.grey)
-                                : null,
-                      ),
-                      child: Center(
-                        child: Text(
-                          'Cash',
-                          style: TextStyle(
+                  child: AbsorbPointer(
+                    absorbing: _isProcessingUnpaid,
+                    child: Opacity(
+                      opacity: _isProcessingUnpaid ? 0.3 : 1.0,
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _selectedPaymentType = 'cash';
+                          });
+                          _proceedToNextStep();
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 18,
+                          ),
+                          decoration: BoxDecoration(
                             color:
                                 _selectedPaymentType == 'cash'
-                                    ? Colors.black
-                                    : Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 29,
-                            fontFamily: 'Poppins',
+                                    ? Colors.grey[300]
+                                    : Colors.black,
+                            borderRadius: BorderRadius.circular(8),
+                            border:
+                                _selectedPaymentType == 'cash'
+                                    ? Border.all(color: Colors.grey)
+                                    : null,
+                          ),
+                          child: Center(
+                            child: Text(
+                              'Cash',
+                              style: TextStyle(
+                                color:
+                                    _selectedPaymentType == 'cash'
+                                        ? Colors.black
+                                        : Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 29,
+                                fontFamily: 'Poppins',
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -2960,40 +3480,46 @@ class _Page4State extends State<Page4> {
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _selectedPaymentType = 'card';
-                      });
-                      _proceedToNextStep();
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 18,
-                      ),
-                      decoration: BoxDecoration(
-                        color:
-                            _selectedPaymentType == 'card'
-                                ? Colors.grey[300]
-                                : Colors.black,
-                        borderRadius: BorderRadius.circular(8),
-                        border:
-                            _selectedPaymentType == 'card'
-                                ? Border.all(color: Colors.grey)
-                                : null,
-                      ),
-                      child: Center(
-                        child: Text(
-                          'Card',
-                          style: TextStyle(
+                  child: AbsorbPointer(
+                    absorbing: _isProcessingUnpaid,
+                    child: Opacity(
+                      opacity: _isProcessingUnpaid ? 0.3 : 1.0,
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _selectedPaymentType = 'card';
+                          });
+                          _proceedToNextStep();
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 18,
+                          ),
+                          decoration: BoxDecoration(
                             color:
                                 _selectedPaymentType == 'card'
-                                    ? Colors.black
-                                    : Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 29,
-                            fontFamily: 'Poppins',
+                                    ? Colors.grey[300]
+                                    : Colors.black,
+                            borderRadius: BorderRadius.circular(8),
+                            border:
+                                _selectedPaymentType == 'card'
+                                    ? Border.all(color: Colors.grey)
+                                    : null,
+                          ),
+                          child: Center(
+                            child: Text(
+                              'Card',
+                              style: TextStyle(
+                                color:
+                                    _selectedPaymentType == 'card'
+                                        ? Colors.black
+                                        : Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 29,
+                                fontFamily: 'Poppins',
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -3003,88 +3529,82 @@ class _Page4State extends State<Page4> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _selectedPaymentType = 'Card & Cash';
-                      });
-                      _proceedToNextStep();
-                    },
+                    onTap:
+                        _isProcessingUnpaid
+                            ? null
+                            : () async {
+                              setState(() {
+                                _isProcessingUnpaid = true;
+                              });
+                              // Process unpaid order immediately
+                              await _processUnpaidOrder();
+                            },
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
-                        vertical: 27,
+                        vertical: 18,
                       ),
                       decoration: BoxDecoration(
-                        color:
-                            _selectedPaymentType == 'Card & Cash'
-                                ? Colors.grey[300]
-                                : Colors.black,
+                        color: Colors.black,
                         borderRadius: BorderRadius.circular(8),
-                        border:
-                            _selectedPaymentType == 'Card & Cash'
-                                ? Border.all(color: Colors.grey)
-                                : null,
                       ),
                       child: Center(
-                        child: Text(
-                          'Card & Cash',
-                          style: TextStyle(
-                            color:
-                                _selectedPaymentType == 'Card & Cash'
-                                    ? Colors.black
-                                    : Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16.6,
-                            fontFamily: 'Poppins',
-                          ),
-                        ),
+                        child:
+                            _isProcessingUnpaid
+                                ? const CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 3,
+                                )
+                                : Text(
+                                  'Unpaid',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 29,
+                                    fontFamily: 'Poppins',
+                                  ),
+                                ),
                       ),
                     ),
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: GestureDetector(
-                    onTap: () {
-                      if (_cartItems.isNotEmpty) {
-                        setState(() {
-                          _showDiscountPage = true;
-                        });
-                      } else {
-                        CustomPopupService.show(
-                          context,
-                          'Please add items to cart first',
-                          type: PopupType.failure,
-                        );
-                      }
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 18,
-                      ),
-                      decoration: BoxDecoration(
-                        color:
-                            _appliedDiscountPercentage > 0
-                                ? Colors.grey[200]
-                                : Colors.black,
-                        borderRadius: BorderRadius.circular(8),
-                        border:
-                            _appliedDiscountPercentage > 0
-                                ? Border.all(color: Colors.black)
-                                : null,
-                      ),
-                      child: Center(
-                        child: Text(
-                          '%',
-                          style: TextStyle(
-                            color:
-                                _appliedDiscountPercentage > 0
-                                    ? Colors.black
-                                    : Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 29,
-                            fontFamily: 'Poppins',
+                  child: AbsorbPointer(
+                    absorbing: _isProcessingUnpaid,
+                    child: Opacity(
+                      opacity: _isProcessingUnpaid ? 0.3 : 1.0,
+                      child: GestureDetector(
+                        onTap: () {
+                          if (_cartItems.isNotEmpty) {
+                            _showPinDialog();
+                          } else {
+                            CustomPopupService.show(
+                              context,
+                              'Please add items to cart first',
+                              type: PopupType.failure,
+                            );
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 18,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Center(
+                            child: Text(
+                              '%',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 29,
+                                fontFamily: 'Poppins',
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -3097,6 +3617,30 @@ class _Page4State extends State<Page4> {
             const SizedBox(height: 10),
           ],
         );
+  }
+
+  void _editCartItem(CartItem cartItem, int cartIndex) {
+    setState(() {
+      _isModalOpen = true;
+      _modalFoodItem = cartItem.foodItem; // The base food item for the modal
+      _editingCartIndex = cartIndex; // Store the index of the item being edited
+    });
+
+    // NEW: Save modal state to provider
+    final stateProvider = Provider.of<Page4StateProvider>(
+      context,
+      listen: false,
+    );
+    stateProvider.updateModalState(
+      isOpen: true,
+      foodItem: cartItem.foodItem,
+      editingIndex: cartIndex,
+    );
+
+    // Ensure dimensions are calculated after state update and before modal opens visually
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _getLeftPanelDimensions();
+    });
   }
 
   // Widget _buildCartSummary() {
@@ -3127,30 +3671,6 @@ class _Page4State extends State<Page4> {
   //   );
   // }
 
-  void _editCartItem(CartItem cartItem, int cartIndex) {
-    setState(() {
-      _isModalOpen = true;
-      _modalFoodItem = cartItem.foodItem; // The base food item for the modal
-      _editingCartIndex = cartIndex; // Store the index of the item being edited
-    });
-
-    // NEW: Save modal state to provider
-    final stateProvider = Provider.of<Page4StateProvider>(
-      context,
-      listen: false,
-    );
-    stateProvider.updateModalState(
-      isOpen: true,
-      foodItem: cartItem.foodItem,
-      editingIndex: cartIndex,
-    );
-
-    // Ensure dimensions are calculated after state update and before modal opens visually
-    SchedulerBinding.instance.addPostFrameCallback((_) {
-      _getLeftPanelDimensions();
-    });
-  }
-
   Future<void> _handleOrderCompletion({
     required CustomerDetails customerDetails,
     required PaymentDetails paymentDetails,
@@ -3165,6 +3685,11 @@ class _Page4State extends State<Page4> {
       }
       return;
     }
+
+    // Set loading state to prevent double clicks
+    setState(() {
+      _isProcessingPayment = true;
+    });
 
     String id1 = generateTransactionId();
     print("Generated Transaction ID: $id1");
@@ -3249,75 +3774,41 @@ class _Page4State extends State<Page4> {
             .join(', ')
             .trim();
 
-    await _handlePrintingAndOrderDirect(
-      orderData: orderData,
-      id1: id1,
-      subtotal: originalSubtotal,
-      // Pass original subtotal for printing
-      totalCharge: finalTotalCharge,
-      // Pass discounted total
-      extraNotes: extraNotes,
-      changeDue: finalChangeDue,
-    );
-  }
-
-  Future<void> _handlePrintingAndOrderDirect({
-    required Map<String, dynamic> orderData,
-    required String id1,
-    required double subtotal,
-    required double totalCharge,
-    required String extraNotes,
-    required double changeDue,
-  }) async {
-    if (!mounted) return;
-
     try {
-      // Extract customer details from orderData
-      final guestData = orderData['guest'] as Map<String, dynamic>?;
+      // First submit order to backend and get order ID
+      String? backendOrderId = await _submitOrderAndGetId(orderData);
 
-      await ThermalPrinterService().printReceiptWithUserInteraction(
+      // Then print receipt with the order ID
+      await _printReceiptWithOrderId(
+        orderData: orderData,
         transactionId: id1,
-        orderType: _actualOrderType,
-        cartItems: _cartItems,
-        subtotal: subtotal,
-        totalCharge: totalCharge,
-        extraNotes: extraNotes.isNotEmpty ? extraNotes : null,
-        changeDue: changeDue,
-        // Add customer details
-        customerName: guestData?['name'] as String?,
-        customerEmail: guestData?['email'] as String?,
-        phoneNumber: guestData?['phone_number'] as String?,
-        streetAddress: guestData?['street_address'] as String?,
-        city: guestData?['city'] as String?,
-        postalCode: guestData?['postal_code'] as String?,
-        paymentType: _selectedPaymentType,
-        onShowMethodSelection: (availableMethods) {
-          if (mounted) {
-            CustomPopupService.show(
-              context,
-              "Available printing methods: ${availableMethods.join(', ')}. Please check printer connections.",
-              type: PopupType.success,
-            );
-          }
-        },
+        subtotal: originalSubtotal,
+        totalCharge: finalTotalCharge,
+        extraNotes: extraNotes,
+        changeDue: finalChangeDue,
+        paidStatus: paymentDetails.paidStatus,
+        orderId: backendOrderId,
       );
     } catch (e) {
-      print('Background printing failed: $e');
+      print('Error in order completion: $e');
       if (mounted) {
         CustomPopupService.show(
           context,
-          "Printing failed !",
+          'Failed to process order: $e',
           type: PopupType.failure,
         );
       }
+    } finally {
+      // Clear loading state
+      if (mounted) {
+        setState(() {
+          _isProcessingPayment = false;
+        });
+      }
     }
-
-    await _placeOrderDirectly(orderData);
   }
 
-  Future<void> _placeOrderDirectly(Map<String, dynamic> orderData) async {
-    if (!mounted) return;
-
+  Future<String?> _submitOrderAndGetId(Map<String, dynamic> orderData) async {
     final offlineProvider = Provider.of<OfflineProvider>(
       context,
       listen: false,
@@ -3328,14 +3819,8 @@ class _Page4State extends State<Page4> {
     );
 
     // Check if we're online
-    print(
-      '🌐 DEBUG: Page4 order placement - OfflineProvider.isOnline: ${offlineProvider.isOnline}',
-    );
-    print(
-      '🌐 DEBUG: Page4 order placement - ConnectivityService.isOnline: ${ConnectivityService().isOnline}',
-    );
     if (!offlineProvider.isOnline) {
-      // OFFLINE MODE: Create local order that appears in orders list immediately
+      // OFFLINE MODE: Create local order
       try {
         final offlineOrder = await OfflineOrderManager.createOfflineOrder(
           cartItems: _cartItems,
@@ -3352,65 +3837,37 @@ class _Page4State extends State<Page4> {
           changeDue: orderData['change_due'] as double? ?? 0.0,
         );
 
-        // Show success popup immediately
-        if (mounted) {
-          CustomPopupService.show(
-            context,
-            "Order saved offline: ${offlineOrder.transactionId}\nWill appear in orders list and be processed when connection is restored",
-            type: PopupType.success,
-          );
-
-          // Clear cart like successful order
-          _clearOrderState();
-        }
-
         // Add offline order to the orders list in background
         eposOrdersProvider.addOfflineOrder(offlineOrder).catchError((error) {
           print('⚠️ Background addOfflineOrder failed: $error');
         });
-        return;
+
+        // Return null for offline orders (no backend order ID)
+        return null;
       } catch (e) {
         print('❌ Failed to create offline order: $e');
-        if (mounted) {
-          CustomPopupService.show(
-            context,
-            "Failed to save order offline: $e",
-            type: PopupType.failure,
-          );
-        }
-        return;
+        throw Exception('Failed to save order offline: $e');
       }
     }
 
-    // ONLINE MODE: Try normal processing first, fallback to offline
+    // ONLINE MODE: Submit to backend and get order ID
     try {
       final orderId = await ApiService.createOrderFromMap(orderData);
-
       print(
         '✅ Order placed successfully online: $orderId for type: $_actualOrderType',
       );
 
-      // Show success popup immediately after order placement
-      if (mounted) {
-        CustomPopupService.show(
-          context,
-          "Order placed successfully",
-          type: PopupType.success,
-        );
-        _clearOrderState();
-      }
-
-      // Refresh provider in background (don't await to avoid UI delay)
+      // Refresh provider in background
       eposOrdersProvider.refresh().catchError((error) {
         print('⚠️ Background refresh failed after order placement: $error');
       });
+
+      return orderId;
     } catch (e) {
-      print('❌ Online order placement failed: $e');
+      print('❌ Failed to submit order online: $e');
 
-      // FALLBACK: Try to save offline if online fails
+      // Try to save offline as fallback
       try {
-        print('🔄 Attempting to save order offline as fallback...');
-
         final offlineOrder = await OfflineOrderManager.createOfflineOrder(
           cartItems: _cartItems,
           paymentType: _selectedPaymentType,
@@ -3426,32 +3883,278 @@ class _Page4State extends State<Page4> {
           changeDue: orderData['change_due'] as double? ?? 0.0,
         );
 
-        // Show success popup immediately
-        if (mounted) {
-          CustomPopupService.show(
-            context,
-            "Connection failed, order saved offline: ${offlineOrder.transactionId}\nWill be processed when connection is restored",
-            type: PopupType.success,
-          );
-          _clearOrderState();
-        }
-
-        // Add offline order to the orders list in background
         eposOrdersProvider.addOfflineOrder(offlineOrder).catchError((error) {
           print('⚠️ Background addOfflineOrder failed: $error');
         });
+
+        print('✅ Order saved offline as fallback');
+        return null; // No backend order ID for offline orders
       } catch (offlineError) {
-        print('❌ Failed to save order offline: $offlineError');
-        if (mounted) {
-          CustomPopupService.show(
-            context,
-            "Failed to place order: $e",
-            type: PopupType.failure,
-          );
-        }
+        print('❌ Offline fallback also failed: $offlineError');
+        throw Exception(
+          'Failed to submit order online and offline fallback failed: $offlineError',
+        );
       }
     }
   }
+
+  Future<void> _printReceiptWithOrderId({
+    required Map<String, dynamic> orderData,
+    required String transactionId,
+    required double subtotal,
+    required double totalCharge,
+    required String extraNotes,
+    required double changeDue,
+    required bool paidStatus,
+    String? orderId,
+  }) async {
+    try {
+      // Extract customer details from orderData
+      final guestData = orderData['guest'] as Map<String, dynamic>?;
+
+      await ThermalPrinterService().printReceiptWithUserInteraction(
+        transactionId: transactionId,
+        orderType: _actualOrderType,
+        cartItems: _cartItems,
+        subtotal: subtotal,
+        totalCharge: totalCharge,
+        extraNotes: extraNotes,
+        changeDue: changeDue,
+        customerName: guestData?['name'] as String?,
+        customerEmail: guestData?['email'] as String?,
+        phoneNumber: guestData?['phone_number'] as String?,
+        streetAddress: guestData?['street_address'] as String?,
+        city: guestData?['city'] as String?,
+        postalCode: guestData?['postal_code'] as String?,
+        paymentType: _selectedPaymentType,
+        paidStatus: paidStatus,
+        orderId: orderId != null ? int.tryParse(orderId) : null,
+        onShowMethodSelection: (availableMethods) {
+          if (mounted) {
+            CustomPopupService.show(
+              context,
+              'No printer connections detected. Available methods: ${availableMethods.join(", ")}',
+              type: PopupType.failure,
+            );
+          }
+        },
+      );
+    } catch (e) {
+      print('Error printing receipt: $e');
+      if (mounted) {
+        CustomPopupService.show(
+          context,
+          "Printing failed: $e",
+          type: PopupType.failure,
+        );
+      }
+      // Don't rethrow - order was already placed successfully
+    }
+
+    // Show success message and clear cart after printing (or print failure)
+    if (mounted) {
+      CustomPopupService.show(
+        context,
+        "Order placed successfully",
+        type: PopupType.success,
+      );
+      _clearOrderState();
+    }
+  }
+
+  // Future<void> _handlePrintingAndOrderDirect({
+  //   required Map<String, dynamic> orderData,
+  //   required String id1,
+  //   required double subtotal,
+  //   required double totalCharge,
+  //   required String extraNotes,
+  //   required double changeDue,
+  //   required bool paidStatus,
+  // }) async {
+  //   if (!mounted) return;
+
+  //   try {
+  //     // Extract customer details from orderData
+  //     final guestData = orderData['guest'] as Map<String, dynamic>?;
+
+  //     await ThermalPrinterService().printReceiptWithUserInteraction(
+  //       transactionId: id1,
+  //       orderType: _actualOrderType,
+  //       cartItems: _cartItems,
+  //       subtotal: subtotal,
+  //       totalCharge: totalCharge,
+  //       extraNotes: extraNotes.isNotEmpty ? extraNotes : null,
+  //       changeDue: changeDue,
+  //       // Add customer details
+  //       customerName: guestData?['name'] as String?,
+  //       customerEmail: guestData?['email'] as String?,
+  //       phoneNumber: guestData?['phone_number'] as String?,
+  //       streetAddress: guestData?['street_address'] as String?,
+  //       city: guestData?['city'] as String?,
+  //       postalCode: guestData?['postal_code'] as String?,
+  //       paymentType: _selectedPaymentType,
+  //       paidStatus: paidStatus,
+  //       onShowMethodSelection: (availableMethods) {
+  //         if (mounted) {
+  //           CustomPopupService.show(
+  //             context,
+  //             "Available printing methods: ${availableMethods.join(', ')}. Please check printer connections.",
+  //             type: PopupType.success,
+  //           );
+  //         }
+  //       },
+  //     );
+  //   } catch (e) {
+  //     print('Background printing failed: $e');
+  //     if (mounted) {
+  //       CustomPopupService.show(
+  //         context,
+  //         "Printing failed !",
+  //         type: PopupType.failure,
+  //       );
+  //     }
+  //   }
+
+  //   await _placeOrderDirectly(orderData);
+  // }
+
+  // Future<void> _placeOrderDirectly(Map<String, dynamic> orderData) async {
+  //   if (!mounted) return;
+
+  //   final offlineProvider = Provider.of<OfflineProvider>(
+  //     context,
+  //     listen: false,
+  //   );
+  //   final eposOrdersProvider = Provider.of<EposOrdersProvider>(
+  //     context,
+  //     listen: false,
+  //   );
+
+  //   // Check if we're online
+  //   print(
+  //     '🌐 DEBUG: Page4 order placement - OfflineProvider.isOnline: ${offlineProvider.isOnline}',
+  //   );
+  //   print(
+  //     '🌐 DEBUG: Page4 order placement - ConnectivityService.isOnline: ${ConnectivityService().isOnline}',
+  //   );
+  //   if (!offlineProvider.isOnline) {
+  //     // OFFLINE MODE: Create local order that appears in orders list immediately
+  //     try {
+  //       final offlineOrder = await OfflineOrderManager.createOfflineOrder(
+  //         cartItems: _cartItems,
+  //         paymentType: _selectedPaymentType,
+  //         orderType: _actualOrderType,
+  //         orderTotalPrice: orderData['total_price'] as double,
+  //         orderExtraNotes: orderData['order_extra_notes'] as String?,
+  //         customerName: _customerDetails?.name ?? "Unknown Customer",
+  //         customerEmail: _customerDetails?.email,
+  //         phoneNumber: _customerDetails?.phoneNumber,
+  //         streetAddress: _customerDetails?.streetAddress,
+  //         city: _customerDetails?.city,
+  //         postalCode: _customerDetails?.postalCode,
+  //         changeDue: orderData['change_due'] as double? ?? 0.0,
+  //       );
+
+  //       // Show success popup immediately
+  //       if (mounted) {
+  //         CustomPopupService.show(
+  //           context,
+  //           "Order saved offline: ${offlineOrder.transactionId}\nWill appear in orders list and be processed when connection is restored",
+  //           type: PopupType.success,
+  //         );
+
+  //         // Clear cart like successful order
+  //         _clearOrderState();
+  //       }
+
+  //       // Add offline order to the orders list in background
+  //       eposOrdersProvider.addOfflineOrder(offlineOrder).catchError((error) {
+  //         print('⚠️ Background addOfflineOrder failed: $error');
+  //       });
+  //       return;
+  //     } catch (e) {
+  //       print('❌ Failed to create offline order: $e');
+  //       if (mounted) {
+  //         CustomPopupService.show(
+  //           context,
+  //           "Failed to save order offline: $e",
+  //           type: PopupType.failure,
+  //         );
+  //       }
+  //       return;
+  //     }
+  //   }
+
+  //   // ONLINE MODE: Try normal processing first, fallback to offline
+  //   try {
+  //     final orderId = await ApiService.createOrderFromMap(orderData);
+
+  //     print(
+  //       '✅ Order placed successfully online: $orderId for type: $_actualOrderType',
+  //     );
+
+  //     // Show success popup immediately after order placement
+  //     if (mounted) {
+  //       CustomPopupService.show(
+  //         context,
+  //         "Order placed successfully",
+  //         type: PopupType.success,
+  //       );
+  //       _clearOrderState();
+  //     }
+
+  //     // Refresh provider in background (don't await to avoid UI delay)
+  //     eposOrdersProvider.refresh().catchError((error) {
+  //       print('⚠️ Background refresh failed after order placement: $error');
+  //     });
+  //   } catch (e) {
+  //     print('❌ Online order placement failed: $e');
+
+  //     // FALLBACK: Try to save offline if online fails
+  //     try {
+  //       print('🔄 Attempting to save order offline as fallback...');
+
+  //       final offlineOrder = await OfflineOrderManager.createOfflineOrder(
+  //         cartItems: _cartItems,
+  //         paymentType: _selectedPaymentType,
+  //         orderType: _actualOrderType,
+  //         orderTotalPrice: orderData['total_price'] as double,
+  //         orderExtraNotes: orderData['order_extra_notes'] as String?,
+  //         customerName: _customerDetails?.name ?? "Unknown Customer",
+  //         customerEmail: _customerDetails?.email,
+  //         phoneNumber: _customerDetails?.phoneNumber,
+  //         streetAddress: _customerDetails?.streetAddress,
+  //         city: _customerDetails?.city,
+  //         postalCode: _customerDetails?.postalCode,
+  //         changeDue: orderData['change_due'] as double? ?? 0.0,
+  //       );
+
+  //       // Show success popup immediately
+  //       if (mounted) {
+  //         CustomPopupService.show(
+  //           context,
+  //           "Connection failed, order saved offline: ${offlineOrder.transactionId}\nWill be processed when connection is restored",
+  //           type: PopupType.success,
+  //         );
+  //         _clearOrderState();
+  //       }
+
+  //       // Add offline order to the orders list in background
+  //       eposOrdersProvider.addOfflineOrder(offlineOrder).catchError((error) {
+  //         print('⚠️ Background addOfflineOrder failed: $error');
+  //       });
+  //     } catch (offlineError) {
+  //       print('❌ Failed to save order offline: $offlineError');
+  //       if (mounted) {
+  //         CustomPopupService.show(
+  //           context,
+  //           "Failed to place order: $e",
+  //           type: PopupType.failure,
+  //         );
+  //       }
+  //     }
+  //   }
+  // }
 
   void _clearOrderState() {
     setState(() {
@@ -3465,6 +4168,60 @@ class _Page4State extends State<Page4> {
       _selectedPaymentType = '';
       _wasDiscountPageShown = false;
     });
+  }
+
+  Future<void> _processUnpaidOrder() async {
+    if (_cartItems.isEmpty) {
+      CustomPopupService.show(
+        context,
+        'Cart is empty. Please add items to continue.',
+        type: PopupType.failure,
+      );
+      return;
+    }
+
+    // Create unpaid payment details
+    PaymentDetails paymentDetails = PaymentDetails(
+      paymentType: 'unpaid',
+      amountReceived: 0.0,
+      discountPercentage: _appliedDiscountPercentage,
+      totalCharge: _calculateTotalPrice(),
+      paidStatus: false, // Unpaid status
+    );
+
+    print("🔍 PROCESSING UNPAID ORDER:");
+    print("Payment Type: ${paymentDetails.paymentType}");
+    print("Paid Status: ${paymentDetails.paidStatus}");
+    print("Total Amount: £${paymentDetails.totalCharge}");
+
+    // Create a safe customer details (same pattern used elsewhere)
+    final CustomerDetails safeCustomerDetails =
+        _customerDetails ??
+        CustomerDetails(name: 'Walk-in Customer', phoneNumber: '');
+
+    try {
+      await _handleOrderCompletion(
+        customerDetails: safeCustomerDetails,
+        paymentDetails: paymentDetails,
+      );
+    } catch (e) {
+      print("Error processing unpaid order: $e");
+      // Show error to user if needed
+      if (mounted) {
+        CustomPopupService.show(
+          context,
+          "Failed to process unpaid order: $e",
+          type: PopupType.failure,
+        );
+      }
+    } finally {
+      // Reset loading state
+      if (mounted) {
+        setState(() {
+          _isProcessingUnpaid = false;
+        });
+      }
+    }
   }
 
   void _proceedToNextStep() {
@@ -3634,6 +4391,7 @@ class _Page4State extends State<Page4> {
                         setState(() {
                           selectedCategory = index;
                           _searchQuery = '';
+                          _selectedShawarmaSubcategory = 0;
                         });
                       },
                       child: Column(
@@ -3717,6 +4475,5 @@ class _Page4State extends State<Page4> {
 class Category {
   final String name;
   final String image;
-
   Category({required this.name, required this.image});
 }

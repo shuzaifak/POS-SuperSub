@@ -15,6 +15,7 @@ class EposOrdersProvider extends ChangeNotifier {
   ActiveOrdersProvider? _activeOrdersProvider;
   Timer? _pollingTimer;
   static const Duration _pollingInterval = Duration(seconds: 10);
+  bool _isDisposed = false;
 
   List<Order> get allOrders => _allOrders;
   bool get isLoading => _isLoading;
@@ -31,8 +32,20 @@ class EposOrdersProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    // Set disposed flag first to prevent any callbacks from triggering notifications
+    _isDisposed = true;
+    
+    // Remove connectivity listener first before stopping polling
+    try {
+      ConnectivityService().removeSyncCompletionListener(_onSyncCompleted);
+    } catch (e) {
+      print('⚠️ EposOrdersProvider: Error removing connectivity listener: $e');
+      // Continue with disposal even if listener removal fails
+    }
+    
+    // Stop polling after removing listener
     _stopPolling();
-    ConnectivityService().removeSyncCompletionListener(_onSyncCompleted);
+    
     super.dispose();
   }
 
@@ -43,6 +56,10 @@ class EposOrdersProvider extends ChangeNotifier {
     );
     _pollingTimer?.cancel();
     _pollingTimer = Timer.periodic(_pollingInterval, (timer) {
+      if (_isDisposed) {
+        timer.cancel();
+        return;
+      }
       if (!_isLoading) {
         _fetchOrdersQuietly();
       }
@@ -70,10 +87,22 @@ class EposOrdersProvider extends ChangeNotifier {
 
   /// Handle sync completion - trigger immediate refresh
   void _onSyncCompleted() {
+    // Double-check disposal status for extra safety
+    if (_isDisposed) {
+      print('⚠️ EposOrdersProvider: _onSyncCompleted called after disposal - ignoring');
+      return;
+    }
+    
     print(
       '🔄 EposOrdersProvider: Sync completed, triggering immediate refresh...',
     );
-    _fetchOrdersQuietly();
+    
+    // Additional safety check before calling _fetchOrdersQuietly
+    try {
+      _fetchOrdersQuietly();
+    } catch (e) {
+      print('⚠️ EposOrdersProvider: Error in _onSyncCompleted: $e');
+    }
   }
 
   // IMPROVED: Method to set the ActiveOrdersProvider reference
@@ -113,7 +142,7 @@ class EposOrdersProvider extends ChangeNotifier {
         );
 
         // Notify listeners for live updates
-        notifyListeners();
+        if (!_isDisposed) notifyListeners();
 
         // Also refresh ActiveOrdersProvider if linked
         if (_activeOrdersProvider != null) {
@@ -152,7 +181,7 @@ class EposOrdersProvider extends ChangeNotifier {
           print(
             "📱 EposOrdersProvider: Silent polling failed, preserved cache + updated offline orders",
           );
-          notifyListeners();
+          if (!_isDisposed) notifyListeners();
         }
       } catch (offlineError) {
         print(
@@ -210,7 +239,7 @@ class EposOrdersProvider extends ChangeNotifier {
 
     _isLoading = true;
     _error = null;
-    notifyListeners();
+    if (!_isDisposed) notifyListeners();
 
     try {
       print("🔵 EposOrdersProvider: Fetching all today's orders...");
@@ -279,7 +308,7 @@ class EposOrdersProvider extends ChangeNotifier {
       _error = 'Failed to fetch online orders: $e';
     } finally {
       _isLoading = false;
-      notifyListeners();
+      if (!_isDisposed) notifyListeners();
     }
   }
 
@@ -340,7 +369,7 @@ class EposOrdersProvider extends ChangeNotifier {
       _allOrders[orderIndex] = _allOrders[orderIndex].copyWith(
         status: newStatus,
       );
-      notifyListeners();
+      if (!_isDisposed) notifyListeners();
     }
   }
 
@@ -355,7 +384,7 @@ class EposOrdersProvider extends ChangeNotifier {
       _allOrders[orderIndex] = _allOrders[orderIndex].copyWith(
         status: originalStatus,
       );
-      notifyListeners();
+      if (!_isDisposed) notifyListeners();
     }
   }
 
@@ -390,7 +419,7 @@ class EposOrdersProvider extends ChangeNotifier {
     }
     final updatedOrder = _allOrders[orderIndex].copyWith(status: newStatus);
     _allOrders[orderIndex] = updatedOrder;
-    notifyListeners();
+    if (!_isDisposed) notifyListeners();
 
     print(
       "🟢 Optimistic update applied: Order $orderId status changed from $originalStatus to $newStatus",
@@ -484,7 +513,7 @@ class EposOrdersProvider extends ChangeNotifier {
         driverId: newDriverId,
       );
       _allOrders[orderIndex] = updatedOrder;
-      notifyListeners();
+      if (!_isDisposed) notifyListeners();
       print(
         "🔵 EposOrdersProvider: Socket update applied for order $orderId - status: $newInternalStatus",
       );
@@ -497,7 +526,6 @@ class EposOrdersProvider extends ChangeNotifier {
     }
   }
 
-  /// Maps backend status to internal status
   String _mapFromBackendStatus(String backendStatus) {
     switch (backendStatus.toLowerCase()) {
       case 'yellow':
@@ -536,7 +564,7 @@ class EposOrdersProvider extends ChangeNotifier {
       );
 
       // Notify listeners to update UI immediately
-      notifyListeners();
+      if (!_isDisposed) notifyListeners();
 
       // Also notify ActiveOrdersProvider if linked
       if (_activeOrdersProvider != null) {
@@ -558,6 +586,6 @@ class EposOrdersProvider extends ChangeNotifier {
     _allOrders.clear();
     _error = null;
     _stopPolling();
-    notifyListeners();
+    if (!_isDisposed) notifyListeners();
   }
 }

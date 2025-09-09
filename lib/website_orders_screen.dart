@@ -40,13 +40,22 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
   List<Order> completedOrders = [];
   Order? _selectedOrder;
   late int _selectedBottomNavItem;
-  String _selectedOrderType = 'all';
-  final ScrollController _scrollController = ScrollController();
+  String _selectedOrderType = 'pickup';
+  final ScrollController _driversScrollController = ScrollController();
+  final ScrollController _ordersScrollController = ScrollController();
+  final ScrollController _orderDetailsScrollController = ScrollController();
   bool _isPrinterConnected = false;
   bool _isCheckingPrinter = false;
   Timer? _printerStatusTimer;
   DateTime? _lastPrinterCheck;
   Map<String, bool>? _cachedPrinterStatus;
+
+  // Keep reference to OrderProvider for safe disposal
+  OrderProvider? _orderProvider;
+
+  // Drivers UI state
+  String? _selectedDriverName;
+  List<Map<String, dynamic>> _selectedDriverOrders = [];
 
   @override
   void initState() {
@@ -125,15 +134,19 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
     // Cancel the timer before disposing
     _printerStatusTimer?.cancel();
 
+    // Use saved provider reference instead of context lookup
     try {
-      Provider.of<OrderProvider>(
-        context,
-        listen: false,
-      ).removeListener(_onOrderProviderChange);
+      _orderProvider?.removeListener(_onOrderProviderChange);
+      debugPrint(
+        '✅ WebsiteOrdersScreen: Successfully removed OrderProvider listener',
+      );
     } catch (e) {
-      print("Error removing listener: $e");
+      debugPrint('⚠️ WebsiteOrdersScreen: Error removing listener: $e');
     }
-    _scrollController.dispose();
+
+    _driversScrollController.dispose();
+    _ordersScrollController.dispose();
+    _orderDetailsScrollController.dispose();
     super.dispose();
   }
 
@@ -141,6 +154,10 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final orderProvider = Provider.of<OrderProvider>(context, listen: false);
+
+    // Save reference for safe disposal later
+    _orderProvider = orderProvider;
+
     try {
       orderProvider.removeListener(_onOrderProviderChange);
     } catch (e) {
@@ -152,32 +169,75 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
   }
 
   void _onOrderProviderChange() {
-    print(
-      "WebsiteOrdersScreen: OrderProvider data changed, updating UI. Current orders in provider: ${Provider.of<OrderProvider>(context, listen: false).websiteOrders.length}",
-    );
-    final allWebsiteOrders =
-        Provider.of<OrderProvider>(context, listen: false).websiteOrders;
-    _separateOrders(allWebsiteOrders);
-    _updateWebsiteOrderCountsInProvider(); // Update counts whenever provider changes
+    // Check if widget is still mounted before accessing context
+    if (!mounted) return;
+
+    try {
+      print(
+        "WebsiteOrdersScreen: OrderProvider data changed, updating UI. Current orders in provider: ${Provider.of<OrderProvider>(context, listen: false).websiteOrders.length}",
+      );
+      final allWebsiteOrders =
+          Provider.of<OrderProvider>(context, listen: false).websiteOrders;
+      _separateOrders(allWebsiteOrders);
+      _updateWebsiteOrderCountsInProvider(); // Update counts whenever provider changes
+
+      // If we have a selected order, try to update it with more complete data
+      if (_selectedOrder != null && _selectedOrderType == 'drivers') {
+        try {
+          final updatedOrder = allWebsiteOrders.firstWhere(
+            (order) => order.orderId == _selectedOrder!.orderId,
+          );
+          // Check if the updated order has more complete data
+          if ((updatedOrder.phoneNumber != null &&
+                  _selectedOrder!.phoneNumber == null) ||
+              (updatedOrder.customerEmail != null &&
+                  _selectedOrder!.customerEmail == null)) {
+            print('DEBUG: Updating selected order with more complete data');
+            if (mounted) {
+              setState(() {
+                _selectedOrder = updatedOrder;
+              });
+            }
+          }
+        } catch (e) {
+          // Order not found in provider, keep current selection
+        }
+      }
+    } catch (e) {
+      // Context may be invalid during disposal - this is expected
+      print(
+        '⚠️ WebsiteOrdersScreen: Could not update from provider during disposal: $e',
+      );
+    }
   }
 
   void _updateWebsiteOrderCountsInProvider() {
-    final orderCountsProvider = Provider.of<OrderCountsProvider>(
-      context,
-      listen: false,
-    );
-    int newWebsiteActiveCount = 0;
-    for (var order
-        in Provider.of<OrderProvider>(context, listen: false).websiteOrders) {
-      if (!(order.status.toLowerCase() == 'completed' ||
-          order.status.toLowerCase() == 'delivered' ||
-          order.status.toLowerCase() == 'blue' ||
-          order.status.toLowerCase() == 'cancelled' ||
-          order.status.toLowerCase() == 'red')) {
-        newWebsiteActiveCount++;
+    // Check if widget is still mounted before accessing context
+    if (!mounted) return;
+
+    try {
+      final orderCountsProvider = Provider.of<OrderCountsProvider>(
+        context,
+        listen: false,
+      );
+      int newWebsiteActiveCount = 0;
+      for (var order
+          in Provider.of<OrderProvider>(context, listen: false).websiteOrders) {
+        if (!(order.status.toLowerCase() == 'completed' ||
+            order.status.toLowerCase() == 'delivered' ||
+            order.status.toLowerCase() == 'blue' ||
+            order.status.toLowerCase() == 'cancelled' ||
+            order.status.toLowerCase() == 'red')) {
+          newWebsiteActiveCount++;
+        }
       }
+      orderCountsProvider.setOrderCount('website', newWebsiteActiveCount);
+    } catch (e) {
+      // Context may be invalid during disposal - this is expected
+      print(
+        '⚠️ WebsiteOrdersScreen: Could not update order counts during disposal: $e',
+      );
     }
-    orderCountsProvider.setOrderCount('website', newWebsiteActiveCount);
   }
 
   // Helper method to define status priority for sorting
@@ -193,6 +253,22 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
         return 2; // Second priority
       default:
         return 3; // Lowest priority for other statuses
+    }
+  }
+
+  // Helper method to group orders by status for divider placement
+  String _getStatusGroup(String status) {
+    switch (status.toLowerCase()) {
+      case 'pending':
+      case 'yellow':
+      case 'accepted':
+        return 'pending';
+      case 'ready':
+      case 'green':
+      case 'preparing':
+        return 'ready';
+      default:
+        return 'other';
     }
   }
 
@@ -302,6 +378,9 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
         city: _selectedOrder!.city,
         postalCode: _selectedOrder!.postalCode,
         paymentType: _selectedOrder!.paymentType,
+        paidStatus:
+            _selectedOrder!
+                .paidStatus, // Pass the actual paid status from order
         onShowMethodSelection: (availableMethods) {
           CustomPopupService.show(
             context,
@@ -458,8 +537,599 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
       return 'No pickup orders found.';
     } else if (_selectedOrderType == 'delivery') {
       return 'No delivery orders found.';
+    } else if (_selectedOrderType == 'drivers') {
+      return 'No drivers with ready orders found.';
     }
     return 'No website orders found.';
+  }
+
+  Widget _buildDriversView(bool isLargeScreen) {
+    return Consumer<OrderProvider>(
+      builder: (context, orderProvider, child) {
+        if (_selectedDriverName != null) {
+          // Show selected driver's orders
+          return _buildDriverOrdersList(isLargeScreen);
+        }
+
+        if (orderProvider.driversData.isEmpty) {
+          return Center(
+            child: Text(
+              'No drivers with ready orders found.',
+              style: TextStyle(
+                fontSize: isLargeScreen ? 20 : 18,
+                color: Colors.grey[600],
+              ),
+            ),
+          );
+        }
+
+        // Show drivers list - removed loading check to use polling
+        return _buildDriversList(isLargeScreen, orderProvider.driversData);
+      },
+    );
+  }
+
+  // New method to handle tab changes and prevent cross-tab contamination
+  void _handleTabChange(String newOrderType) {
+    setState(() {
+      _selectedOrderType = newOrderType;
+
+      if (newOrderType != 'drivers') {
+        // Clear driver-specific state when switching away from drivers tab
+        _selectedDriverName = null;
+        _selectedDriverOrders = [];
+
+        // Separate orders based on the new tab selection
+        _separateOrders(
+          Provider.of<OrderProvider>(context, listen: false).websiteOrders,
+        );
+
+        // Reset to first order if we have orders, otherwise clear selection
+        if (activeOrders.isNotEmpty) {
+          _selectedOrder = activeOrders.first;
+        } else if (completedOrders.isNotEmpty) {
+          _selectedOrder = completedOrders.first;
+        } else {
+          _selectedOrder = null;
+        }
+      } else {
+        // When switching to drivers tab, clear the selected order to prevent cross-contamination
+        _selectedOrder = null;
+        _selectedDriverName = null;
+        _selectedDriverOrders = [];
+      }
+    });
+  }
+
+  Widget _buildDriversList(
+    bool isLargeScreen,
+    List<Map<String, dynamic>> driversData,
+  ) {
+    // Flatten all driver-order pairs into individual rows
+    List<Map<String, dynamic>> activeRows = [];
+    List<Map<String, dynamic>> completedRows = [];
+
+    for (var driverData in driversData) {
+      final driverName = driverData['driver_name'] ?? 'Unknown Driver';
+      final orders = driverData['orders'] as List<dynamic>? ?? [];
+
+      for (var orderData in orders) {
+        final status = orderData['status']?.toString().toLowerCase() ?? '';
+        bool isCompleted = [
+          'completed',
+          'delivered',
+          'blue',
+          'cancelled',
+          'red',
+        ].contains(status);
+
+        Map<String, dynamic> row = {
+          'driver_name': driverName,
+          'order_data': orderData,
+          'is_completed': isCompleted,
+        };
+
+        if (isCompleted) {
+          completedRows.add(row);
+        } else {
+          activeRows.add(row);
+        }
+      }
+    }
+
+    // Combine with divider if both exist
+    List<Map<String, dynamic>> allRowsForDisplay = [];
+    allRowsForDisplay.addAll(activeRows);
+
+    if (activeRows.isNotEmpty && completedRows.isNotEmpty) {
+      // Add divider
+      allRowsForDisplay.add({
+        'driver_name': '__divider__',
+        'order_data': null,
+        'is_completed': false,
+      });
+    }
+
+    allRowsForDisplay.addAll(completedRows);
+
+    return ListView.builder(
+      controller: _driversScrollController,
+      itemCount: allRowsForDisplay.length,
+      itemBuilder: (context, index) {
+        final rowData = allRowsForDisplay[index];
+
+        // Handle divider
+        if (rowData['driver_name'] == '__divider__') {
+          return Padding(
+            padding: EdgeInsets.symmetric(
+              vertical: isLargeScreen ? 12.0 : 10.0,
+              horizontal: isLargeScreen ? 70 : 60,
+            ),
+            child: const Divider(color: Color(0xFFB2B2B2), thickness: 2),
+          );
+        }
+
+        final driverName = rowData['driver_name'];
+        final orderData = rowData['order_data'];
+        final isCompleted = rowData['is_completed'];
+        final postalCode = orderData['postal_code'] ?? 'N/A';
+
+        // Use green for active, grey for completed
+        Color cardColor =
+            isCompleted
+                ? HexColor.fromHex('D6D6D6')
+                : HexColor.fromHex('DEF5D4');
+
+        return Container(
+          margin: EdgeInsets.symmetric(
+            vertical: 1,
+            horizontal: isLargeScreen ? 70 : 60,
+          ),
+          padding: EdgeInsets.all(isLargeScreen ? 10 : 8),
+          decoration: BoxDecoration(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: Colors.transparent, width: 3),
+          ),
+          child: Row(
+            children: [
+              // Driver name card (left) - clickable to show driver's order history
+              Expanded(
+                flex:
+                    isCompleted
+                        ? 6
+                        : 3, // Full width for completed, half width for active
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _selectedDriverName = driverName;
+                      // Get all orders for this driver
+                      List<Map<String, dynamic>> driverOrders = [];
+                      for (var driverData in driversData) {
+                        if (driverData['driver_name'] == driverName) {
+                          driverOrders =
+                              (driverData['orders'] as List<dynamic>)
+                                  .cast<Map<String, dynamic>>();
+                          break;
+                        }
+                      }
+                      _selectedDriverOrders = driverOrders;
+                    });
+                  },
+                  child: Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isLargeScreen ? 35 : 30,
+                      vertical: isLargeScreen ? 25 : 20,
+                    ),
+                    decoration: BoxDecoration(
+                      color: cardColor,
+                      borderRadius: BorderRadius.circular(50),
+                    ),
+                    child: Text(
+                      driverName,
+                      style: TextStyle(
+                        fontSize: isLargeScreen ? 32 : 29,
+                        color: Colors.black,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ),
+
+              // Only show postal code card for active deliveries (not completed)
+              if (!isCompleted) ...[
+                SizedBox(width: isLargeScreen ? 12 : 10),
+
+                // Postal code card (right) - clickable to show complete order details
+                Expanded(
+                  flex: 3,
+                  child: GestureDetector(
+                    onTap: () => _showOrderDetails(orderData),
+                    child: Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: isLargeScreen ? 35 : 30,
+                        vertical: isLargeScreen ? 25 : 20,
+                      ),
+                      decoration: BoxDecoration(
+                        color: cardColor,
+                        borderRadius: BorderRadius.circular(50),
+                      ),
+                      child: Text(
+                        postalCode,
+                        style: TextStyle(
+                          fontSize: isLargeScreen ? 32 : 29,
+                          color: Colors.black,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDriverOrdersList(bool isLargeScreen) {
+    // Separate active and completed orders for the selected driver
+    List<Map<String, dynamic>> activeOrders = [];
+    List<Map<String, dynamic>> completedOrders = [];
+
+    for (var orderData in _selectedDriverOrders) {
+      final status = orderData['status']?.toString().toLowerCase() ?? '';
+      if ([
+        'completed',
+        'delivered',
+        'blue',
+        'cancelled',
+        'red',
+      ].contains(status)) {
+        completedOrders.add(orderData);
+      } else {
+        activeOrders.add(orderData);
+      }
+    }
+
+    // Combine with divider if both exist
+    List<Map<String, dynamic>> allOrdersForDisplay = [];
+    allOrdersForDisplay.addAll(activeOrders);
+
+    if (activeOrders.isNotEmpty && completedOrders.isNotEmpty) {
+      // Add divider
+      allOrdersForDisplay.add({'order_id': '__divider__', 'status': 'divider'});
+    }
+
+    allOrdersForDisplay.addAll(completedOrders);
+
+    return Column(
+      children: [
+        // Back button and driver name
+        Container(
+          padding: EdgeInsets.all(isLargeScreen ? 16 : 12),
+          child: Row(
+            children: [
+              MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _selectedDriverName = null;
+                      _selectedDriverOrders = [];
+                    });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(Icons.arrow_back, color: Colors.grey[700]),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Text(
+                  '$_selectedDriverName\'s Orders',
+                  style: TextStyle(
+                    fontSize: isLargeScreen ? 22 : 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        // Orders list
+        Expanded(
+          child: ListView.builder(
+            controller: _ordersScrollController,
+            itemCount: allOrdersForDisplay.length,
+            itemBuilder: (context, index) {
+              final orderData = allOrdersForDisplay[index];
+
+              // Handle divider
+              if (orderData['order_id'] == '__divider__' &&
+                  orderData['status'] == 'divider') {
+                return Padding(
+                  padding: EdgeInsets.symmetric(
+                    vertical: isLargeScreen ? 12.0 : 10.0,
+                    horizontal: isLargeScreen ? 70 : 60,
+                  ),
+                  child: const Divider(color: Color(0xFFB2B2B2), thickness: 2),
+                );
+              }
+
+              return _buildDriverOrderCard(orderData, isLargeScreen);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDriverOrderCard(
+    Map<String, dynamic> orderData,
+    bool isLargeScreen,
+  ) {
+    final postalCode = orderData['postal_code'] ?? 'N/A';
+    final status = orderData['status']?.toString().toLowerCase() ?? '';
+
+    // Determine colors based on completion status
+    bool isCompleted = [
+      'completed',
+      'delivered',
+      'blue',
+      'cancelled',
+      'red',
+    ].contains(status);
+    Color addressCardColor =
+        isCompleted ? HexColor.fromHex('D6D6D6') : HexColor.fromHex('DEF5D4');
+    Color statusCardColor =
+        isCompleted ? HexColor.fromHex('D6D6D6') : HexColor.fromHex('DEF5D4');
+
+    // Get display status - showing "On Its Way" for active delivery orders
+    String displayStatus = isCompleted ? 'Completed' : 'On Its Way';
+
+    return Container(
+      margin: EdgeInsets.symmetric(
+        vertical: 1,
+        horizontal: isLargeScreen ? 70 : 60,
+      ),
+      padding: EdgeInsets.all(isLargeScreen ? 10 : 8),
+      decoration: BoxDecoration(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.transparent, width: 3),
+      ),
+      child: Row(
+        children: [
+          // Address card (clickable to show order details)
+          Expanded(
+            flex: 3,
+            child: GestureDetector(
+              onTap: () => _showOrderDetails(orderData),
+              child: Container(
+                padding: EdgeInsets.symmetric(
+                  horizontal: isLargeScreen ? 35 : 30,
+                  vertical: isLargeScreen ? 25 : 20,
+                ),
+                decoration: BoxDecoration(
+                  color: addressCardColor,
+                  borderRadius: BorderRadius.circular(50),
+                ),
+                child: Text(
+                  postalCode,
+                  style: TextStyle(
+                    fontSize: isLargeScreen ? 32 : 29,
+                    color: Colors.black,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+          ),
+
+          SizedBox(width: isLargeScreen ? 12 : 10),
+
+          // Status card (non-clickable, display only)
+          Container(
+            width: isLargeScreen ? 220 : 200,
+            height: isLargeScreen ? 90 : 80,
+            alignment: Alignment.center,
+            padding: EdgeInsets.symmetric(
+              horizontal: isLargeScreen ? 16 : 14,
+              vertical: isLargeScreen ? 12 : 10,
+            ),
+            decoration: BoxDecoration(
+              color: statusCardColor,
+              borderRadius: BorderRadius.circular(50),
+            ),
+            child: Text(
+              displayStatus, // This now shows "On Its Way" or "Completed"
+              style: TextStyle(
+                fontSize: isLargeScreen ? 28 : 25,
+                color: Colors.black,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showOrderDetails(Map<String, dynamic> orderData) {
+    print(
+      'DEBUG: _showOrderDetails called with orderData keys: ${orderData.keys.toList()}',
+    );
+    print('DEBUG: Raw customer_phone: ${orderData['customer_phone']}');
+    print('DEBUG: Raw customer_email: ${orderData['customer_email']}');
+
+    // Try to find complete order data from provider first
+    final orderProvider = Provider.of<OrderProvider>(context, listen: false);
+    final orderId = int.tryParse(orderData['order_id'].toString()) ?? 0;
+
+    // Look for complete order in provider's website orders
+    Order? completeOrder;
+    try {
+      completeOrder = orderProvider.websiteOrders.firstWhere(
+        (order) => order.orderId == orderId,
+      );
+      print(
+        'DEBUG: Found complete order in provider - Phone: ${completeOrder.phoneNumber}, Email: ${completeOrder.customerEmail}',
+      );
+
+      // If we found a complete order with phone/email data, use it directly
+      if (completeOrder.phoneNumber != null ||
+          completeOrder.customerEmail != null) {
+        setState(() {
+          _selectedOrder = completeOrder;
+        });
+        return;
+      }
+    } catch (e) {
+      print(
+        'DEBUG: Complete order not found in provider, creating from raw data',
+      );
+    }
+
+    try {
+      DateTime createdAtDateTime;
+      try {
+        final createdAtString = orderData['created_at']?.toString() ?? '';
+        if (createdAtString.isEmpty) {
+          createdAtDateTime = DateTime.now();
+        } else {
+          createdAtDateTime = DateTime.parse(createdAtString);
+        }
+      } catch (e) {
+        print('Error parsing created_at date: $e');
+        createdAtDateTime = DateTime.now();
+      }
+
+      // Parse items from orderData - handle different possible item data structures
+      List<OrderItem> orderItems = [];
+      final itemsData = orderData['items'] as List<dynamic>? ?? [];
+
+      print(
+        'DEBUG: Processing ${itemsData.length} items for order ${orderData['order_id']}',
+      );
+
+      for (var itemData in itemsData) {
+        try {
+          // Handle different possible field names from the API
+          final itemName =
+              itemData['item_name']?.toString() ??
+              itemData['name']?.toString() ??
+              'Unknown Item';
+          final itemCategory =
+              itemData['item_category']?.toString() ??
+              itemData['category']?.toString() ??
+              'GENERAL';
+          final itemDescription =
+              itemData['item_description']?.toString() ??
+              itemData['description']?.toString() ??
+              itemName;
+
+          // Calculate price per unit
+          double totalPrice =
+              double.tryParse(
+                itemData['total_price']?.toString() ??
+                    itemData['price']?.toString() ??
+                    '0',
+              ) ??
+              0.0;
+          int quantity =
+              int.tryParse(itemData['quantity']?.toString() ?? '1') ?? 1;
+          double pricePerUnit = quantity > 0 ? (totalPrice / quantity) : 0.0;
+
+          // Create proper FoodItem object for category icon support
+          FoodItem foodItem = FoodItem(
+            id:
+                int.tryParse(
+                  itemData['item_id']?.toString() ??
+                      itemData['id']?.toString() ??
+                      '0',
+                ) ??
+                0,
+            name: itemName,
+            category: itemCategory,
+            price: {'default': pricePerUnit},
+            image:
+                itemData['item_image_url']?.toString() ??
+                itemData['image_url']?.toString() ??
+                '',
+            availability: true,
+          );
+
+          final orderItem = OrderItem(
+            itemId: foodItem.id,
+            itemName: itemName,
+            itemType: itemCategory,
+            quantity: quantity,
+            totalPrice: totalPrice,
+            description: itemDescription,
+            comment:
+                itemData['item_comment']?.toString() ??
+                itemData['comment']?.toString(),
+            imageUrl: foodItem.image,
+            foodItem: foodItem, // Now properly set instead of null
+          );
+          orderItems.add(orderItem);
+          print(
+            'DEBUG: Added item: ${orderItem.itemName} x${orderItem.quantity}',
+          );
+        } catch (e) {
+          print('Error parsing order item: $e');
+        }
+      }
+
+      print('DEBUG: Total items parsed: ${orderItems.length}');
+
+      final order = Order(
+        orderId: int.tryParse(orderData['order_id'].toString()) ?? 0,
+        paymentType: orderData['payment_type']?.toString() ?? 'card',
+        transactionId: orderData['transaction_id']?.toString() ?? '',
+        orderType: 'delivery',
+        status: orderData['status']?.toString() ?? 'ready',
+        createdAt: createdAtDateTime,
+        changeDue: double.tryParse(orderData['change_due'].toString()) ?? 0.0,
+        orderSource: orderData['source']?.toString() ?? 'website',
+        customerName: orderData['customer_name']?.toString() ?? 'N/A',
+        customerEmail: orderData['customer_email']?.toString(),
+        phoneNumber: orderData['customer_phone']?.toString(),
+        streetAddress: orderData['customer_address']?.toString(),
+        city: orderData['customer_city']?.toString(),
+        county: orderData['customer_county']?.toString(),
+        postalCode: orderData['postal_code']?.toString(),
+        orderTotalPrice: double.tryParse(orderData['total'].toString()) ?? 0.0,
+        orderExtraNotes: orderData['comments']?.toString(),
+        items: orderItems,
+        driverId: int.tryParse(orderData['driver_id'].toString()),
+        paidStatus:
+            orderData['paid_status'] == true || orderData['paid_status'] == '1',
+      );
+
+      print(
+        'DEBUG: Driver order created - Phone: ${order.phoneNumber}, Email: ${order.customerEmail}',
+      );
+
+      setState(() {
+        _selectedOrder = order;
+      });
+    } catch (e) {
+      print('Error creating Order from driver data: $e');
+      CustomPopupService.show(
+        context,
+        'Error displaying order details',
+        type: PopupType.failure,
+      );
+    }
   }
 
   String _nextStatus(Order order) {
@@ -525,7 +1195,55 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
   }
 
   String _getCategoryIcon(String categoryName) {
-    switch (categoryName.toUpperCase()) {
+    print(
+      'DEBUG: Getting icon for category: "$categoryName" (uppercase: "${categoryName.toUpperCase()}")',
+    );
+
+    // Clean and normalize the category name
+    String cleanCategory = categoryName.toUpperCase().trim();
+
+    // Handle variations and partial matches
+    if (cleanCategory.contains('PIZZA')) {
+      return 'assets/images/PizzasS.png';
+    } else if (cleanCategory.contains('SHAWARMA')) {
+      return 'assets/images/ShawarmaS.png';
+    } else if (cleanCategory.contains('BURGER')) {
+      return 'assets/images/BurgersS.png';
+    } else if (cleanCategory.contains('CALZONE')) {
+      return 'assets/images/CalzonesS.png';
+    } else if (cleanCategory.contains('GARLIC') ||
+        cleanCategory.contains('BREAD')) {
+      return 'assets/images/GarlicBreadS.png';
+    } else if (cleanCategory.contains('WRAP')) {
+      return 'assets/images/WrapsS.png';
+    } else if (cleanCategory.contains('KIDS') ||
+        cleanCategory.contains('MEAL')) {
+      return 'assets/images/KidsMealS.png';
+    } else if (cleanCategory.contains('SIDE')) {
+      return 'assets/images/SidesS.png';
+    } else if (cleanCategory.contains('DRINK') &&
+        !cleanCategory.contains('MILKSHAKE')) {
+      return 'assets/images/DrinksS.png';
+    } else if (cleanCategory.contains('MILKSHAKE') ||
+        cleanCategory.contains('SHAKE')) {
+      return 'assets/images/MilkshakeS.png';
+    } else if (cleanCategory.contains('DIP') ||
+        cleanCategory.contains('SAUCE')) {
+      return 'assets/images/DipsS.png';
+    } else if (cleanCategory.contains('DESSERT')) {
+      return 'assets/images/Desserts.png';
+    } else if (cleanCategory.contains('CHICKEN')) {
+      return 'assets/images/Chicken.png';
+    } else if (cleanCategory.contains('KEBAB')) {
+      return 'assets/images/Kebabs.png';
+    } else if (cleanCategory.contains('WING')) {
+      return 'assets/images/Wings.png';
+    } else if (cleanCategory.contains('DEAL')) {
+      return 'assets/images/DealsS.png';
+    }
+
+    // Exact matches as fallback
+    switch (cleanCategory) {
       case 'PIZZA':
         return 'assets/images/PizzasS.png';
       case 'SHAWARMA':
@@ -556,8 +1274,14 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
         return 'assets/images/Kebabs.png';
       case 'WINGS':
         return 'assets/images/Wings.png';
+      case 'DEALS':
+        return 'assets/images/DealsS.png';
+      case 'GENERAL':
       default:
-        return 'assets/images/default.png';
+        print(
+          'DEBUG: No match found for category "$categoryName", using SIDES as fallback',
+        );
+        return 'assets/images/SidesS.png';
     }
   }
 
@@ -586,10 +1310,13 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
     bool anyNonDefaultOptionFound = false;
 
     // Check if it's parentheses format (EPOS): "Item Name (Size: Large, Crust: Thin)"
-    final optionMatch = RegExp(r'\((.*?)\)').firstMatch(description);
-    if (optionMatch != null && optionMatch.group(1) != null) {
-      // EPOS format with parentheses
-      String optionsString = optionMatch.group(1)!;
+    // For deals with nested parentheses, we need to find the last closing parenthesis
+    int firstParen = description.indexOf('(');
+    int lastParen = description.lastIndexOf(')');
+
+    if (firstParen != -1 && lastParen != -1 && lastParen > firstParen) {
+      // Extract content between first opening and last closing parenthesis
+      String optionsString = description.substring(firstParen + 1, lastParen);
       foundOptionsSyntax = true;
       optionsList = _smartSplitOptions(optionsString);
     } else if (description.contains('\n') || description.contains(':')) {
@@ -818,10 +1545,25 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
       }
     }
 
+    // Handle deal-specific parsing (Selected Pizzas, Selected Shawarmas, etc.)
+    if (description.contains('Selected Pizzas') ||
+        description.contains('Selected Shawarmas') ||
+        description.contains('Pizza (') ||
+        description.contains('Shawarma:') ||
+        description.contains('Burger:') ||
+        description.contains('Calzone:') ||
+        description.contains('Fries:') ||
+        description.contains('Drink (')) {
+      anyNonDefaultOptionFound = true;
+
+      // Extract deal selections and add them to a special field
+      options['dealSelections'] = optionsList;
+    }
+
     options['hasOptions'] = anyNonDefaultOptionFound;
 
     print(
-      '🔍 WebsiteOrdersScreen: Parsed result - hasOptions: ${options['hasOptions']}, size: ${options['size']}, crust: ${options['crust']}, base: ${options['base']}, isMeal: ${options['isMeal']}, drink: ${options['drink']}, toppings: ${options['toppings']}, sauceDips: ${options['sauceDips']}',
+      '🔍 WebsiteOrdersScreen: Parsed result - hasOptions: ${options['hasOptions']}, size: ${options['size']}, crust: ${options['crust']}, base: ${options['base']}, isMeal: ${options['isMeal']}, drink: ${options['drink']}, toppings: ${options['toppings']}, sauceDips: ${options['sauceDips']}, dealSelections: ${options['dealSelections']}',
     );
 
     return options;
@@ -1022,6 +1764,60 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
   //   return content.toString();
   // }
 
+  String _getNextStepLabel(Order order) {
+    // Check if this is an offline order first
+    if (order.status.toLowerCase() == 'offline' ||
+        order.orderSource == 'epos_offline') {
+      return 'Sync Order';
+    }
+
+    // Check if this is a delivery order
+    final isDeliveryOrder =
+        ((order.orderSource.toLowerCase() == 'epos' ||
+                order.orderSource.toLowerCase() == 'epos_offline') &&
+            order.orderType.toLowerCase() == 'delivery') ||
+        (order.orderSource.toLowerCase() == 'website' &&
+            order.orderType.toLowerCase() == 'delivery');
+
+    // For completed orders, always show "Completed"
+    if (order.status.toLowerCase() == 'blue' ||
+        order.status.toLowerCase() == 'completed' ||
+        order.status.toLowerCase() == 'delivered') {
+      return 'Completed';
+    }
+
+    // Handle different order types and their next steps
+    if (isDeliveryOrder) {
+      switch (order.status.toLowerCase()) {
+        case 'pending':
+        case 'yellow':
+          return 'Ready'; // Show Mark Ready for pending delivery orders
+        case 'ready':
+        case 'green':
+          // For delivery orders that are ready
+          if (order.driverId != null && order.driverId! > 0) {
+            return 'Complete'; // Driver assigned, can mark complete
+          } else {
+            return 'On Its Way'; // Waiting for driver assignment, show next visual step
+          }
+        default:
+          return 'Ready';
+      }
+    } else {
+      // For dine-in, takeaway, collection orders
+      switch (order.status.toLowerCase()) {
+        case 'pending':
+        case 'yellow':
+          return 'Ready'; // Next step for pending orders
+        case 'ready':
+        case 'green':
+          return 'Complete'; // Next step for ready orders
+        default:
+          return 'Ready';
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     print(
@@ -1039,8 +1835,37 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
     final buttonHeight = isLargeScreen ? 65.0 : 55.0;
     final buttonFontSize = isLargeScreen ? 32.0 : 28.0;
 
+    // Group active orders by status and add dividers between different statuses
     final allOrdersForDisplay = <Order>[];
-    allOrdersForDisplay.addAll(activeOrders);
+    if (activeOrders.isNotEmpty) {
+      String? currentStatus;
+      for (int i = 0; i < activeOrders.length; i++) {
+        final order = activeOrders[i];
+        final orderStatus = _getStatusGroup(order.status);
+
+        // Add divider if status changes (except for the first order)
+        if (currentStatus != null && currentStatus != orderStatus) {
+          allOrdersForDisplay.add(
+            Order(
+              orderId: -2, // Different ID for status dividers
+              customerName: '',
+              items: [],
+              orderTotalPrice: 0.0,
+              createdAt: UKTimeService.now(),
+              status: 'status_divider',
+              orderType: 'status_divider',
+              changeDue: 0.0,
+              orderSource: 'internal',
+              paymentType: '',
+              transactionId: '',
+            ),
+          );
+        }
+
+        currentStatus = orderStatus;
+        allOrdersForDisplay.add(order);
+      }
+    }
 
     if (activeOrders.isNotEmpty && completedOrders.isNotEmpty) {
       allOrdersForDisplay.add(
@@ -1131,17 +1956,7 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                             MouseRegion(
                               cursor: SystemMouseCursors.click,
                               child: GestureDetector(
-                                onTap: () {
-                                  setState(() {
-                                    _selectedOrderType = 'pickup';
-                                    _separateOrders(
-                                      Provider.of<OrderProvider>(
-                                        context,
-                                        listen: false,
-                                      ).websiteOrders,
-                                    );
-                                  });
-                                },
+                                onTap: () => _handleTabChange('pickup'),
                                 child: Container(
                                   width: buttonWidth,
                                   height: buttonHeight,
@@ -1174,17 +1989,7 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                             MouseRegion(
                               cursor: SystemMouseCursors.click,
                               child: GestureDetector(
-                                onTap: () {
-                                  setState(() {
-                                    _selectedOrderType = 'delivery';
-                                    _separateOrders(
-                                      Provider.of<OrderProvider>(
-                                        context,
-                                        listen: false,
-                                      ).websiteOrders,
-                                    );
-                                  });
-                                },
+                                onTap: () => _handleTabChange('delivery'),
                                 child: Container(
                                   width: buttonWidth,
                                   height: buttonHeight,
@@ -1214,13 +2019,48 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                                 ),
                               ),
                             ),
+                            MouseRegion(
+                              cursor: SystemMouseCursors.click,
+                              child: GestureDetector(
+                                onTap: () => _handleTabChange('drivers'),
+                                child: Container(
+                                  width: buttonWidth,
+                                  height: buttonHeight,
+                                  margin: EdgeInsets.symmetric(
+                                    horizontal: isLargeScreen ? 10 : 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        _selectedOrderType == 'drivers'
+                                            ? Colors.grey[100]
+                                            : Colors.black,
+                                    borderRadius: BorderRadius.circular(25),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      'Drivers',
+                                      style: TextStyle(
+                                        fontSize: buttonFontSize,
+                                        fontWeight: FontWeight.bold,
+                                        color:
+                                            _selectedOrderType == 'drivers'
+                                                ? Colors.black
+                                                : Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
                           ],
                         ),
                         SizedBox(height: isLargeScreen ? 25 : 20),
 
                         Expanded(
                           child:
-                              allOrdersForDisplay.isEmpty
+                              _selectedOrderType == 'drivers'
+                                  ? _buildDriversView(isLargeScreen)
+                                  : allOrdersForDisplay.isEmpty
                                   ? Center(
                                     child: Text(
                                       _getEmptyStateMessage(),
@@ -1235,9 +2075,15 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                                     itemBuilder: (context, index) {
                                       final order = allOrdersForDisplay[index];
 
-                                      if (order.orderId == -1 &&
-                                          order.status == 'divider' &&
-                                          order.orderType == 'divider') {
+                                      // Handle divider placeholders
+                                      if ((order.orderId == -1 &&
+                                              order.status == 'divider' &&
+                                              order.orderType == 'divider') ||
+                                          (order.orderId == -2 &&
+                                              order.status ==
+                                                  'status_divider' &&
+                                              order.orderType ==
+                                                  'status_divider')) {
                                         return Padding(
                                           padding: EdgeInsets.symmetric(
                                             vertical:
@@ -1256,7 +2102,7 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                                       int? serialNumber;
                                       if (isActiveOrder) {
                                         serialNumber =
-                                            activeOrders.indexOf(order) + 1;
+                                            1; // Just set to 1, won't display the number
                                       }
 
                                       Color finalDisplayColor;
@@ -1341,15 +2187,9 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                                           ),
                                           child: Row(
                                             children: [
+                                              // Numbering removed as requested - just empty space
                                               if (serialNumber != null)
-                                                Text(
-                                                  '$serialNumber',
-                                                  style: TextStyle(
-                                                    fontSize:
-                                                        isLargeScreen ? 55 : 50,
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                )
+                                                const SizedBox(width: 0)
                                               else
                                                 const SizedBox(width: 0),
 
@@ -1430,172 +2270,145 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                                                 width: isLargeScreen ? 12 : 10,
                                               ),
 
-                                              GestureDetector(
-                                                onTap: () async {
-                                                  // First, check if the order is already in a final state (completed, delivered, cancelled)
-                                                  final bool isFinalState =
-                                                      order.status
-                                                              .toLowerCase() ==
-                                                          'completed' ||
-                                                      order.status
-                                                              .toLowerCase() ==
-                                                          'delivered' ||
-                                                      order.status
-                                                              .toLowerCase() ==
-                                                          'blue' ||
-                                                      order.status
-                                                              .toLowerCase() ==
-                                                          'cancelled' ||
-                                                      order.status
-                                                              .toLowerCase() ==
-                                                          'red';
+                                              SizedBox(
+                                                width:
+                                                    isLargeScreen ? 220 : 200,
+                                                height: isLargeScreen ? 90 : 80,
+                                                child: ElevatedButton(
+                                                  onPressed: () async {
+                                                    // First, check if the order is already in a final state (completed, delivered, cancelled)
+                                                    final bool isFinalState =
+                                                        order.status
+                                                                .toLowerCase() ==
+                                                            'completed' ||
+                                                        order.status
+                                                                .toLowerCase() ==
+                                                            'delivered' ||
+                                                        order.status
+                                                                .toLowerCase() ==
+                                                            'blue' ||
+                                                        order.status
+                                                                .toLowerCase() ==
+                                                            'cancelled' ||
+                                                        order.status
+                                                                .toLowerCase() ==
+                                                            'red';
 
-                                                  if (isFinalState) {
-                                                    if (mounted) {
-                                                      CustomPopupService.show(
-                                                        context,
-                                                        'Order ${order.orderId} is already ${order.statusLabel}.',
-                                                        //type: PopupType.failure,
-                                                      );
+                                                    if (isFinalState) {
+                                                      if (mounted) {
+                                                        CustomPopupService.show(
+                                                          context,
+                                                          'Order ${order.orderId} is already ${order.statusLabel}.',
+                                                          //type: PopupType.failure,
+                                                        );
+                                                      }
+                                                      return; // Do nothing if it's already in a final state
                                                     }
-                                                    return; // Do nothing if it's already in a final state
-                                                  }
 
-                                                  // Determine the next intended status using the intelligent function
-                                                  final String
-                                                  nextIntendedStatus = _nextStatus(
-                                                    order,
-                                                  ); // Pass the full order object
+                                                    // Determine the next intended status using the intelligent function
+                                                    final String
+                                                    nextIntendedStatus =
+                                                        _nextStatus(
+                                                          order,
+                                                        ); // Pass the full order object
 
-                                                  // Specific rule for Website Delivery Orders:
-                                                  // If it's a delivery order and currently 'ready', AND the _nextStatus function also says 'ready'
-                                                  // (meaning it cannot progress further from this app), then show a message and stop.
-                                                  final bool
-                                                  isWebsiteDeliveryOrder =
-                                                      order.orderType
-                                                          .toLowerCase() ==
-                                                      'delivery';
+                                                    // Specific rule for Website Delivery Orders:
+                                                    // If it's a delivery order and currently 'ready', AND the _nextStatus function also says 'ready'
+                                                    // (meaning it cannot progress further from this app), then show a message and stop.
+                                                    final bool
+                                                    isWebsiteDeliveryOrder =
+                                                        order.orderType
+                                                            .toLowerCase() ==
+                                                        'delivery';
 
-                                                  if (isWebsiteDeliveryOrder &&
-                                                      order.status
-                                                              .toLowerCase() ==
-                                                          'ready' &&
-                                                      nextIntendedStatus
-                                                              .toLowerCase() ==
-                                                          'ready') {
-                                                    if (mounted) {
-                                                      CustomPopupService.show(
-                                                        context,
-                                                        "Website Delivery orders cannot be updated beyond 'Ready' from this screen.",
-                                                        type: PopupType.failure,
-                                                      );
+                                                    if (isWebsiteDeliveryOrder &&
+                                                        order.status
+                                                                .toLowerCase() ==
+                                                            'ready' &&
+                                                        nextIntendedStatus
+                                                                .toLowerCase() ==
+                                                            'ready') {
+                                                      if (mounted) {
+                                                        CustomPopupService.show(
+                                                          context,
+                                                          "Website Delivery orders cannot be updated beyond 'Ready' from this screen.",
+                                                          type:
+                                                              PopupType.failure,
+                                                        );
+                                                      }
+                                                      return; // Prevent update
                                                     }
-                                                    return; // Prevent update
-                                                  }
 
-                                                  final orderProvider =
-                                                      Provider.of<
-                                                        OrderProvider
-                                                      >(context, listen: false);
-                                                  Provider.of<
-                                                    OrderCountsProvider
-                                                  >(context, listen: false);
+                                                    final orderProvider =
+                                                        Provider.of<
+                                                          OrderProvider
+                                                        >(
+                                                          context,
+                                                          listen: false,
+                                                        );
+                                                    Provider.of<
+                                                      OrderCountsProvider
+                                                    >(context, listen: false);
 
-                                                  bool
-                                                  success = await orderProvider
-                                                      .updateAndRefreshOrder(
-                                                        order.orderId,
-                                                        nextIntendedStatus,
-                                                      );
+                                                    bool
+                                                    success = await orderProvider
+                                                        .updateAndRefreshOrder(
+                                                          order.orderId,
+                                                          nextIntendedStatus,
+                                                        );
 
-                                                  if (success) {
-                                                    if (mounted) {
-                                                      CustomPopupService.show(
-                                                        context,
-                                                        'Order ${order.orderId} status updated to ${nextIntendedStatus.toUpperCase()}.',
-                                                        type: PopupType.success,
-                                                      );
+                                                    if (success) {
+                                                      if (mounted) {
+                                                        CustomPopupService.show(
+                                                          context,
+                                                          'Order ${order.orderId} status updated to ${nextIntendedStatus.toUpperCase()}.',
+                                                          type:
+                                                              PopupType.success,
+                                                        );
+                                                      }
+                                                    } else {
+                                                      if (mounted) {
+                                                        CustomPopupService.show(
+                                                          context,
+                                                          'Order ${order.orderId} status updated to ${nextIntendedStatus.toUpperCase()}.',
+                                                          type:
+                                                              PopupType.success,
+                                                        );
+
+                                                        CustomPopupService.show(
+                                                          context,
+                                                          'Failed to update status for order ${order.orderId}. Please try again.',
+                                                          type:
+                                                              PopupType.failure,
+                                                        );
+                                                      }
                                                     }
-                                                  } else {
-                                                    if (mounted) {
-                                                      CustomPopupService.show(
-                                                        context,
-                                                        'Order ${order.orderId} status updated to ${nextIntendedStatus.toUpperCase()}.',
-                                                        type: PopupType.success,
-                                                      );
-
-                                                      CustomPopupService.show(
-                                                        context,
-                                                        'Failed to update status for order ${order.orderId}. Please try again.',
-                                                        type: PopupType.failure,
-                                                      );
-                                                    }
-                                                  }
-                                                },
-                                                child: Container(
-                                                  width:
-                                                      isLargeScreen ? 220 : 200,
-                                                  height:
-                                                      isLargeScreen ? 90 : 80,
-                                                  alignment: Alignment.center,
-                                                  padding: EdgeInsets.symmetric(
-                                                    horizontal:
-                                                        isLargeScreen ? 16 : 14,
-                                                    vertical:
-                                                        isLargeScreen ? 12 : 10,
-                                                  ),
-                                                  decoration: BoxDecoration(
-                                                    color:
-                                                        finalDisplayColor, // Use the determined color
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          50,
+                                                  },
+                                                  style: ElevatedButton.styleFrom(
+                                                    backgroundColor:
+                                                        finalDisplayColor,
+                                                    padding:
+                                                        EdgeInsets.symmetric(
+                                                          horizontal:
+                                                              isLargeScreen
+                                                                  ? 16
+                                                                  : 14,
+                                                          vertical:
+                                                              isLargeScreen
+                                                                  ? 12
+                                                                  : 10,
                                                         ),
+                                                    shape: RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            50,
+                                                          ),
+                                                    ),
+                                                    elevation: 4.0,
                                                   ),
                                                   child: Text(
                                                     // Dynamic text for the button - use the same logic as display label
-                                                    (() {
-                                                      final orderProvider =
-                                                          Provider.of<
-                                                            OrderProvider
-                                                          >(
-                                                            context,
-                                                            listen: false,
-                                                          );
-                                                      final displayStatus =
-                                                          orderProvider
-                                                              .getDeliveryDisplayStatus(
-                                                                order,
-                                                              );
-
-                                                      // For completed orders, always show "Completed"
-                                                      if (order.status
-                                                                  .toLowerCase() ==
-                                                              'completed' ||
-                                                          order.status
-                                                                  .toLowerCase() ==
-                                                              'blue' ||
-                                                          order.status
-                                                                  .toLowerCase() ==
-                                                              'delivered') {
-                                                        return 'Completed';
-                                                      }
-
-                                                      // For delivery orders that are ready with driver, show "On Its Way"
-                                                      if (order.orderType
-                                                                  .toLowerCase() ==
-                                                              'delivery' &&
-                                                          order.status
-                                                                  .toLowerCase() ==
-                                                              'green' &&
-                                                          order.driverId !=
-                                                              null &&
-                                                          order.driverId != 0) {
-                                                        return 'On Its Way';
-                                                      }
-
-                                                      return displayStatus;
-                                                    })(),
+                                                    _getNextStepLabel(order),
                                                     style: TextStyle(
                                                       fontSize:
                                                           isLargeScreen
@@ -1718,11 +2531,19 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                                       if (_selectedOrder!.phoneNumber != null &&
                                           _selectedOrder!
                                               .phoneNumber!
-                                              .isNotEmpty)
+                                              .isNotEmpty) ...[
                                         Text(
                                           _selectedOrder!.phoneNumber!,
                                           style: TextStyle(
                                             fontSize: isLargeScreen ? 20 : 18,
+                                          ),
+                                        ),
+                                      ] else
+                                        Text(
+                                          'DEBUG: Phone is ${_selectedOrder!.phoneNumber == null ? "null" : "empty"}',
+                                          style: TextStyle(
+                                            fontSize: isLargeScreen ? 16 : 14,
+                                            color: Colors.red,
                                           ),
                                         ),
                                       Text(
@@ -1732,21 +2553,23 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                                           fontWeight: FontWeight.normal,
                                         ),
                                       ),
-                                      if ((_selectedOrder!.orderType
-                                                      .toLowerCase() ==
-                                                  "delivery" ||
-                                              _selectedOrder!.orderType
-                                                      .toLowerCase() ==
-                                                  "takeaway") &&
-                                          _selectedOrder!.customerEmail !=
+                                      if (_selectedOrder!.customerEmail !=
                                               null &&
                                           _selectedOrder!
                                               .customerEmail!
-                                              .isNotEmpty)
+                                              .isNotEmpty) ...[
                                         Text(
                                           _selectedOrder!.customerEmail!,
                                           style: TextStyle(
                                             fontSize: isLargeScreen ? 20 : 18,
+                                          ),
+                                        ),
+                                      ] else
+                                        Text(
+                                          'DEBUG: Email is ${_selectedOrder!.customerEmail == null ? "null" : "empty"}',
+                                          style: TextStyle(
+                                            fontSize: isLargeScreen ? 16 : 14,
+                                            color: Colors.red,
                                           ),
                                         ),
 
@@ -1820,7 +2643,7 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                                 SizedBox(height: isLargeScreen ? 15 : 10),
                                 Expanded(
                                   child: RawScrollbar(
-                                    controller: _scrollController,
+                                    controller: _orderDetailsScrollController,
                                     thumbVisibility: true,
                                     trackVisibility: false,
                                     thickness: isLargeScreen ? 12.0 : 10.0,
@@ -1828,7 +2651,7 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                                     interactive: true,
                                     thumbColor: const Color(0xFFF2D9F9),
                                     child: ListView.builder(
-                                      controller: _scrollController,
+                                      controller: _orderDetailsScrollController,
                                       itemCount: _selectedOrder!.items.length,
                                       itemBuilder: (context, itemIndex) {
                                         final item =
@@ -1884,7 +2707,7 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                                                 ),
                                                 child: Row(
                                                   crossAxisAlignment:
-                                                      CrossAxisAlignment.center,
+                                                      CrossAxisAlignment.start,
                                                   children: [
                                                     Expanded(
                                                       flex: 6,
@@ -1966,7 +2789,29 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                                                                               FontWeight.w600,
                                                                         ),
                                                                         overflow:
-                                                                            TextOverflow.ellipsis,
+                                                                            baseItemName.contains(
+                                                                                      'Selected Pizzas',
+                                                                                    ) ||
+                                                                                    baseItemName.contains(
+                                                                                      'Selected Shawarmas',
+                                                                                    ) ||
+                                                                                    baseItemName.contains(
+                                                                                      'Deal',
+                                                                                    )
+                                                                                ? TextOverflow.visible
+                                                                                : TextOverflow.ellipsis,
+                                                                        maxLines:
+                                                                            baseItemName.contains(
+                                                                                      'Selected Pizzas',
+                                                                                    ) ||
+                                                                                    baseItemName.contains(
+                                                                                      'Selected Shawarmas',
+                                                                                    ) ||
+                                                                                    baseItemName.contains(
+                                                                                      'Deal',
+                                                                                    )
+                                                                                ? null
+                                                                                : 1,
                                                                       ),
 
                                                                     // Display Size (only if not default)
@@ -2130,6 +2975,36 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                                                                           TextOverflow
                                                                               .ellipsis,
                                                                     ),
+
+                                                                    // Display deal selections
+                                                                    if (itemOptions['dealSelections'] !=
+                                                                        null)
+                                                                      ...(itemOptions['dealSelections']
+                                                                              as List<
+                                                                                String
+                                                                              >)
+                                                                          .map(
+                                                                            (
+                                                                              dealSelection,
+                                                                            ) => Text(
+                                                                              dealSelection,
+                                                                              style: TextStyle(
+                                                                                fontSize:
+                                                                                    isLargeScreen
+                                                                                        ? 17
+                                                                                        : 15,
+                                                                                fontFamily:
+                                                                                    'Poppins',
+                                                                                color:
+                                                                                    Colors.black,
+                                                                              ),
+                                                                              maxLines:
+                                                                                  null,
+                                                                              overflow:
+                                                                                  TextOverflow.visible,
+                                                                            ),
+                                                                          )
+                                                                          .toList(),
                                                                   ],
 
                                                                   // Display item comment/notes if present (moved outside the hasOptions check)
@@ -2194,33 +3069,35 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                                                             CrossAxisAlignment
                                                                 .center,
                                                         children: [
-                                                          Container(
-                                                            width:
-                                                                isLargeScreen
-                                                                    ? 100
-                                                                    : 90,
-                                                            height:
-                                                                isLargeScreen
-                                                                    ? 74
-                                                                    : 64,
-                                                            decoration:
-                                                                BoxDecoration(
-                                                                  borderRadius:
-                                                                      BorderRadius.circular(
-                                                                        12,
-                                                                      ),
+                                                          if (_selectedOrderType !=
+                                                              'drivers')
+                                                            Container(
+                                                              width:
+                                                                  isLargeScreen
+                                                                      ? 100
+                                                                      : 90,
+                                                              height:
+                                                                  isLargeScreen
+                                                                      ? 74
+                                                                      : 64,
+                                                              decoration:
+                                                                  BoxDecoration(
+                                                                    borderRadius:
+                                                                        BorderRadius.circular(
+                                                                          12,
+                                                                        ),
+                                                                  ),
+                                                              clipBehavior:
+                                                                  Clip.hardEdge,
+                                                              child: Image.asset(
+                                                                _getCategoryIcon(
+                                                                  item.itemType,
                                                                 ),
-                                                            clipBehavior:
-                                                                Clip.hardEdge,
-                                                            child: Image.asset(
-                                                              _getCategoryIcon(
-                                                                item.itemType,
+                                                                fit:
+                                                                    BoxFit
+                                                                        .contain,
                                                               ),
-                                                              fit:
-                                                                  BoxFit
-                                                                      .contain,
                                                             ),
-                                                          ),
                                                           SizedBox(
                                                             height:
                                                                 isLargeScreen
@@ -2462,53 +3339,59 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                                           width: isLargeScreen ? 25 : 20,
                                         ),
 
-                                        MouseRegion(
-                                          cursor: SystemMouseCursors.click,
-                                          child: GestureDetector(
-                                            onTap: () async {
-                                              await _handlePrintingOrderReceipt();
-                                            },
-                                            child: Container(
-                                              padding: EdgeInsets.all(
-                                                isLargeScreen ? 10 : 8,
-                                              ),
-                                              decoration: BoxDecoration(
-                                                color: Colors.black,
-                                                borderRadius:
-                                                    BorderRadius.circular(15),
-                                              ),
-                                              child: Column(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Image.asset(
-                                                    'assets/images/printer.png',
-                                                    width:
-                                                        isLargeScreen ? 65 : 58,
-                                                    height:
-                                                        isLargeScreen ? 65 : 58,
-                                                    color: Colors.white,
-                                                  ),
-                                                  SizedBox(
-                                                    height:
-                                                        isLargeScreen ? 6 : 4,
-                                                  ),
-                                                  Text(
-                                                    'Print Receipt',
-                                                    style: TextStyle(
-                                                      fontSize:
+                                        if (_selectedOrderType != 'drivers')
+                                          MouseRegion(
+                                            cursor: SystemMouseCursors.click,
+                                            child: GestureDetector(
+                                              onTap: () async {
+                                                await _handlePrintingOrderReceipt();
+                                              },
+                                              child: Container(
+                                                padding: EdgeInsets.all(
+                                                  isLargeScreen ? 10 : 8,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.black,
+                                                  borderRadius:
+                                                      BorderRadius.circular(15),
+                                                ),
+                                                child: Column(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    Image.asset(
+                                                      'assets/images/printer.png',
+                                                      width:
                                                           isLargeScreen
-                                                              ? 17
-                                                              : 15,
-                                                      fontWeight:
-                                                          FontWeight.bold,
+                                                              ? 65
+                                                              : 58,
+                                                      height:
+                                                          isLargeScreen
+                                                              ? 65
+                                                              : 58,
                                                       color: Colors.white,
                                                     ),
-                                                  ),
-                                                ],
+                                                    SizedBox(
+                                                      height:
+                                                          isLargeScreen ? 6 : 4,
+                                                    ),
+                                                    Text(
+                                                      'Print Receipt',
+                                                      style: TextStyle(
+                                                        fontSize:
+                                                            isLargeScreen
+                                                                ? 17
+                                                                : 15,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        color: Colors.white,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
                                               ),
                                             ),
                                           ),
-                                        ),
                                       ],
                                     ),
                                   ],

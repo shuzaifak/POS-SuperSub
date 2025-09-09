@@ -65,7 +65,7 @@ class OrderItem {
         json['item_notes'] ??
         json['description_comment'] as String?;
 
-    return OrderItem(
+    final parsedItem = OrderItem(
       itemId: json['item_id'],
       itemName: json['item_name'] ?? 'Unknown Item',
       itemType: json['type'] ?? json['item_type'] ?? 'Unknown Type',
@@ -82,6 +82,8 @@ class OrderItem {
               ? FoodItem.fromJson(json['food_item'])
               : null,
     );
+    
+    return parsedItem;
   }
 
   Map<String, dynamic> toJson() => {
@@ -207,7 +209,7 @@ class Order {
           [];
       totalPrice = items.fold(0.0, (sum, item) => sum + item.totalPrice);
     }
-    return Order(
+    final parsedOrder = Order(
       orderId: json['order_id'] ?? 0,
       paymentType: json['payment_type'] ?? 'N/A',
       transactionId: json['transaction_id'] ?? 'N/A',
@@ -239,6 +241,8 @@ class Order {
           json['paid_status'] as bool? ??
           false, // Default to unpaid if not specified, so orders show in active list
     );
+    
+    return parsedOrder;
   }
 
   Map<String, dynamic> toJson() => {

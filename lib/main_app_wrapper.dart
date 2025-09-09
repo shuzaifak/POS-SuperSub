@@ -1,5 +1,3 @@
-// lib/main_app_wrapper.dart
-
 import 'package:flutter/material.dart';
 import 'package:epos/services/order_api_service.dart';
 import 'package:epos/services/thermal_printer_service.dart';
@@ -28,14 +26,29 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
   late OrderApiService _orderApiService;
   StreamSubscription<Order>? _newOrderSubscription;
 
-  final List<Order> _activeNewOrderNotifications = [];
-  final List<Order> _activeCancelledOrderNotifications = [];
+  // NUCLEAR FIX: Use Map with unique keys to prevent duplicates
+  final Map<int, Order> _activeNewOrderNotifications = {};
+  final Map<int, Order> _activeCancelledOrderNotifications = {};
 
-  // Change this line:
-  final Set<int> _processingOrderIds =
-      {}; // Changed from Set<String> to Set<int>
+  // NUCLEAR FIX: Global dismissed tracking - these orders NEVER reappear
+  static final Set<int> _globalDismissedNewOrders = {};
+  static final Set<int> _globalDismissedCancelledOrders = {};
 
-  // Track previous order statuses to detect cancellations
+  // FIXED: Separate tracking systems for different purposes
+  // Track stream processing to prevent rapid-fire duplicates (short-term, 30 seconds)
+  static final Map<int, DateTime> _streamProcessingTimestamps = {};
+
+  // Track notification creation to prevent duplicate notifications (permanent until dismissed)
+  static final Set<int> _notificationCreated = {};
+
+  // Track receipt printing (5 minutes)
+  static final Set<int> _globalPrintedReceipts = {};
+  static final Map<int, DateTime> _receiptPrintingTimestamps = {};
+
+  // Track cancelled order processing (30 seconds)
+  static final Map<int, DateTime> _cancelledProcessingTimestamps = {};
+
+  // Track previous order statuses
   Map<int, String> _previousOrderStatuses = {};
 
   @override
@@ -44,30 +57,148 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
     _orderApiService = OrderApiService();
 
     _newOrderSubscription = _orderApiService.newOrderStream.listen((newOrder) {
-      print(
-        "MainAppWrapper: New order received from socket: ${newOrder.orderId}",
-      );
-
-      // Brand filtering is now handled at the socket level in OrderApiService
-
-      if ((newOrder.status.toLowerCase() == 'pending' ||
-              newOrder.status.toLowerCase() == 'yellow') &&
-          !_processingOrderIds.contains(newOrder.orderId)) {
-        print(
-          "MainAppWrapper: Adding new order notification for current brand order ${newOrder.orderId}",
-        );
-        _addNewOrderNotification(newOrder);
-      }
+      _handleNewOrderFromStream(newOrder);
     });
 
     _orderApiService.connectionStatusStream.listen((isConnected) {
       print("MainAppWrapper: Socket connection status: $isConnected");
     });
 
-    // Initialize previous order statuses after frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializePreviousOrderStatuses();
+      _startProcessingCleanup();
     });
+  }
+
+  // Cleanup old processed orders every 5 minutes to prevent memory leaks
+  void _startProcessingCleanup() {
+    Timer.periodic(const Duration(minutes: 5), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      final now = DateTime.now();
+
+      // Clean up stream processing timestamps (30 seconds old)
+      final streamKeysToRemove = <int>[];
+      _streamProcessingTimestamps.forEach((orderId, processedTime) {
+        if (now.difference(processedTime).inSeconds > 30) {
+          streamKeysToRemove.add(orderId);
+        }
+      });
+
+      for (final orderId in streamKeysToRemove) {
+        _streamProcessingTimestamps.remove(orderId);
+      }
+
+      // Clean up cancelled processing timestamps (30 seconds old)
+      final cancelledKeysToRemove = <int>[];
+      _cancelledProcessingTimestamps.forEach((orderId, processedTime) {
+        if (now.difference(processedTime).inSeconds > 30) {
+          cancelledKeysToRemove.add(orderId);
+        }
+      });
+
+      for (final orderId in cancelledKeysToRemove) {
+        _cancelledProcessingTimestamps.remove(orderId);
+      }
+
+      // Clean up receipt printing timestamps (1 hour old)
+      final receiptKeysToRemove = <int>[];
+      _receiptPrintingTimestamps.forEach((orderId, printedTime) {
+        if (now.difference(printedTime).inHours > 1) {
+          receiptKeysToRemove.add(orderId);
+        }
+      });
+
+      for (final orderId in receiptKeysToRemove) {
+        _globalPrintedReceipts.remove(orderId);
+        _receiptPrintingTimestamps.remove(orderId);
+      }
+
+      // Clean up notification created tracking for very old orders (24 hours)
+      // Only if they're not in active notifications and not dismissed
+      final notificationKeysToRemove = <int>[];
+      for (final orderId in _notificationCreated) {
+        if (!_activeNewOrderNotifications.containsKey(orderId) &&
+            !_globalDismissedNewOrders.contains(orderId)) {
+          // This is an orphaned notification creation record - clean it up
+          notificationKeysToRemove.add(orderId);
+        }
+      }
+
+      for (final orderId in notificationKeysToRemove) {
+        _notificationCreated.remove(orderId);
+      }
+
+      if (streamKeysToRemove.isNotEmpty ||
+          receiptKeysToRemove.isNotEmpty ||
+          notificationKeysToRemove.isNotEmpty ||
+          cancelledKeysToRemove.isNotEmpty) {
+        print(
+          "MainAppWrapper: Cleaned up ${streamKeysToRemove.length} stream timestamps, ${receiptKeysToRemove.length} receipt timestamps, ${notificationKeysToRemove.length} orphaned notifications, ${cancelledKeysToRemove.length} cancelled timestamps",
+        );
+      }
+    });
+  }
+
+  void _handleNewOrderFromStream(Order newOrder) {
+    print(
+      "MainAppWrapper: Stream received order ${newOrder.orderId} with status ${newOrder.status}",
+    );
+
+    final orderId = newOrder.orderId;
+    final now = DateTime.now();
+
+    // FIXED: Stream duplicate protection (short-term, 30 seconds)
+    // This prevents rapid-fire duplicate stream events
+    final lastStreamProcessed = _streamProcessingTimestamps[orderId];
+    if (lastStreamProcessed != null &&
+        now.difference(lastStreamProcessed).inSeconds < 30) {
+      print(
+        "MainAppWrapper: Order $orderId stream was processed ${now.difference(lastStreamProcessed).inSeconds}s ago - STREAM DUPLICATE BLOCKED",
+      );
+      return;
+    }
+
+    // Update stream processing timestamp
+    _streamProcessingTimestamps[orderId] = now;
+
+    // NUCLEAR FIX: Check global dismissed list (permanent)
+    if (_globalDismissedNewOrders.contains(orderId)) {
+      print("MainAppWrapper: Order $orderId is globally dismissed - BLOCKED");
+      return;
+    }
+
+    // FIXED: Check if notification was already created (until dismissed)
+    if (_notificationCreated.contains(orderId)) {
+      print(
+        "MainAppWrapper: Notification for order $orderId already created - BLOCKED",
+      );
+      return;
+    }
+
+    // Layer 3: Check if notification already exists in UI
+    if (_activeNewOrderNotifications.containsKey(orderId)) {
+      print(
+        "MainAppWrapper: Notification for order $orderId already exists in UI - BLOCKED",
+      );
+      return;
+    }
+
+    // Layer 4: Check status validity
+    if (!(newOrder.status.toLowerCase() == 'pending' ||
+        newOrder.status.toLowerCase() == 'yellow')) {
+      print(
+        "MainAppWrapper: Order $orderId status '${newOrder.status}' not eligible for notification - BLOCKED",
+      );
+      return;
+    }
+
+    // Layer 5: Add notification
+    print("MainAppWrapper: Adding notification for order $orderId - ALLOWED");
+    _addNewOrderNotification(newOrder);
   }
 
   void _initializePreviousOrderStatuses() {
@@ -75,13 +206,9 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
 
     try {
       final orderProvider = Provider.of<OrderProvider>(context, listen: false);
-
       for (var order in orderProvider.websiteOrders) {
         final status = order.status.toLowerCase();
         _previousOrderStatuses[order.orderId] = status;
-        print(
-          "MainAppWrapper: Initialized order ${order.orderId} with status '$status'",
-        );
       }
       print(
         "MainAppWrapper: Initialized ${_previousOrderStatuses.length} order statuses",
@@ -92,124 +219,281 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
   }
 
   void _addNewOrderNotification(Order order) {
+    if (!mounted) return;
+
+    final orderId = order.orderId;
+
+    // Mark notification as created
+    _notificationCreated.add(orderId);
+
     setState(() {
-      _activeNewOrderNotifications.add(order);
-      _processingOrderIds.add(order.orderId); // This line will now work
+      _activeNewOrderNotifications[orderId] = order;
       print(
-        "MainAppWrapper: New order notification added for order ${order.orderId}. Total active notifications: ${_activeNewOrderNotifications.length}",
+        "MainAppWrapper: Added notification for order $orderId. Total: ${_activeNewOrderNotifications.length}",
       );
+    });
+
+    // CRITICAL FIX: Immediately refresh orders in UI when new order notification is added
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        try {
+          final orderProvider = Provider.of<OrderProvider>(
+            context,
+            listen: false,
+          );
+          print(
+            "MainAppWrapper: Triggering immediate order refresh for new order $orderId",
+          );
+          orderProvider.fetchWebsiteOrders();
+        } catch (e) {
+          print(
+            "MainAppWrapper: Error refreshing orders after new notification: $e",
+          );
+        }
+      }
     });
   }
 
   void _removeNewOrderNotification(Order order) {
+    print("MainAppWrapper: REMOVING notification for order ${order.orderId}");
+
+    if (!mounted) return;
+
+    final orderId = order.orderId;
+
     setState(() {
-      _activeNewOrderNotifications.removeWhere(
-        (o) => o.orderId == order.orderId,
-      );
-      _processingOrderIds.remove(order.orderId); // This line will now work
+      // Remove from active notifications
+      _activeNewOrderNotifications.remove(orderId);
+
+      // NUCLEAR FIX: Add to global dismissed list - THIS ORDER NEVER SHOWS AGAIN
+      _globalDismissedNewOrders.add(orderId);
+
+      // FIXED: Remove from notification created tracking since it's now dismissed
+      _notificationCreated.remove(orderId);
+
       print(
-        "MainAppWrapper: Notification for order ${order.orderId} removed. Remaining active notifications: ${_activeNewOrderNotifications.length}",
+        "MainAppWrapper: Order $orderId PERMANENTLY DISMISSED. Active: ${_activeNewOrderNotifications.length}, Dismissed: ${_globalDismissedNewOrders.length}",
       );
     });
   }
 
   void _addCancelledOrderNotification(Order order) {
-    setState(() {
-      _activeCancelledOrderNotifications.add(order);
+    final orderId = order.orderId;
+    final now = DateTime.now();
+
+    // FIXED: Same pattern as new orders - separate stream processing
+    final lastCancelledProcessed = _cancelledProcessingTimestamps[orderId];
+    if (lastCancelledProcessed != null &&
+        now.difference(lastCancelledProcessed).inSeconds < 30) {
       print(
-        "MainAppWrapper: Cancelled order notification added for order ${order.orderId}. Total cancelled notifications: ${_activeCancelledOrderNotifications.length}",
+        "MainAppWrapper: Cancelled order $orderId was processed ${now.difference(lastCancelledProcessed).inSeconds}s ago - STREAM DUPLICATE BLOCKED",
+      );
+      return;
+    }
+
+    // Update cancelled processing timestamp
+    _cancelledProcessingTimestamps[orderId] = now;
+
+    // NUCLEAR FIX: Check global dismissed list
+    if (_globalDismissedCancelledOrders.contains(orderId)) {
+      print(
+        "MainAppWrapper: Cancelled order $orderId is globally dismissed - BLOCKED",
+      );
+      return;
+    }
+
+    if (_activeCancelledOrderNotifications.containsKey(orderId)) {
+      print(
+        "MainAppWrapper: Cancelled notification for order $orderId already exists - BLOCKED",
+      );
+      return;
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _activeCancelledOrderNotifications[orderId] = order;
+      print(
+        "MainAppWrapper: Added cancelled notification for order $orderId. Total: ${_activeCancelledOrderNotifications.length}",
       );
     });
   }
 
   void _removeCancelledOrderNotification(Order order) {
+    print(
+      "MainAppWrapper: REMOVING cancelled notification for order ${order.orderId}",
+    );
+
+    if (!mounted) return;
+
     setState(() {
-      _activeCancelledOrderNotifications.removeWhere(
-        (o) => o.orderId == order.orderId,
-      );
+      // NUCLEAR FIX: Remove from active notifications
+      _activeCancelledOrderNotifications.remove(order.orderId);
+
+      // NUCLEAR FIX: Add to global dismissed list - THIS ORDER NEVER SHOWS AGAIN
+      _globalDismissedCancelledOrders.add(order.orderId);
+
       print(
-        "MainAppWrapper: Cancelled notification for order ${order.orderId} removed. Remaining cancelled notifications: ${_activeCancelledOrderNotifications.length}",
+        "MainAppWrapper: Cancelled order ${order.orderId} PERMANENTLY DISMISSED. Active: ${_activeCancelledOrderNotifications.length}, Dismissed: ${_globalDismissedCancelledOrders.length}",
       );
     });
   }
 
-  void _checkForCancelledOrders(List<Order> currentOrders) {
-    // Brand filtering is now handled at the API/socket level, so all orders should be for current brand
-    print(
-      "MainAppWrapper: Checking ${currentOrders.length} orders for cancellations (brand filtering done at socket level)",
-    );
+  // Updated horizontal notifications with centered layout
+  Widget _buildHorizontalNotifications() {
+    // Combine all notifications into a single list
+    List<MapEntry<Order, String>> allNotifications = [];
 
-    for (var order in currentOrders) {
-      final currentStatus = order.status.toLowerCase();
-      final previousStatus = _previousOrderStatuses[order.orderId];
-
-      print(
-        "MainAppWrapper: Order ${order.orderId} - Current: '$currentStatus', Previous: '$previousStatus'",
-      );
-
-      // Check if order status changed to cancelled
-      if ((currentStatus == 'cancelled' || currentStatus == 'red') &&
-          previousStatus != null &&
-          previousStatus != 'cancelled' &&
-          previousStatus != 'red') {
-        print(
-          "MainAppWrapper: Order ${order.orderId} detected as newly cancelled!",
-        );
-
-        // Add to cancelled notifications if not already present
-        if (!_activeCancelledOrderNotifications.any(
-          (o) => o.orderId == order.orderId,
-        )) {
-          print(
-            "MainAppWrapper: Adding cancelled notification for order ${order.orderId}",
-          );
-          _addCancelledOrderNotification(order);
-        } else {
-          print(
-            "MainAppWrapper: Cancelled notification for order ${order.orderId} already exists",
-          );
-        }
-      }
-
-      // Update previous status
-      _previousOrderStatuses[order.orderId] = currentStatus;
+    // Add new order notifications
+    for (var order in _activeNewOrderNotifications.values) {
+      allNotifications.add(MapEntry(order, 'new'));
     }
 
-    print(
-      "MainAppWrapper: Active cancelled notifications: ${_activeCancelledOrderNotifications.length}",
+    // Add cancelled order notifications
+    for (var order in _activeCancelledOrderNotifications.values) {
+      allNotifications.add(MapEntry(order, 'cancelled'));
+    }
+
+    // Sort ASCENDING by order ID (oldest first, newest last)
+    allNotifications.sort((a, b) => a.key.orderId.compareTo(b.key.orderId));
+
+    if (allNotifications.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final double cardWidth = 450.0;
+    final double cardSpacing = 20.0;
+    final double screenWidth = MediaQuery.of(context).size.width;
+    final double availableWidth =
+        screenWidth - 40.0; // 20px padding on each side
+
+    // Calculate positioning for centering
+    final double totalContentWidth =
+        (allNotifications.length * cardWidth) +
+        ((allNotifications.length - 1) * cardSpacing);
+
+    // Determine if we need horizontal scrolling
+    final bool needsScroll = totalContentWidth > availableWidth;
+
+    return Positioned(
+      top: 50.0,
+      left: 0,
+      right: 0,
+      child: Container(
+        height: 580.0, // Increased height to accommodate larger cancelled cards
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: EdgeInsets.symmetric(horizontal: 20.0),
+          physics:
+              needsScroll
+                  ? const BouncingScrollPhysics()
+                  : const NeverScrollableScrollPhysics(),
+          child: Container(
+            width: needsScroll ? null : screenWidth - 40.0,
+            child:
+                needsScroll
+                    ? Row(
+                      children: _buildNotificationCards(
+                        allNotifications,
+                        cardWidth,
+                        cardSpacing,
+                      ),
+                    )
+                    : Row(
+                      mainAxisAlignment: _getMainAxisAlignment(
+                        allNotifications.length,
+                      ),
+                      children: _buildNotificationCards(
+                        allNotifications,
+                        cardWidth,
+                        cardSpacing,
+                      ),
+                    ),
+          ),
+        ),
+      ),
     );
   }
 
-  void _showMainWrapperPopup(
-    String message, {
-    PopupType type = PopupType.failure,
-  }) {
+  // Helper method to determine alignment based on number of notifications
+  MainAxisAlignment _getMainAxisAlignment(int count) {
+    switch (count) {
+      case 1:
+        return MainAxisAlignment.center;
+      case 2:
+        return MainAxisAlignment.center;
+      default:
+        return MainAxisAlignment.spaceEvenly;
+    }
+  }
+
+  // Helper method to build notification cards
+  List<Widget> _buildNotificationCards(
+    List<MapEntry<Order, String>> allNotifications,
+    double cardWidth,
+    double cardSpacing,
+  ) {
+    return allNotifications.asMap().entries.map((entry) {
+      final int index = entry.key;
+      final MapEntry<Order, String> notificationEntry = entry.value;
+      final order = notificationEntry.key;
+      final type = notificationEntry.value;
+      final isNewest = index == allNotifications.length - 1;
+
+      return Container(
+        margin: EdgeInsets.only(
+          right: index < allNotifications.length - 1 ? cardSpacing : 0,
+        ),
+        width: cardWidth,
+        child: AnimatedScale(
+          duration: const Duration(milliseconds: 300),
+          scale: 1.0,
+          child: AnimatedSlide(
+            duration: const Duration(milliseconds: 300),
+            offset: Offset.zero,
+            child:
+                type == 'new'
+                    ? NewOrderNotificationWidget(
+                      key: ValueKey('horizontal_new_${order.orderId}'),
+                      order: order,
+                      onAccept: _handleAcceptOrder,
+                      onDecline: _handleDeclineOrder,
+                      onDismiss: () {
+                        _removeNewOrderNotification(order);
+                      },
+                      shouldPlaySound: isNewest,
+                    )
+                    : CancelledOrderNotificationWidget(
+                      key: ValueKey('horizontal_cancelled_${order.orderId}'),
+                      order: order,
+                      onDismiss: () {
+                        _removeCancelledOrderNotification(order);
+                      },
+                      shouldPlaySound: isNewest,
+                    ),
+          ),
+        ),
+      );
+    }).toList();
+  }
+
+  void _showPopup(String message, {PopupType type = PopupType.failure}) {
     try {
       final scaffoldMessenger = scaffoldMessengerKey.currentState;
-      if (scaffoldMessenger == null) {
-        print('MainAppWrapper: ScaffoldMessenger not available - $message');
-        return;
-      }
+      if (scaffoldMessenger == null) return;
 
-      // Clear any existing snackbars
       scaffoldMessenger.clearSnackBars();
-
-      Color backgroundColor;
-      IconData iconData;
-
-      if (type == PopupType.success) {
-        backgroundColor = Colors.green[700]!;
-        iconData = Icons.check_circle_outline;
-      } else {
-        backgroundColor = Colors.red[700]!;
-        iconData = Icons.error_outline;
-      }
 
       scaffoldMessenger.showSnackBar(
         SnackBar(
           content: Row(
             children: [
-              Icon(iconData, color: Colors.white),
+              Icon(
+                type == PopupType.success
+                    ? Icons.check_circle_outline
+                    : Icons.error_outline,
+                color: Colors.white,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -223,49 +507,41 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
               ),
             ],
           ),
-          backgroundColor: backgroundColor,
+          backgroundColor:
+              type == PopupType.success ? Colors.green[700]! : Colors.red[700]!,
           duration: const Duration(seconds: 3),
           behavior: SnackBarBehavior.floating,
           margin: const EdgeInsets.all(16),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       );
-
-      print('MainAppWrapper: Popup shown via SnackBar - $message');
     } catch (e) {
-      print('MainAppWrapper: Error showing popup - $message: $e');
+      print('MainAppWrapper: Error showing popup: $e');
     }
   }
 
-  // Convert Order items to CartItem format for the printer service
   List<CartItem> _convertOrderToCartItems(Order order) {
     return order.items.map((orderItem) {
-      // Calculate price per unit from total price and quantity
       double pricePerUnit =
           orderItem.quantity > 0
               ? (orderItem.totalPrice / orderItem.quantity)
               : 0.0;
 
-      // Extract options from description for proper printing
       Map<String, dynamic> itemOptions = _extractAllOptionsFromDescription(
         orderItem.description,
         defaultFoodItemToppings: orderItem.foodItem?.defaultToppings,
         defaultFoodItemCheese: orderItem.foodItem?.defaultCheese,
       );
 
-      // Build selectedOptions list for receipt printing
       List<String> selectedOptions = [];
 
       if (itemOptions['hasOptions'] == true) {
-        if (itemOptions['size'] != null) {
+        if (itemOptions['size'] != null)
           selectedOptions.add('Size: ${itemOptions['size']}');
-        }
-        if (itemOptions['crust'] != null) {
+        if (itemOptions['crust'] != null)
           selectedOptions.add('Crust: ${itemOptions['crust']}');
-        }
-        if (itemOptions['base'] != null) {
+        if (itemOptions['base'] != null)
           selectedOptions.add('Base: ${itemOptions['base']}');
-        }
         if (itemOptions['toppings'] != null &&
             (itemOptions['toppings'] as List).isNotEmpty) {
           selectedOptions.add(
@@ -278,15 +554,11 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
             'Sauce Dips: ${(itemOptions['sauceDips'] as List<String>).join(', ')}',
           );
         }
-        if (itemOptions['isMeal'] == true) {
-          selectedOptions.add('MEAL');
-        }
-        if (itemOptions['drink'] != null) {
+        if (itemOptions['isMeal'] == true) selectedOptions.add('MEAL');
+        if (itemOptions['drink'] != null)
           selectedOptions.add('Drink: ${itemOptions['drink']}');
-        }
       }
 
-      // Get comment from either regular comment field or extracted from description
       String? finalComment = orderItem.comment;
       if (finalComment == null || finalComment.isEmpty) {
         finalComment = itemOptions['extractedComment'] as String?;
@@ -311,7 +583,6 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
     }).toList();
   }
 
-  // Extract options from item description for detailed receipt printing
   Map<String, dynamic> _extractAllOptionsFromDescription(
     String description, {
     List<String>? defaultFoodItemToppings,
@@ -334,23 +605,18 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
     bool foundOptionsSyntax = false;
     bool anyNonDefaultOptionFound = false;
 
-    // Check if it's parentheses format (EPOS): "Item Name (Size: Large, Crust: Thin)"
     final optionMatch = RegExp(r'\((.*?)\)').firstMatch(description);
     if (optionMatch != null && optionMatch.group(1) != null) {
-      // EPOS format with parentheses
       String optionsString = optionMatch.group(1)!;
       foundOptionsSyntax = true;
       optionsList = _smartSplitOptions(optionsString);
     } else if (description.contains('\n') || description.contains(':')) {
-      // Website format with newlines: "Size: 7 inch\nBase: Tomato\nCrust: Normal"
       List<String> lines =
           description
               .split('\n')
               .map((s) => s.trim())
               .where((s) => s.isNotEmpty)
               .toList();
-
-      // Check if any line contains options (has colons)
       List<String> optionLines =
           lines.where((line) => line.contains(':')).toList();
 
@@ -358,7 +624,6 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
         foundOptionsSyntax = true;
         optionsList = optionLines;
 
-        // Find the first line that doesn't contain a colon (likely the item name)
         String foundItemName = '';
         for (var line in lines) {
           if (!line.contains(':')) {
@@ -366,23 +631,17 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
             break;
           }
         }
-
-        if (foundItemName.isNotEmpty) {
-          options['baseItemName'] = foundItemName;
-        } else {
-          options['baseItemName'] = description; // Fallback to full description
-        }
+        options['baseItemName'] =
+            foundItemName.isNotEmpty ? foundItemName : description;
       }
     }
 
-    // If no options syntax found, it's a simple description like "Chocolate Milkshake"
     if (!foundOptionsSyntax) {
       options['baseItemName'] = description;
       options['hasOptions'] = false;
       return options;
     }
 
-    // Combine default toppings and cheese from the FoodItem
     final Set<String> defaultToppingsAndCheese = {};
     if (defaultFoodItemToppings != null) {
       defaultToppingsAndCheese.addAll(
@@ -395,20 +654,16 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
       );
     }
 
-    // Process the options and apply filtering for default values
     for (var option in optionsList) {
       String lowerOption = option.toLowerCase();
 
-      // Enhanced meal detection
       if (lowerOption.contains('make it a meal') ||
           lowerOption.contains('meal') ||
           lowerOption.contains('with drink') ||
           lowerOption.contains('+ drink')) {
         options['isMeal'] = true;
         anyNonDefaultOptionFound = true;
-      }
-      // Enhanced drink extraction - handle multiple formats
-      else if (lowerOption.startsWith('drink:') ||
+      } else if (lowerOption.startsWith('drink:') ||
           lowerOption.contains('drink:') ||
           lowerOption.startsWith('beverage:') ||
           lowerOption.contains('beverage:')) {
@@ -434,14 +689,13 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
 
         if (drinkValue.isNotEmpty) {
           options['drink'] = drinkValue;
-          options['isMeal'] = true; // If there's a drink, it's likely a meal
+          options['isMeal'] = true;
           anyNonDefaultOptionFound = true;
         }
       } else if (lowerOption.startsWith('size:')) {
         String sizeValue = option.substring('size:'.length).trim();
         if (sizeValue.isNotEmpty) {
           options['size'] = sizeValue;
-          // Only mark as non-default if it's actually not a standard default value
           if (sizeValue.toLowerCase() != 'default' &&
               sizeValue.toLowerCase() != 'regular') {
             anyNonDefaultOptionFound = true;
@@ -451,7 +705,6 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
         String crustValue = option.substring('crust:'.length).trim();
         if (crustValue.isNotEmpty) {
           options['crust'] = crustValue;
-          // Only mark as non-default if it's actually not a standard default value
           if (crustValue.toLowerCase() != 'normal' &&
               crustValue.toLowerCase() != 'standard') {
             anyNonDefaultOptionFound = true;
@@ -467,7 +720,6 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
           } else {
             options['base'] = baseValue;
           }
-          // Only mark as non-default if it's actually not a standard default value
           if (baseValue.toLowerCase() != 'tomato' &&
               baseValue.toLowerCase() != 'standard') {
             anyNonDefaultOptionFound = true;
@@ -489,12 +741,9 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
                   .where((t) => t.isNotEmpty)
                   .toList();
 
-          // Filter against FoodItem's default toppings/cheese
-          // Only filter if we have FoodItem data, otherwise show all toppings
           List<String> filteredToppings =
               currentToppingsFromDescription.where((topping) {
                 String trimmedToppingLower = topping.trim().toLowerCase();
-                // Always filter out clearly non-meaningful values
                 if ([
                   'none',
                   'no toppings',
@@ -503,14 +752,12 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
                 ].contains(trimmedToppingLower)) {
                   return false;
                 }
-                // Only filter against default toppings if we have FoodItem data
                 if (defaultFoodItemToppings != null ||
                     defaultFoodItemCheese != null) {
                   return !defaultToppingsAndCheese.contains(
                     trimmedToppingLower,
                   );
                 }
-                // If no FoodItem data, show all toppings (don't filter)
                 return true;
               }).toList();
 
@@ -580,9 +827,7 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
         currentToppings.add(option);
         options['toppings'] = currentToppings.toSet().toList();
         anyNonDefaultOptionFound = true;
-      }
-      // Additional pattern matching for drinks mentioned without prefix
-      else if (lowerOption.contains('coke') ||
+      } else if (lowerOption.contains('coke') ||
           lowerOption.contains('pepsi') ||
           lowerOption.contains('fanta') ||
           lowerOption.contains('sprite') ||
@@ -598,7 +843,6 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
       }
     }
 
-    // Additional meal detection based on item names and common patterns
     String baseItemName = options['baseItemName'].toString().toLowerCase();
     if (!options['isMeal'] &&
         (baseItemName.contains('burger') &&
@@ -618,7 +862,6 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
       options['isMeal'] = true;
       anyNonDefaultOptionFound = true;
 
-      // Try to extract drink from description if not already found
       if (options['drink'] == null) {
         for (var option in optionsList) {
           String lowerOpt = option.toLowerCase();
@@ -633,8 +876,6 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
       }
     }
 
-    // Set hasOptions to true if we found any structured data (not just non-default)
-    // This ensures that even if all options are "default", we still parse and display them properly
     options['hasOptions'] =
         foundOptionsSyntax &&
         (options['size'] != null ||
@@ -648,7 +889,6 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
     return options;
   }
 
-  // Helper method for EPOS format (parentheses) smart splitting
   List<String> _smartSplitOptions(String optionsString) {
     List<String> result = [];
     String current = '';
@@ -714,127 +954,107 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
 
   Future<void> _printOrderReceipt(Order order) async {
     try {
-      print(
-        "MainAppWrapper: Starting to print receipt for order ${order.orderId}",
-      );
+      // ULTIMATE FIX: Separate receipt tracking system
+      final orderId = order.orderId;
+      final now = DateTime.now();
 
-      // Convert Order items to CartItem format
+      // Check if receipt was already printed recently (5-minute blocking)
+      if (_globalPrintedReceipts.contains(orderId)) {
+        final lastPrinted = _receiptPrintingTimestamps[orderId];
+        if (lastPrinted != null && now.difference(lastPrinted).inMinutes < 5) {
+          print(
+            "MainAppWrapper: Receipt for order $orderId was printed ${now.difference(lastPrinted).inMinutes}m ago - DUPLICATE PRINT BLOCKED",
+          );
+          return;
+        }
+      }
+
+      // Mark receipt as being printed
+      _globalPrintedReceipts.add(orderId);
+      _receiptPrintingTimestamps[orderId] = now;
+
+      print("MainAppWrapper: Printing receipt for order ${order.orderId}");
       List<CartItem> cartItems = _convertOrderToCartItems(order);
 
-      // Calculate subtotal
-      double subtotal = order.orderTotalPrice;
-
-      // Use the thermal printer service to print
-      bool
-      success = await ThermalPrinterService().printReceiptWithUserInteraction(
-        transactionId: order.orderId.toString(),
-        orderType: order.orderType,
-        cartItems: cartItems,
-        subtotal: subtotal,
-        totalCharge: order.orderTotalPrice,
-        changeDue: order.changeDue,
-        extraNotes: order.orderExtraNotes,
-        customerName: order.customerName,
-        customerEmail: order.customerEmail,
-        phoneNumber: order.phoneNumber,
-        streetAddress: order.streetAddress,
-        city: order.city,
-        postalCode: order.postalCode,
-        paymentType: order.paymentType,
-        onShowMethodSelection: (availableMethods) {
-          _showMainWrapperPopup(
-            "Available printing methods: ${availableMethods.join(', ')}. Please check printer connections.",
-            type: PopupType.success,
+      bool success = await ThermalPrinterService()
+          .printReceiptWithUserInteraction(
+            transactionId: order.orderId.toString(),
+            orderType: order.orderType,
+            cartItems: cartItems,
+            subtotal: order.orderTotalPrice,
+            totalCharge: order.orderTotalPrice,
+            changeDue: order.changeDue,
+            extraNotes: order.orderExtraNotes,
+            customerName: order.customerName,
+            customerEmail: order.customerEmail,
+            phoneNumber: order.phoneNumber,
+            streetAddress: order.streetAddress,
+            city: order.city,
+            postalCode: order.postalCode,
+            paymentType: order.paymentType,
+            onShowMethodSelection: (availableMethods) {
+              _showPopup(
+                "Available printing methods: ${availableMethods.join(', ')}",
+                type: PopupType.success,
+              );
+            },
           );
-        },
-      );
 
-      if (success) {
-        print(
-          "MainAppWrapper: Receipt printed successfully for order ${order.orderId}",
-        );
-        _showMainWrapperPopup(
-          'Receipt printed for order ${order.orderId}',
-          type: PopupType.success,
-        );
-      } else {
-        print(
-          "MainAppWrapper: Failed to print receipt for order ${order.orderId}",
-        );
-        _showMainWrapperPopup(
-          'Failed to print receipt for order ${order.orderId}. Please check printer connection.',
-          type: PopupType.failure,
-        );
-      }
+      _showPopup(
+        success
+            ? 'Receipt printed for order ${order.orderId}'
+            : 'Failed to print receipt for order ${order.orderId}',
+        type: success ? PopupType.success : PopupType.failure,
+      );
     } catch (e) {
-      print(
-        'MainAppWrapper: Error printing receipt for order ${order.orderId}: $e',
-      );
-      _showMainWrapperPopup(
-        'Error printing receipt for order ${order.orderId}: $e',
-        type: PopupType.failure,
-      );
+      print('MainAppWrapper: Error printing receipt: $e');
+      _showPopup('Error printing receipt: $e', type: PopupType.failure);
     }
   }
 
   Future<void> _handleAcceptOrder(Order order) async {
-    print("MainAppWrapper: Accepting order ${order.orderId}");
+    print("MainAppWrapper: ACCEPTING order ${order.orderId}");
 
     try {
-      // First update the order status
       bool success = await OrderApiService.updateOrderStatus(
         order.orderId,
         'yellow',
       );
 
       if (success) {
-        print("MainAppWrapper: Order ${order.orderId} accepted successfully");
+        _showPopup('Order ${order.orderId} accepted.', type: PopupType.success);
 
-        // Show success popup
-        _showMainWrapperPopup(
-          'Order ${order.orderId} accepted.',
-          type: PopupType.success,
-        );
-
-        // Remove from processing set (but don't remove notification - widget will do that)
-        _processingOrderIds.remove(order.orderId);
-
-        // Print the receipt automatically after successful acceptance
+        // Print receipt
         await Future.delayed(const Duration(milliseconds: 500));
         await _printOrderReceipt(order);
 
-        // Refresh the orders
+        // Immediate refresh orders
         if (mounted && context.mounted) {
+          print(
+            "MainAppWrapper: Triggering immediate order refresh after accepting order ${order.orderId}",
+          );
           Provider.of<OrderProvider>(
             context,
             listen: false,
           ).fetchWebsiteOrders();
         }
       } else {
-        print("MainAppWrapper: Failed to accept order ${order.orderId}");
-        _showMainWrapperPopup(
-          'Failed to accept order ${order.orderId}. Please try again.',
+        _showPopup(
+          'Failed to accept order ${order.orderId}',
           type: PopupType.failure,
         );
-        // Throw error so widget knows to reset processing state
-        throw Exception('Failed to accept order');
       }
     } catch (e) {
-      print('MainAppWrapper: Error in _handleAcceptOrder: $e');
-      _showMainWrapperPopup(
-        'Error accepting order ${order.orderId}. Please try again.',
+      print('MainAppWrapper: Error accepting order: $e');
+      _showPopup(
+        'Error accepting order ${order.orderId}',
         type: PopupType.failure,
       );
-      // Re-throw so widget knows there was an error
-      rethrow;
     }
   }
 
   Future<void> _handleDeclineOrder(Order order) async {
-    print("MainAppWrapper: Declining order ${order.orderId}");
-
-    // Add a small delay to prevent double-clicking
-    await Future.delayed(const Duration(milliseconds: 100));
+    print("MainAppWrapper: DECLINING order ${order.orderId}");
 
     try {
       bool success = await OrderApiService.updateOrderStatus(
@@ -842,31 +1062,26 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
         'declined',
       );
 
-      if (success) {
-        print("MainAppWrapper: Order ${order.orderId} declined successfully");
+      _showPopup(
+        success
+            ? 'Order ${order.orderId} declined.'
+            : 'Failed to decline order ${order.orderId}',
+        type: success ? PopupType.success : PopupType.failure,
+      );
 
-        // Remove notification immediately after successful API call
-        _removeNewOrderNotification(order);
-
-        _showMainWrapperPopup(
-          'Order ${order.orderId} declined.',
-          type: PopupType.success,
+      // Immediate refresh orders after declining
+      if (success && mounted && context.mounted) {
+        print(
+          "MainAppWrapper: Triggering immediate order refresh after declining order ${order.orderId}",
         );
-      } else {
-        print("MainAppWrapper: Failed to decline order ${order.orderId}");
-        _showMainWrapperPopup(
-          'Failed to decline order ${order.orderId}. Please try again.',
-          type: PopupType.failure,
-        );
-        // Don't remove notification - let user try again
+        Provider.of<OrderProvider>(context, listen: false).fetchWebsiteOrders();
       }
     } catch (e) {
-      print('MainAppWrapper: Error in _handleDeclineOrder: $e');
-      _showMainWrapperPopup(
-        'Error declining order ${order.orderId}. Please try again.',
+      print('MainAppWrapper: Error declining order: $e');
+      _showPopup(
+        'Error declining order ${order.orderId}',
         type: PopupType.failure,
       );
-      // Don't remove notification - let user try again
     }
   }
 
@@ -882,23 +1097,18 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
       textDirection: TextDirection.ltr,
       child: Consumer<OrderProvider>(
         builder: (context, orderProvider, child) {
-          // Schedule checking for cancelled orders after the current build frame completes
-          // This prevents setState during build issues
+          // NUCLEAR FIX: Only check for cancelled orders, completely separate from new orders
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
-              _checkForCancelledOrders(orderProvider.websiteOrders);
+              _checkForCancelledOrdersOnly(orderProvider.websiteOrders);
             }
           });
-
-          print(
-            "MainAppWrapper: Building with ${_activeNewOrderNotifications.length} new and ${_activeCancelledOrderNotifications.length} cancelled notifications",
-          );
 
           return Stack(
             children: [
               widget.child,
 
-              // Backdrop filter for any notifications
+              // Backdrop filter
               if (_activeNewOrderNotifications.isNotEmpty ||
                   _activeCancelledOrderNotifications.isNotEmpty)
                 Positioned.fill(
@@ -908,34 +1118,33 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
                   ),
                 ),
 
-              // New order notifications
-              ..._activeNewOrderNotifications.map((order) {
-                return NewOrderNotificationWidget(
-                  key: ValueKey('new_${order.orderId}'),
-                  order: order,
-                  onAccept: _handleAcceptOrder,
-                  onDecline: _handleDeclineOrder,
-                  onDismiss: () => _removeNewOrderNotification(order),
-                );
-              }).toList(),
-
-              // Cancelled order notifications
-              ..._activeCancelledOrderNotifications.map((order) {
-                final double cardWidth = 450.0;
-                return Positioned(
-                  top: 50,
-                  left: (MediaQuery.of(context).size.width - cardWidth) / 2,
-                  child: CancelledOrderNotificationWidget(
-                    key: ValueKey('cancelled_${order.orderId}'),
-                    order: order,
-                    onDismiss: () => _removeCancelledOrderNotification(order),
-                  ),
-                );
-              }).toList(),
+              // Horizontal notification system - combines new and cancelled orders
+              _buildHorizontalNotifications(),
             ],
           );
         },
       ),
     );
+  }
+
+  // NUCLEAR FIX: Separate method that ONLY handles cancelled order detection
+  void _checkForCancelledOrdersOnly(List<Order> currentOrders) {
+    for (var order in currentOrders) {
+      final currentStatus = order.status.toLowerCase();
+      final previousStatus = _previousOrderStatuses[order.orderId];
+
+      // Only check for cancellations, don't add new order notifications here
+      if ((currentStatus == 'cancelled' || currentStatus == 'red') &&
+          previousStatus != null &&
+          previousStatus != 'cancelled' &&
+          previousStatus != 'red') {
+        print(
+          "MainAppWrapper: Order ${order.orderId} newly cancelled - adding cancelled notification",
+        );
+        _addCancelledOrderNotification(order);
+      }
+
+      _previousOrderStatuses[order.orderId] = currentStatus;
+    }
   }
 }

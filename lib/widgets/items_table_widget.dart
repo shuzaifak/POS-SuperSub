@@ -5,10 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 class ItemsTableWidget extends StatelessWidget {
   final Map<String, dynamic>? report;
 
-  const ItemsTableWidget({
-    Key? key,
-    required this.report,
-  }) : super(key: key);
+  const ItemsTableWidget({Key? key, required this.report}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -27,10 +24,7 @@ class ItemsTableWidget extends StatelessWidget {
         ),
         child: Text(
           'No items sold',
-          style: GoogleFonts.poppins(
-            fontSize: 14,
-            color: Colors.grey.shade600,
-          ),
+          style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey.shade600),
           textAlign: TextAlign.center,
         ),
       );
@@ -131,9 +125,10 @@ class ItemsTableWidget extends StatelessWidget {
               decoration: BoxDecoration(
                 color: isEven ? Colors.white : Colors.grey.shade50,
                 border: Border(
-                  bottom: index == items.length - 1
-                      ? BorderSide.none
-                      : BorderSide(color: Colors.grey.shade200),
+                  bottom:
+                      index == items.length - 1
+                          ? BorderSide.none
+                          : BorderSide(color: Colors.grey.shade200),
                 ),
               ),
               child: Row(

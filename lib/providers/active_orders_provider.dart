@@ -16,6 +16,7 @@ class ActiveOrdersProvider with ChangeNotifier {
   late StreamSubscription _orderStatusChangedSubscription;
 
   final Map<int, Timer> _scheduledUpdates = {};
+  bool _isDisposed = false;
 
   // Polling for live updates
   Timer? _pollingTimer;
@@ -40,7 +41,11 @@ class ActiveOrdersProvider with ChangeNotifier {
     }
 
     bool shouldShow =
-        status == 'accepted' || status == 'green' || status == 'ready';
+        status == 'pending' ||
+        status == 'yellow' ||
+        status == 'accepted' ||
+        status == 'green' ||
+        status == 'ready';
     return shouldShow;
   }
 
@@ -93,24 +98,30 @@ class ActiveOrdersProvider with ChangeNotifier {
       final Duration timeUntilYellow =
           greenToYellowThreshold - timeSinceCreated;
       nextUpdate = Timer(timeUntilYellow, () {
-        _calculateAndUpdateCounts();
+        if (!_isDisposed) {
+          _calculateAndUpdateCounts();
 
-        // Schedule next update for red (15 minutes later)
-        _scheduledUpdates[order.orderId] = Timer(
-          const Duration(minutes: 15),
-          () {
-            _calculateAndUpdateCounts();
-            _scheduledUpdates.remove(order.orderId);
-          },
-        );
+          // Schedule next update for red (15 minutes later)
+          _scheduledUpdates[order.orderId] = Timer(
+            const Duration(minutes: 15),
+            () {
+              if (!_isDisposed) {
+                _calculateAndUpdateCounts();
+                _scheduledUpdates.remove(order.orderId);
+              }
+            },
+          );
+        }
       });
     } else if (timeSinceCreated < yellowToRedThreshold) {
       // Schedule update when order becomes red (45 minutes)
       final Duration timeUntilRed = yellowToRedThreshold - timeSinceCreated;
       nextUpdate = Timer(timeUntilRed, () {
-        print('⏰ Order ${order.orderId} becoming RED');
-        _calculateAndUpdateCounts();
-        _scheduledUpdates.remove(order.orderId);
+        if (!_isDisposed) {
+          print('⏰ Order ${order.orderId} becoming RED');
+          _calculateAndUpdateCounts();
+          _scheduledUpdates.remove(order.orderId);
+        }
       });
     }
 
@@ -126,12 +137,6 @@ class ActiveOrdersProvider with ChangeNotifier {
   }
 
   void handleManualOrderUpdate(Order updatedOrder) {
-    print(
-      '🔄 ActiveOrdersProvider: Received manual update for order ${updatedOrder.orderId}',
-    );
-    print('🔄 Updated order status: ${updatedOrder.status}');
-    print('🔄 Updated order source: ${updatedOrder.orderSource}');
-
     // Process the updated order through the same logic as socket updates
     _processIncomingOrder(updatedOrder);
   }
@@ -141,26 +146,10 @@ class ActiveOrdersProvider with ChangeNotifier {
       _isLoading = true;
       _error = null;
       notifyListeners();
-
-      print(
-        '🌐 ActiveOrdersProvider: Starting initial fetch of today\'s orders...',
-      );
       final allOrders = await OrderApiService.fetchTodayOrders();
-
-      print('📊 Total orders fetched: ${allOrders.length}');
-
       _activeOrders = _filterActiveOrders(allOrders);
       _activeOrders.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       _isLoading = false;
-
-      print(
-        '✅ ActiveOrdersProvider: Filtered active orders count: ${_activeOrders.length}',
-      );
-      for (var order in _activeOrders) {
-        print(
-          '✅ Active Order: ${order.orderId} (${order.orderSource} - ${order.status})',
-        );
-      }
 
       _calculateAndUpdateCounts();
 
@@ -177,7 +166,6 @@ class ActiveOrdersProvider with ChangeNotifier {
     } catch (e) {
       _error = 'Failed to load active orders: $e';
       _isLoading = false;
-      print('❌ ActiveOrdersProvider: Error during initial fetch: $_error');
       notifyListeners();
     }
   }
@@ -185,40 +173,27 @@ class ActiveOrdersProvider with ChangeNotifier {
   void _listenToStreams() {
     _newOrderSocketSubscription = OrderApiService().newOrderStream.listen(
       (newOrder) {
-        print(
-          '📦 ActiveOrdersProvider: Received new order from stream: ${newOrder.orderId}',
-        );
-        print(
-          '📦 New order details: source=${newOrder.orderSource}, status=${newOrder.status}',
-        );
         _processIncomingOrder(newOrder);
       },
       onError:
           (e) => print('❌ ActiveOrdersProvider: Error on newOrderStream: $e'),
     );
 
-    _acceptedOrderStreamSubscription = OrderApiService().acceptedOrderStream.listen(
-      (acceptedOrder) {
-        print(
-          '✅ ActiveOrdersProvider: Received accepted order from stream: ${acceptedOrder.orderId}',
+    _acceptedOrderStreamSubscription = OrderApiService().acceptedOrderStream
+        .listen(
+          (acceptedOrder) {
+            _processIncomingOrder(acceptedOrder);
+          },
+          onError:
+              (e) => print(
+                '❌ ActiveOrdersProvider: Error on acceptedOrderStream: $e',
+              ),
         );
-        print(
-          '✅ Accepted order details: source=${acceptedOrder.orderSource}, status=${acceptedOrder.status}',
-        );
-        _processIncomingOrder(acceptedOrder);
-      },
-      onError:
-          (e) =>
-              print('❌ ActiveOrdersProvider: Error on acceptedOrderStream: $e'),
-    );
 
     _orderStatusChangedSubscription = OrderApiService()
         .orderStatusOrDriverChangedStream
         .listen(
           (data) {
-            print(
-              '🔄 ActiveOrdersProvider: Received order status change: $data',
-            );
             _handleOrderStatusChange(data);
           },
           onError:
@@ -229,43 +204,19 @@ class ActiveOrdersProvider with ChangeNotifier {
   }
 
   List<Order> _filterActiveOrders(List<Order> orders) {
-    print('🔍 === FILTERING ACTIVE ORDERS ===');
-    print('🔍 Total orders to filter: ${orders.length}');
-
     final List<Order> filteredOrders = [];
 
     for (var order in orders) {
-      print('🔍 Checking Order ${order.orderId}...');
-
       if (_shouldDisplayOrder(order)) {
         filteredOrders.add(order);
-        print('✅ Order ${order.orderId} ADDED to active orders');
-      } else {
-        print('❌ Order ${order.orderId} EXCLUDED from active orders');
       }
     }
-
-    print('📊 === FILTER COMPLETE ===');
-    print('📊 Orders to display: ${filteredOrders.length}');
-    print(
-      '📊 Website orders in list: ${filteredOrders.where((o) => o.orderSource.toLowerCase() == 'website').length}',
-    );
-    print(
-      '📊 EPOS orders in list: ${filteredOrders.where((o) => o.orderSource.toLowerCase() == 'epos').length}',
-    );
 
     return filteredOrders;
   }
 
   void _processIncomingOrder(Order order) {
-    print('🔄 === PROCESSING INCOMING ORDER ===');
-    print('🔄 Order ID: ${order.orderId}');
-    print('🔄 Order source: ${order.orderSource}');
-    print('🔄 Order status: ${order.status}');
-    print('🔄 Order type: ${order.orderType}');
-
     bool shouldDisplay = _shouldDisplayOrder(order);
-    print('🔄 Should display: $shouldDisplay');
 
     int existingIndex = _activeOrders.indexWhere(
       (o) => o.orderId == order.orderId,
@@ -274,34 +225,22 @@ class ActiveOrdersProvider with ChangeNotifier {
 
     if (shouldDisplay) {
       if (existingIndex != -1) {
-        print('🔄 Updating existing order in active list');
         _cancelScheduledUpdatesForOrder(order.orderId);
         _activeOrders[existingIndex] = order;
         _scheduleColorUpdatesForOrder(order);
       } else {
-        print('➕ Adding new order to active list');
         _activeOrders.add(order);
         _scheduleColorUpdatesForOrder(order);
       }
     } else {
       if (existingIndex != -1) {
-        print('❌ Removing order from active list');
         _cancelScheduledUpdatesForOrder(_activeOrders[existingIndex].orderId);
         _activeOrders.removeAt(existingIndex);
         orderWasRemoved = true;
-      } else {
-        print('ℹ️ Order was not in active list and should not be added');
       }
     }
 
     _activeOrders.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
-    print(
-      '📊 Current active orders count after processing: ${_activeOrders.length}',
-    );
-    print(
-      '📊 Website orders in active list: ${_activeOrders.where((o) => o.orderSource.toLowerCase() == 'website').length}',
-    );
 
     // Force immediate color calculation with detailed logging
     _calculateAndUpdateCountsWithLogging(orderWasRemoved, order.orderId);
@@ -309,22 +248,12 @@ class ActiveOrdersProvider with ChangeNotifier {
     // Add a small delay to ensure state propagation
     Future.microtask(() {
       notifyListeners();
-      print('🔔 ActiveOrdersProvider notifyListeners() called');
     });
-
-    print('🔄 === PROCESSING COMPLETE ===');
   }
 
   // Add detailed logging version of color calculation
   void _calculateAndUpdateCountsWithLogging(bool wasRemoval, int orderId) {
-    print('🎨 === STARTING COLOR CALCULATION ===');
-    print(
-      '🎨 Triggered by: ${wasRemoval ? "REMOVAL" : "UPDATE"} of order $orderId',
-    );
-    print('🎨 Current active orders count: ${_activeOrders.length}');
-
     if (_activeOrders.isEmpty) {
-      print('🎨 No active orders - setting all to default green');
       _orderCountsProvider.updateAllCountsAndColors(
         {
           'collection': 0,
@@ -341,7 +270,6 @@ class ActiveOrdersProvider with ChangeNotifier {
           'website': const Color(0xFF8cdd69),
         },
       );
-      print('🎨 === COLOR CALCULATION COMPLETE (EMPTY) ===');
       return;
     }
 
@@ -372,8 +300,6 @@ class ActiveOrdersProvider with ChangeNotifier {
     const Duration greenToYellowThreshold = Duration(minutes: 30);
     const Duration yellowToRedThreshold = Duration(minutes: 45);
 
-    print('Analyzing ${_activeOrders.length} active orders:');
-
     for (var order in _activeOrders) {
       String orderTypeKey;
       String orderSourceLower = order.orderSource.toLowerCase();
@@ -393,96 +319,60 @@ class ActiveOrdersProvider with ChangeNotifier {
         } else if (orderTypeLower == 'delivery') {
           orderTypeKey = 'delivery';
         } else {
-          print(
-            'Unknown order type: $orderTypeLower for order ${order.orderId}',
-          );
           continue;
         }
       } else {
-        print(
-          '⚠️ Unknown order source: $orderSourceLower for order ${order.orderId}',
-        );
         continue;
       }
 
       final DateTime now = UKTimeService.now();
       final Duration timeElapsed = now.difference(order.createdAt);
       int timePriority;
-      String colorName;
 
       if (timeElapsed >= yellowToRedThreshold) {
         timePriority = 3; // Red
-        colorName = 'RED';
       } else if (timeElapsed >= greenToYellowThreshold) {
         timePriority = 2; // Yellow
-        colorName = 'YELLOW';
       } else {
         timePriority = 1; // Green
-        colorName = 'GREEN';
       }
-
-      print(
-        '📋 Order ${order.orderId} ($orderTypeKey): $colorName (${timeElapsed.inMinutes} min old)',
-      );
 
       currentTypeCounts[orderTypeKey] =
           (currentTypeCounts[orderTypeKey] ?? 0) + 1;
       allPrioritiesForTypes[orderTypeKey]!.add(timePriority);
     }
 
-    print('📊 Raw counts: $currentTypeCounts');
-
     // Determine the dominant color for each type based on highest priority
     allPrioritiesForTypes.forEach((orderTypeKey, priorities) {
       Color finalColor;
-      String finalColorName;
 
       if (priorities.isEmpty) {
         finalColor = const Color(0xFF8cdd69);
-        finalColorName = 'GREEN (default)';
       } else {
         int highestPriority = priorities.reduce((a, b) => a > b ? a : b);
 
         switch (highestPriority) {
           case 3:
             finalColor = const Color(0xFFff4848); // Red
-            finalColorName = 'RED';
             break;
           case 2:
             finalColor = const Color(0xFFFFE26B); // Yellow
-            finalColorName = 'YELLOW';
             break;
           case 1:
           default:
             finalColor = const Color(0xFF8cdd69); // Green
-            finalColorName = 'GREEN';
             break;
         }
       }
 
       dominantColorsForTypes[orderTypeKey] = finalColor;
-      print(
-        '🎨 Final color for $orderTypeKey: $finalColorName (priorities: $priorities)',
-      );
     });
-
-    print('📊 Final counts to send: $currentTypeCounts');
-    print(
-      '🎨 Final colors to send: ${dominantColorsForTypes.map((k, v) => MapEntry(k, v == const Color(0xFF8cdd69)
-          ? 'GREEN'
-          : v == const Color(0xFFFFE26B)
-          ? 'YELLOW'
-          : 'RED'))}',
-    );
 
     // Always update even if values seem the same
     _orderCountsProvider.updateAllCountsAndColors(
       currentTypeCounts,
       dominantColorsForTypes,
     );
-
-    print('✅ OrderCountsProvider.updateAllCountsAndColors() called');
-    print('🎨 === COLOR CALCULATION COMPLETE ===');
   }
 
   void _calculateAndUpdateCounts() {
@@ -492,9 +382,6 @@ class ActiveOrdersProvider with ChangeNotifier {
   // Handle order status changes with improved error handling and immediate processing
   void _handleOrderStatusChange(Map<String, dynamic> data) {
     try {
-      print('🔄 === HANDLING ORDER STATUS CHANGE ===');
-      print('🔄 Raw status change data: $data');
-
       final int? orderId = data['order_id'] as int?;
 
       String? newStatus = data['status'] as String?;
@@ -514,8 +401,6 @@ class ActiveOrdersProvider with ChangeNotifier {
         return;
       }
 
-      print('🔄 Processing status change for order $orderId: $newStatus');
-
       // Find the existing order in our active orders
       final existingIndex = _activeOrders.indexWhere(
         (order) => order.orderId == orderId,
@@ -523,17 +408,12 @@ class ActiveOrdersProvider with ChangeNotifier {
 
       if (existingIndex != -1) {
         final existingOrder = _activeOrders[existingIndex];
-        print('🔄 Found existing order ${orderId} in active list');
 
         String finalStatus = _mapFromBackendStatus(newStatus);
 
         final updatedOrder = existingOrder.copyWith(
           status: finalStatus,
           driverId: newDriverId,
-        );
-
-        print(
-          '🔄 Order $orderId status changed from ${existingOrder.status} to $finalStatus',
         );
 
         // Check if this affects delivery display status
@@ -614,6 +494,10 @@ class ActiveOrdersProvider with ChangeNotifier {
     print('🔄 Starting polling every ${_pollingInterval.inSeconds} seconds');
 
     _pollingTimer = Timer.periodic(_pollingInterval, (timer) async {
+      if (_isDisposed) {
+        timer.cancel();
+        return;
+      }
       try {
         await _pollForUpdates();
       } catch (e) {
@@ -671,7 +555,7 @@ class ActiveOrdersProvider with ChangeNotifier {
         }
       }
 
-      if (hasChanges) {
+      if (hasChanges && !_isDisposed) {
         _activeOrders = filteredOrders;
         _activeOrders.sort((a, b) => b.createdAt.compareTo(a.createdAt));
         _calculateAndUpdateCounts();
@@ -684,6 +568,8 @@ class ActiveOrdersProvider with ChangeNotifier {
 
   @override
   void dispose() {
+    _isDisposed = true;
+
     _newOrderSocketSubscription.cancel();
     _acceptedOrderStreamSubscription.cancel();
     _orderStatusChangedSubscription.cancel();

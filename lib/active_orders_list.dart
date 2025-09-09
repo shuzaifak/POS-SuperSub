@@ -7,6 +7,11 @@ import 'package:provider/provider.dart';
 import 'package:epos/providers/active_orders_provider.dart';
 import 'package:epos/services/thermal_printer_service.dart';
 import 'package:epos/services/custom_popup_service.dart';
+import 'package:epos/services/api_service.dart';
+import 'package:epos/payment_details_widget.dart';
+import 'package:epos/models/order_models.dart';
+import 'package:epos/discount_page.dart';
+import 'dart:ui';
 import 'models/cart_item.dart';
 import 'models/food_item.dart';
 
@@ -34,6 +39,13 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
   Timer? _printerStatusTimer;
   DateTime? _lastPrinterCheck;
   Map<String, bool>? _cachedPrinterStatus;
+
+  // Payment flow state variables (similar to page4)
+  bool _showCartView = false;
+  bool _showPayment = false;
+  bool _showDiscountPage = false;
+  String _selectedPaymentType = '';
+  double _appliedDiscountPercentage = 0.0;
 
   @override
   void initState() {
@@ -143,6 +155,786 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
       default:
         return 'assets/images/default.png';
     }
+  }
+
+  // Method to show mark as paid confirmation popup
+  void _showMarkAsPaidConfirmation(Order order) {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext context) {
+        return Stack(
+          children: [
+            // Background blur (consistent with other dialogs)
+            Positioned.fill(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 10.0, sigmaY: 10.0),
+                child: Container(color: Colors.black.withOpacity(0.3)),
+              ),
+            ),
+            // Dialog content
+            Dialog(
+              backgroundColor: Colors.transparent,
+              child: Container(
+                width: 350,
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Payment icon (consistent with admin dialog)
+                    Icon(Icons.payment, size: 48, color: Colors.black),
+                    const SizedBox(height: 16),
+                    // Title
+                    Text(
+                      'Mark as Paid',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                        fontFamily: 'Poppins',
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    // Subtitle
+                    Text(
+                      'Mark Order #${order.orderId} as paid?',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey.shade600,
+                        fontFamily: 'Poppins',
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    // Action buttons
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        // Cancel button
+                        ElevatedButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.grey.shade300,
+                            foregroundColor: Colors.black87,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 12,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.close, size: 18),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Cancel',
+                                style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Confirm button
+                        ElevatedButton(
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                            _startPaymentProcess(order);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green.shade600,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 12,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.check, size: 18),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Mark Paid',
+                                style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Method to start payment process (UI flow only)
+  void _startPaymentProcess(Order order) {
+    // Show cart view with order details (page4 style flow)
+    setState(() {
+      _selectedOrder = order;
+      _showCartView = true;
+      _selectedPaymentType = order.paymentType; // Use existing payment type
+    });
+  }
+
+  // Build cart view (similar to page4 cart display)
+  Widget _buildCartView(bool isLargeScreen) {
+    if (_selectedOrder == null) return Container();
+
+    return Column(
+      children: [
+        // Header with back button and order info
+        Padding(
+          padding: EdgeInsets.all(isLargeScreen ? 20.0 : 16.0),
+          child: Row(
+            children: [
+              // Back button
+              IconButton(
+                icon: Image.asset(
+                  'assets/images/bArrow.png',
+                  width: isLargeScreen ? 35 : 30,
+                  height: isLargeScreen ? 35 : 30,
+                ),
+                onPressed: () {
+                  setState(() {
+                    _showCartView = false;
+                    _showPayment = false;
+                    _showDiscountPage = false;
+                    _selectedOrder = null;
+                    _selectedPaymentType = '';
+                    _appliedDiscountPercentage = 0.0;
+                  });
+                },
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Order #${_selectedOrder!.orderId} - ${_selectedOrder!.customerName}',
+                style: TextStyle(
+                  fontSize: isLargeScreen ? 22 : 20,
+                  fontWeight: FontWeight.bold,
+                  fontFamily: 'Poppins',
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const Divider(height: 0, thickness: 2, color: Color(0xFFB2B2B2)),
+
+        // Cart content
+        Expanded(child: _buildCartContent(isLargeScreen)),
+      ],
+    );
+  }
+
+  // Build cart content with items and payment buttons
+  Widget _buildCartContent(bool isLargeScreen) {
+    double subtotal = _selectedOrder!.orderTotalPrice;
+    double discountAmount = (subtotal * _appliedDiscountPercentage / 100);
+    double finalTotal = subtotal - discountAmount;
+
+    return Column(
+      children: [
+        // Order items list
+        Expanded(
+          child: RawScrollbar(
+            controller: _scrollController,
+            thumbVisibility: true,
+            trackVisibility: false,
+            thickness: isLargeScreen ? 12.0 : 10.0,
+            radius: const Radius.circular(30),
+            interactive: true,
+            thumbColor: const Color(0xFFF2D9F9),
+            child: ListView.builder(
+              controller: _scrollController,
+              itemCount: _selectedOrder!.items.length,
+              itemBuilder: (context, index) {
+                final item = _selectedOrder!.items[index];
+                return _buildCartItemCard(item, isLargeScreen);
+              },
+            ),
+          ),
+        ),
+
+        // Bottom section with totals and buttons
+        Container(
+          padding: EdgeInsets.all(isLargeScreen ? 20 : 16),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            border: Border(top: BorderSide(color: Color(0xFFB2B2B2), width: 2)),
+          ),
+          child: Column(
+            children: [
+              // Totals section
+              _buildTotalsSection(
+                subtotal,
+                discountAmount,
+                finalTotal,
+                isLargeScreen,
+              ),
+              const SizedBox(height: 20),
+
+              // Payment buttons section
+              _buildPaymentButtonsSection(isLargeScreen),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Build individual cart item card (matching page4 exactly)
+  Widget _buildCartItemCard(OrderItem item, bool isLargeScreen) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 0, horizontal: 20),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  flex: 6,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Text(
+                            '${item.quantity}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 32,
+                              fontFamily: 'Poppins',
+                            ),
+                          ),
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.only(
+                                left: 30,
+                                right: 10,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    item.itemName,
+                                    style: const TextStyle(
+                                      fontSize: 15,
+                                      fontFamily: 'Poppins',
+                                      color: Colors.grey,
+                                      fontStyle: FontStyle.normal,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  if (item.description.isNotEmpty)
+                                    Text(
+                                      item.description,
+                                      style: const TextStyle(
+                                        fontSize: 15,
+                                        fontFamily: 'Poppins',
+                                        color: Colors.black,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  if (item.comment != null &&
+                                      item.comment!.isNotEmpty)
+                                    Text(
+                                      'Note: ${item.comment!}',
+                                      style: const TextStyle(
+                                        fontSize: 15,
+                                        fontFamily: 'Poppins',
+                                        color: Colors.black,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  width: 3,
+                  height: 140,
+                  margin: const EdgeInsets.symmetric(horizontal: 0),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    color: const Color(0xFFB2B2B2),
+                  ),
+                ),
+                Expanded(
+                  flex: 3,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 110,
+                        height: 80,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        clipBehavior: Clip.hardEdge,
+                        child: Image.asset(
+                          _getCategoryIcon(item.itemType),
+                          fit: BoxFit.contain,
+                          errorBuilder:
+                              (context, error, stackTrace) => const Icon(
+                                Icons.fastfood,
+                                size: 80,
+                                color: Colors.grey,
+                              ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        item.itemName,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.normal,
+                          fontFamily: 'Poppins',
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '£${item.totalPrice.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 27,
+                          fontWeight: FontWeight.bold,
+                          fontFamily: 'Poppins',
+                          color: Color(0xFFCB6CE6),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          Container(height: 1, color: const Color(0xFFB2B2B2)),
+        ],
+      ),
+    );
+  }
+
+  // Build totals section
+  Widget _buildTotalsSection(
+    double subtotal,
+    double discountAmount,
+    double finalTotal,
+    bool isLargeScreen,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        children: [
+          // Subtotal
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Subtotal',
+                style: TextStyle(
+                  fontSize: isLargeScreen ? 16 : 14,
+                  fontFamily: 'Poppins',
+                ),
+              ),
+              Text(
+                '£${subtotal.toStringAsFixed(2)}',
+                style: TextStyle(
+                  fontSize: isLargeScreen ? 16 : 14,
+                  fontWeight: FontWeight.w500,
+                  fontFamily: 'Poppins',
+                ),
+              ),
+            ],
+          ),
+
+          // Discount (if applied)
+          if (_appliedDiscountPercentage > 0) ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Discount (${_appliedDiscountPercentage.toStringAsFixed(0)}%)',
+                  style: TextStyle(
+                    fontSize: isLargeScreen ? 16 : 14,
+                    fontFamily: 'Poppins',
+                    color: Colors.red.shade600,
+                  ),
+                ),
+                Text(
+                  '-£${discountAmount.toStringAsFixed(2)}',
+                  style: TextStyle(
+                    fontSize: isLargeScreen ? 16 : 14,
+                    fontWeight: FontWeight.w500,
+                    fontFamily: 'Poppins',
+                    color: Colors.red.shade600,
+                  ),
+                ),
+              ],
+            ),
+          ],
+
+          const SizedBox(height: 12),
+          const Divider(height: 1, color: Colors.grey),
+          const SizedBox(height: 12),
+
+          // Total
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Total',
+                style: TextStyle(
+                  fontSize: isLargeScreen ? 20 : 18,
+                  fontWeight: FontWeight.bold,
+                  fontFamily: 'Poppins',
+                ),
+              ),
+              Text(
+                '£${finalTotal.toStringAsFixed(2)}',
+                style: TextStyle(
+                  fontSize: isLargeScreen ? 20 : 18,
+                  fontWeight: FontWeight.bold,
+                  fontFamily: 'Poppins',
+                  color: Colors.green.shade700,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Build payment buttons section
+  Widget _buildPaymentButtonsSection(bool isLargeScreen) {
+    return Column(
+      children: [
+        // Payment method buttons (matching page4 exactly)
+        Row(
+          children: [
+            Expanded(
+              child: GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _selectedPaymentType = 'cash';
+                  });
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 18,
+                  ),
+                  decoration: BoxDecoration(
+                    color:
+                        _selectedPaymentType == 'cash'
+                            ? Colors.grey[300]
+                            : Colors.black,
+                    borderRadius: BorderRadius.circular(8),
+                    border:
+                        _selectedPaymentType == 'cash'
+                            ? Border.all(color: Colors.grey)
+                            : null,
+                  ),
+                  child: Center(
+                    child: Text(
+                      'Cash',
+                      style: TextStyle(
+                        color:
+                            _selectedPaymentType == 'cash'
+                                ? Colors.black
+                                : Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 29,
+                        fontFamily: 'Poppins',
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _selectedPaymentType = 'card';
+                  });
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 18,
+                  ),
+                  decoration: BoxDecoration(
+                    color:
+                        _selectedPaymentType == 'card'
+                            ? Colors.grey[300]
+                            : Colors.black,
+                    borderRadius: BorderRadius.circular(8),
+                    border:
+                        _selectedPaymentType == 'card'
+                            ? Border.all(color: Colors.grey)
+                            : null,
+                  ),
+                  child: Center(
+                    child: Text(
+                      'Card',
+                      style: TextStyle(
+                        color:
+                            _selectedPaymentType == 'card'
+                                ? Colors.black
+                                : Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 29,
+                        fontFamily: 'Poppins',
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        // Discount and Proceed buttons
+        Row(
+          children: [
+            // Discount button
+            Expanded(
+              child: ElevatedButton(
+                onPressed: () {
+                  setState(() {
+                    _showDiscountPage = true;
+                  });
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.black,
+                  foregroundColor: Colors.white,
+                  padding: EdgeInsets.symmetric(
+                    vertical: isLargeScreen ? 16 : 14,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 2,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.discount, size: isLargeScreen ? 22 : 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      _appliedDiscountPercentage > 0
+                          ? 'Discount (${_appliedDiscountPercentage.toStringAsFixed(0)}%)'
+                          : 'Add Discount',
+                      style: TextStyle(
+                        fontSize: isLargeScreen ? 16 : 14,
+                        fontWeight: FontWeight.w600,
+                        fontFamily: 'Poppins',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+
+            // Proceed to payment button
+            Expanded(
+              child: ElevatedButton(
+                onPressed:
+                    _selectedPaymentType.isNotEmpty
+                        ? () {
+                          setState(() {
+                            _showPayment = true;
+                          });
+                        }
+                        : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor:
+                      _selectedPaymentType.isNotEmpty
+                          ? Colors.black
+                          : Colors.grey.shade400,
+                  foregroundColor: Colors.white,
+                  padding: EdgeInsets.symmetric(
+                    vertical: isLargeScreen ? 16 : 14,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 2,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.arrow_forward, size: isLargeScreen ? 22 : 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Proceed to Payment',
+                      style: TextStyle(
+                        fontSize: isLargeScreen ? 16 : 14,
+                        fontWeight: FontWeight.w600,
+                        fontFamily: 'Poppins',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // Build discount page
+  Widget _buildDiscountPage() {
+    if (_selectedOrder == null) return Container();
+
+    return DiscountPage(
+      subtotal: _selectedOrder!.orderTotalPrice,
+      currentOrderType: _selectedOrder!.orderType,
+      onDiscountApplied: (double finalTotal, double discountPercentage) {
+        setState(() {
+          _appliedDiscountPercentage = discountPercentage;
+          _showDiscountPage = false;
+        });
+
+        CustomPopupService.show(
+          context,
+          '${discountPercentage.toStringAsFixed(0)}% discount applied!',
+          type: PopupType.success,
+        );
+      },
+      onOrderTypeChanged: (newOrderType) {
+        // Order type doesn't change for existing unpaid orders
+      },
+      onBack: () {
+        setState(() {
+          _showDiscountPage = false;
+        });
+      },
+    );
+  }
+
+  // Build payment widget
+  Widget _buildPaymentWidget() {
+    if (_selectedOrder == null) return Container();
+
+    // Create customer details from order
+    CustomerDetails customerDetails = CustomerDetails(
+      name: _selectedOrder!.customerName,
+      phoneNumber: _selectedOrder!.phoneNumber ?? '',
+      email: _selectedOrder!.customerEmail,
+      streetAddress: _selectedOrder!.streetAddress,
+      city: _selectedOrder!.city,
+      postalCode: _selectedOrder!.postalCode,
+    );
+
+    double subtotal = _selectedOrder!.orderTotalPrice;
+    double discountAmount = (subtotal * _appliedDiscountPercentage / 100);
+    double finalTotal = subtotal - discountAmount;
+
+    return PaymentWidget(
+      subtotal: finalTotal, // Use final total after discount
+      customerDetails: customerDetails,
+      paymentType: _selectedPaymentType,
+      onPaymentConfirmed: (PaymentDetails paymentDetails) async {
+        try {
+          // Call the API to mark order as paid after payment completion
+          bool success = await ApiService.markOrderAsPaid(
+            _selectedOrder!.orderId,
+          );
+
+          if (success) {
+            // Reset state and refresh orders
+            setState(() {
+              _showCartView = false;
+              _showPayment = false;
+              _showDiscountPage = false;
+              _selectedOrder = null;
+              _selectedPaymentType = '';
+              _appliedDiscountPercentage = 0.0;
+            });
+
+            // Refresh the orders list
+            refreshOrders();
+
+            CustomPopupService.show(
+              context,
+              "Payment completed successfully!",
+              type: PopupType.success,
+            );
+          } else {
+            CustomPopupService.show(
+              context,
+              "Payment completed but failed to update order status. Please try again.",
+              type: PopupType.failure,
+            );
+          }
+        } catch (e) {
+          print('Error marking order as paid after payment: $e');
+          CustomPopupService.show(
+            context,
+            "Payment completed but error updating order status: $e",
+            type: PopupType.failure,
+          );
+        }
+      },
+      onBack: () {
+        setState(() {
+          _showPayment = false;
+        });
+      },
+      onPaymentTypeChanged: (String newPaymentType) {
+        setState(() {
+          _selectedPaymentType = newPaymentType;
+        });
+      },
+    );
   }
 
   Widget _buildOrderSummaryContent(Order order) {
@@ -648,6 +1440,19 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
     final screenWidth = MediaQuery.of(context).size.width;
     final isLargeScreen = screenWidth > 1200;
 
+    // Handle different view states (similar to page4)
+    if (_showDiscountPage && _selectedOrder != null) {
+      return _buildDiscountPage();
+    }
+
+    if (_showPayment && _selectedOrder != null) {
+      return _buildPaymentWidget();
+    }
+
+    if (_showCartView && _selectedOrder != null) {
+      return _buildCartView(isLargeScreen);
+    }
+
     if (_selectedOrder != null &&
         !activeOrders.any((o) => o.orderId == _selectedOrder!.orderId)) {
       _selectedOrder = null;
@@ -1105,8 +1910,7 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
                                                                 ? 17
                                                                 : 15,
                                                         fontFamily: 'Poppins',
-                                                        color:
-                                                            Colors.orange[700],
+                                                        color: Colors.black,
                                                         fontWeight:
                                                             FontWeight.w500,
                                                       ),
@@ -1410,26 +2214,6 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
                     borderRadius: BorderRadius.circular(50),
                   ),
                   child: const Text(
-                    'Active Orders',
-                    textAlign: TextAlign.left,
-                    style: TextStyle(
-                      fontSize: 25,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black,
-                      fontFamily: 'Poppins',
-                    ),
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 28,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF3D9FF),
-                    borderRadius: BorderRadius.circular(50),
-                  ),
-                  child: const Text(
                     'Unpaid Orders',
                     textAlign: TextAlign.left,
                     style: TextStyle(
@@ -1458,9 +2242,8 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
                   cursor: SystemMouseCursors.click,
                   child: GestureDetector(
                     onTap: () {
-                      setState(() {
-                        _selectedOrder = order;
-                      });
+                      // Show mark as paid confirmation popup
+                      _showMarkAsPaidConfirmation(order);
                     },
                     child: Card(
                       margin: const EdgeInsets.symmetric(
@@ -1480,6 +2263,27 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
                             Row(
                               crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
+                                // Order Number Box
+                                Container(
+                                  width: 80,
+                                  height: fixedBoxHeight,
+                                  decoration: BoxDecoration(
+                                    color: Colors.black,
+                                    borderRadius: BorderRadius.circular(35),
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    '#${order.orderId}',
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                      fontFamily: 'Poppins',
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                                const SizedBox(width: 15),
                                 Expanded(
                                   flex: 4,
                                   child: Container(
@@ -1495,7 +2299,7 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
                                     child: _buildOrderSummaryContent(order),
                                   ),
                                 ),
-                                const SizedBox(width: 20),
+                                const SizedBox(width: 15),
                                 Expanded(
                                   flex: 2,
                                   child: Container(

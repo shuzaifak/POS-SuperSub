@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'providers/sales_report_provider.dart';
 import 'widgets/items_table_widget.dart';
 import 'widgets/paidouts_table_widget.dart';
+import 'widgets/postal_codes_table_widget.dart';
 import 'package:epos/services/uk_time_service.dart';
 
 class SalesReportScreen extends StatefulWidget {
@@ -553,6 +554,28 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
                   ),
                 ),
               ),
+              const SizedBox(width: 12),
+              ElevatedButton(
+                onPressed: provider.toggleShowPostalCodes,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                child: Text(
+                  provider.showPostalCodes ? 'Hide Postal Codes' : 'Show Postal Codes',
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -567,6 +590,12 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
         if (provider.showPaidOuts) ...[
           const SizedBox(height: 20),
           PaidOutsTableWidget(report: provider.getCurrentReport()),
+        ],
+
+        // Show postal codes table when toggled
+        if (provider.showPostalCodes) ...[
+          const SizedBox(height: 20),
+          PostalCodesTableWidget(report: provider.getCurrentReport()),
         ],
       ],
     );

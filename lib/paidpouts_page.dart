@@ -477,7 +477,7 @@ class _PaidOutsPageState extends State<PaidOutsPage> {
                 child: TextField(
                   controller: _labelControllers[index],
                   onChanged: (value) => _updateLabel(index, value),
-                  style: GoogleFonts.poppins(fontSize: 12),
+                  style: GoogleFonts.poppins(fontSize: 13),
                   decoration: InputDecoration(
                     labelText: 'Description',
                     hintText: 'e.g., Supplier Payment',
@@ -511,7 +511,7 @@ class _PaidOutsPageState extends State<PaidOutsPage> {
                       RegExp(r'^\d*\.?\d{0,2}'),
                     ),
                   ],
-                  style: GoogleFonts.poppins(fontSize: 12),
+                  style: GoogleFonts.poppins(fontSize: 13),
                   decoration: InputDecoration(
                     labelText: 'Amount',
                     hintText: '0.00',
@@ -583,7 +583,7 @@ class _PaidOutsPageState extends State<PaidOutsPage> {
                         child: Text(
                           option,
                           style: GoogleFonts.poppins(
-                            fontSize: 10,
+                            fontSize: 12,
                             fontWeight: FontWeight.w500,
                             color:
                                 isSelected

@@ -6,9 +6,9 @@ import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:usb_serial/usb_serial.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:epos/models/cart_item.dart';
+import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:math' as math;
 import 'package:epos/services/uk_time_service.dart';
 
@@ -46,6 +46,12 @@ class ThermalPrinterService {
   // Cash drawer settings
   bool _isDrawerOpeningEnabled = true;
   bool _autoOpenOnCashPayment = true;
+
+  // Helper method to check if a field should be excluded from receipt
+  bool _shouldExcludeField(String? value) {
+    if (value == null || value.isEmpty) return true;
+    return value.trim().toUpperCase() == 'N/A';
+  }
 
   Future<Map<String, bool>> testAllConnections() async {
     print('🧪 Testing all printer connections...');
@@ -261,6 +267,8 @@ class ThermalPrinterService {
     String? city,
     String? postalCode,
     String? paymentType,
+    bool? paidStatus,
+    int? orderId,
     Function(List<String> availableMethods)? onShowMethodSelection,
   }) async {
     if (kIsWeb && !ENABLE_DRAWER_TEST_MODE) {
@@ -304,6 +312,8 @@ class ThermalPrinterService {
       city: city,
       postalCode: postalCode,
       paymentType: paymentType,
+      paidStatus: paidStatus,
+      orderId: orderId,
     );
 
     Future<String> receiptContentFuture = Future.value(
@@ -322,6 +332,8 @@ class ThermalPrinterService {
         city: city,
         postalCode: postalCode,
         paymentType: paymentType,
+        paidStatus: paidStatus,
+        orderId: orderId,
       ),
     );
 
@@ -414,9 +426,9 @@ class ThermalPrinterService {
     }
     if (ENABLE_MOCK_MODE) {
       await Future.delayed(Duration(milliseconds: 1000)); // Simulate print time
-      print('🧪 MOCK: USB printing simulated');
-      print('📄 Receipt data length: ${receiptData.length} bytes');
-      print(
+      debugPrint('🧪 MOCK: USB printing simulated');
+      debugPrint('📄 Receipt data length: ${receiptData.length} bytes');
+      debugPrint(
         '📄 Receipt preview: ${String.fromCharCodes(receiptData.take(100))}...',
       );
       return SIMULATE_PRINTER_SUCCESS;
@@ -448,7 +460,6 @@ class ThermalPrinterService {
     }
   }
 
-  // SUPER OPTIMIZED: Ultra-fast Bluetooth printing
   Future<bool> _printBluetoothSuperFast(String receiptContent) async {
     if (kIsWeb || (!Platform.isAndroid && !Platform.isIOS)) {
       return false;
@@ -472,8 +483,14 @@ class ThermalPrinterService {
         }
       }
 
-      // Generate thermal ticket and print immediately
-      List<int> ticket = await _generateThermalTicket(receiptContent);
+      // Use the ESC/POS formatted data instead of plain text
+      final profile = await CapabilityProfile.load();
+      final generator = Generator(PaperSize.mm80, profile);
+      List<int> ticket = await _convertReceiptContentToESCPOS(
+        receiptContent,
+        generator,
+      );
+
       await PrintBluetoothThermal.writeBytes(ticket);
 
       print('✅ Bluetooth super-fast print successful');
@@ -483,6 +500,142 @@ class ThermalPrinterService {
       await _closeBluetoothConnection();
       return false;
     }
+  }
+
+  Future<List<int>> _convertReceiptContentToESCPOS(
+    String content,
+    Generator generator,
+  ) async {
+    List<int> bytes = [];
+    bytes += generator.setGlobalCodeTable('CP1252');
+
+    List<String> lines = content.split('\n');
+
+    for (String line in lines) {
+      if (line.contains('**') && line.contains('**')) {
+        // Handle ONLY the specific bold elements we want
+        if (line.contains('TVP') && line.trim() == '**TVP**') {
+          // Restaurant name - large and bold
+          bytes += generator.text(
+            'TVP',
+            styles: const PosStyles(
+              align: PosAlign.center,
+              height: PosTextSize.size3,
+              width: PosTextSize.size2,
+              bold: true,
+            ),
+          );
+        } else if (line.contains('Order #:')) {
+          // Order number - bold
+          String orderText = line.replaceAll('**', '');
+          bytes += generator.text(
+            orderText,
+            styles: const PosStyles(
+              height: PosTextSize.size2,
+              width: PosTextSize.size1,
+              bold: true,
+            ),
+          );
+        } else if (line.contains('Order Type:')) {
+          // Order type - bold
+          String orderTypeText = line.replaceAll('**', '');
+          bytes += generator.text(
+            orderTypeText,
+            styles: const PosStyles(bold: true),
+          );
+        } else if (line.contains('Payment Method:')) {
+          // Payment method - bold
+          String paymentText = line.replaceAll('**', '');
+          bytes += generator.text(
+            paymentText,
+            styles: const PosStyles(height: PosTextSize.size1, bold: true),
+          );
+        } else if (line.contains('TOTAL:')) {
+          // Total amount - bold
+          String totalText = line.replaceAll('**', '');
+          if (totalText.contains('£')) {
+            // Split the total line for proper alignment
+            List<String> parts = totalText.split('£');
+            if (parts.length == 2) {
+              bytes += generator.row([
+                PosColumn(
+                  text: parts[0],
+                  width: 9,
+                  styles: const PosStyles(bold: true),
+                ),
+                PosColumn(
+                  text: '£${parts[1].trim()}',
+                  width: 3,
+                  styles: const PosStyles(align: PosAlign.right, bold: true),
+                ),
+              ]);
+            } else {
+              bytes += generator.text(
+                totalText,
+                styles: const PosStyles(bold: true),
+              );
+            }
+          } else {
+            bytes += generator.text(
+              totalText,
+              styles: const PosStyles(bold: true),
+            );
+          }
+        } else if (line.trim().contains('x **') && line.contains('**')) {
+          // Item names - bold (only the item name part)
+          String itemText = line.replaceAll('**', '');
+          bytes += generator.text(
+            itemText,
+            styles: const PosStyles(
+              height: PosTextSize.size1,
+              width: PosTextSize.size1,
+              bold: true,
+            ),
+          );
+        } else if (line.contains('Status: **') &&
+            (line.contains('PAID') || line.contains('UNPAID'))) {
+          // Payment status (PAID/UNPAID) - bold
+          String statusText = line.replaceAll('**', '');
+          bytes += generator.text(
+            statusText,
+            styles: const PosStyles(
+              bold: true,
+              height: PosTextSize.size2,
+              width: PosTextSize.size1,
+            ),
+          );
+        } else {
+          // Remove ** markers but don't make bold (fallback for any other ** text)
+          String plainText = line.replaceAll('**', '');
+          bytes += generator.text(plainText);
+        }
+      } else {
+        // Regular text - no bold formatting
+        if (line.contains('================================================')) {
+          bytes += generator.text(
+            line,
+            styles: const PosStyles(align: PosAlign.center),
+          );
+        } else if (line.contains('Thank you for your order!')) {
+          bytes += generator.text(
+            line,
+            styles: const PosStyles(
+              align: PosAlign.center,
+              height: PosTextSize.size2,
+              width: PosTextSize.size1,
+            ),
+          );
+        } else if (line.trim().isEmpty) {
+          bytes += generator.emptyLines(1);
+        } else {
+          bytes += generator.text(line);
+        }
+      }
+    }
+
+    bytes += generator.emptyLines(2);
+    bytes += generator.cut();
+    return bytes;
   }
 
   Future<bool> validateReceiptGeneration({
@@ -500,6 +653,8 @@ class ThermalPrinterService {
     String? city,
     String? postalCode,
     String? paymentType,
+    bool? paidStatus,
+    int? orderId,
   }) async {
     try {
       // Test receipt content generation
@@ -518,6 +673,8 @@ class ThermalPrinterService {
         city: city,
         postalCode: postalCode,
         paymentType: paymentType,
+        paidStatus: paidStatus,
+        orderId: orderId,
       );
 
       // Test ESC/POS receipt generation
@@ -536,6 +693,8 @@ class ThermalPrinterService {
         city: city,
         postalCode: postalCode,
         paymentType: paymentType,
+        paidStatus: paidStatus,
+        orderId: orderId,
       );
 
       print('✅ Receipt generation validation successful');
@@ -551,34 +710,109 @@ class ThermalPrinterService {
 
   // IMPROVED: Robust USB connection establishment
   Future<bool> _establishUSBConnection(UsbDevice device) async {
-    try {
-      _persistentUsbPort = await device.create();
-      if (_persistentUsbPort == null) return false;
+    print('🔗 USB DEBUGGING: Starting connection establishment...');
+    print('📄 USB DEBUGGING: Target Device Details:');
+    print('   - Name: ${device.deviceName}');
+    print(
+      '   - VID: 0x${device.vid?.toRadixString(16).padLeft(4, '0').toUpperCase()}',
+    );
+    print(
+      '   - PID: 0x${device.pid?.toRadixString(16).padLeft(4, '0').toUpperCase()}',
+    );
+    print('   - Manufacturer: ${device.manufacturerName ?? "Unknown"}');
+    print('   - Product: ${device.productName ?? "Unknown"}');
 
+    try {
+      print('🔧 USB DEBUGGING: Step 1 - Creating USB port...');
+      _persistentUsbPort = await device.create();
+
+      if (_persistentUsbPort == null) {
+        print('❌ USB DEBUGGING: Failed to create USB port!');
+        print('   - This usually means:');
+        print('     • Device is not available');
+        print('     • USB permissions not granted');
+        print('     • Device is being used by another process');
+        print('   - Try: Disconnect and reconnect the USB cable');
+        return false;
+      }
+      print('✅ USB DEBUGGING: USB port created successfully');
+
+      print('🔧 USB DEBUGGING: Step 2 - Opening USB port...');
       bool opened = await _persistentUsbPort!.open();
+
       if (!opened) {
+        print('❌ USB DEBUGGING: Failed to open USB port!');
+        print('   - This usually means:');
+        print('     • Device driver not installed');
+        print('     • USB port is locked by system');
+        print('     • Hardware communication failure');
+        print('   - Try: Installing USB-to-Serial drivers');
+        _persistentUsbPort = null;
+        return false;
+      }
+      print('✅ USB DEBUGGING: USB port opened successfully');
+
+      print('🔧 USB DEBUGGING: Step 3 - Testing baud rates...');
+      // Try different baud rates for better compatibility
+      List<int> baudRates = [9600, 19200, 38400, 57600, 115200];
+      bool connectionSuccessful = false;
+
+      for (int baudRate in baudRates) {
+        try {
+          print('⚡ USB DEBUGGING: Testing baud rate: $baudRate');
+
+          await _persistentUsbPort!.setPortParameters(
+            baudRate,
+            8, // Data bits
+            1, // Stop bits
+            0, // Parity (none)
+          );
+          print('   ✓ Port parameters set successfully');
+
+          print('📤 USB DEBUGGING: Sending initialization command (ESC @)...');
+          // Send initialization command and wait for response
+          await _persistentUsbPort!.write(
+            Uint8List.fromList([0x1B, 0x40]), // ESC @ (initialize)
+          );
+          await Future.delayed(Duration(milliseconds: 200));
+          print('   ✓ Initialization command sent');
+
+          print('📤 USB DEBUGGING: Sending test command (line feed)...');
+          // Try sending a simple command to test connection
+          await _persistentUsbPort!.write(
+            Uint8List.fromList([0x1B, 0x4A, 0x02]), // ESC J n (feed 2 lines)
+          );
+          await Future.delayed(Duration(milliseconds: 100));
+          print('   ✓ Test command sent successfully');
+
+          connectionSuccessful = true;
+          print('✅ USB DEBUGGING: Connection established successfully!');
+          print('   - Working baud rate: $baudRate');
+          print('   - Printer should have responded (check for paper feed)');
+          break;
+        } catch (e) {
+          debugPrint('Baud rate $baudRate failed: $e');
+          continue;
+        }
+      }
+
+      if (!connectionSuccessful) {
+        debugPrint('❌ All baud rates failed, closing connection');
+        await _persistentUsbPort!.close();
         _persistentUsbPort = null;
         return false;
       }
 
-      // Optimal settings for thermal printers
-      await _persistentUsbPort!.setPortParameters(
-        115200, // Higher baud rate for faster printing
-        8,
-        1,
-        0,
-      );
-
-      // Send initialization command
-      await _persistentUsbPort!.write(
-        Uint8List.fromList([0x1B, 0x40]),
-      ); // ESC @
-      await Future.delayed(Duration(milliseconds: 100));
-
-      print('✅ USB persistent connection established with optimal settings');
       return true;
     } catch (e) {
-      print('❌ Failed to establish USB connection: $e');
+      debugPrint('❌ Failed to establish USB connection: $e');
+      if (_persistentUsbPort != null) {
+        try {
+          await _persistentUsbPort!.close();
+        } catch (closeError) {
+          debugPrint('Error closing failed USB connection: $closeError');
+        }
+      }
       _persistentUsbPort = null;
       return false;
     }
@@ -685,6 +919,8 @@ class ThermalPrinterService {
     String? city,
     String? postalCode,
     String? paymentType,
+    bool? paidStatus,
+    int? orderId,
   }) async {
     if (kIsWeb) return false;
 
@@ -710,6 +946,8 @@ class ThermalPrinterService {
       city: city,
       postalCode: postalCode,
       paymentType: paymentType,
+      paidStatus: paidStatus,
+      orderId: orderId,
     );
 
     String receiptContent = _generateReceiptContent(
@@ -727,6 +965,8 @@ class ThermalPrinterService {
       city: city,
       postalCode: postalCode,
       paymentType: paymentType,
+      paidStatus: paidStatus,
+      orderId: orderId,
     );
 
     return await _printWithPreGeneratedData(
@@ -981,18 +1221,108 @@ class ThermalPrinterService {
 
   // Platform-specific helper methods
   Future<bool> _isUSBSerialAvailable() async {
+    print('🔍 USB DEBUGGING: Checking USB Serial availability...');
+
     if (kIsWeb ||
         (!Platform.isAndroid && !Platform.isWindows && !Platform.isLinux)) {
+      print(
+        '❌ USB DEBUGGING: Platform not supported (${Platform.operatingSystem})',
+      );
       return false;
     }
 
     try {
-      await UsbSerial.listDevices();
-      return true;
-    } on MissingPluginException {
+      // Request USB permissions for Android
+      if (Platform.isAndroid) {
+        print('📱 USB DEBUGGING: Requesting Android USB permissions...');
+        await _requestUSBPermissions();
+      }
+
+      print('🔍 USB DEBUGGING: Listing USB devices...');
+      List<UsbDevice> devices = await UsbSerial.listDevices();
+      print('✅ USB DEBUGGING: Found ${devices.length} USB devices');
+
+      if (devices.isEmpty) {
+        print('⚠️ USB DEBUGGING: No USB devices detected!');
+        print('   - Make sure USB printer is connected');
+        print('   - Check USB cable integrity');
+        print('   - Verify printer is powered on');
+        print('   - Try different USB port');
+        return false;
+      }
+
+      // Debug print device details
+      for (int i = 0; i < devices.length; i++) {
+        var device = devices[i];
+        print('📄 USB DEBUGGING: Device $i Details:');
+        print('   - Device Name: ${device.deviceName}');
+        print(
+          '   - VID: 0x${device.vid?.toRadixString(16).padLeft(4, '0').toUpperCase()}',
+        );
+        print(
+          '   - PID: 0x${device.pid?.toRadixString(16).padLeft(4, '0').toUpperCase()}',
+        );
+        print('   - Manufacturer: ${device.manufacturerName ?? "Unknown"}');
+        print('   - Product Name: ${device.productName ?? "Unknown"}');
+        print('   - Serial: ${device.serial ?? "Unknown"}');
+
+        // Check for common thermal printer VID/PIDs
+        _analyzePrinterCompatibility(device);
+      }
+
+      return devices.isNotEmpty;
+    } on MissingPluginException catch (e) {
+      print('❌ USB DEBUGGING: USB Serial plugin not available: $e');
       return false;
     } catch (e) {
+      print('❌ USB DEBUGGING: USB Serial availability check error: $e');
       return false;
+    }
+  }
+
+  // Helper method to analyze if device is likely a thermal printer
+  void _analyzePrinterCompatibility(UsbDevice device) {
+    // Common thermal printer VID/PIDs
+    final Map<int, List<int>> knownPrinters = {
+      0x04b8: [0x0202, 0x0203, 0x0208], // Epson
+      0x04f9: [0x2040, 0x2041, 0x2042], // Brother
+      0x0456: [0x0808, 0x0809], // Star Micronics
+      0x1FC9: [0x2016], // Citizen
+      0x0483: [0x5740], // Various thermal printers
+    };
+
+    bool isKnownPrinter =
+        knownPrinters[device.vid]?.contains(device.pid) ?? false;
+
+    if (isKnownPrinter) {
+      print('✅ USB DEBUGGING: Device appears to be a known thermal printer!');
+    } else {
+      print('⚠️ USB DEBUGGING: Device may not be a thermal printer');
+      print('   - VID/PID not in known thermal printer database');
+      print('   - May still work if it supports ESC/POS commands');
+    }
+  }
+
+  Future<void> _requestUSBPermissions() async {
+    if (kIsWeb || !Platform.isAndroid) return; // Only needed on Android
+
+    try {
+      // For USB OTG access on Android
+      List<Permission> usbPermissions = [
+        Permission.storage,
+        Permission.manageExternalStorage,
+      ];
+
+      Map<Permission, PermissionStatus> statuses =
+          await usbPermissions.request();
+
+      for (var entry in statuses.entries) {
+        if (entry.value != PermissionStatus.granted) {
+          debugPrint('USB Permission ${entry.key} not granted: ${entry.value}');
+        }
+      }
+    } catch (e) {
+      debugPrint('Error requesting USB permissions: $e');
     }
   }
 
@@ -1061,46 +1391,56 @@ class ThermalPrinterService {
     String? city,
     String? postalCode,
     String? paymentType,
+    bool? paidStatus,
+    int? orderId,
   }) {
     StringBuffer receipt = StringBuffer();
 
-    receipt.writeln('================================');
-    receipt.writeln('              TVP');
-    receipt.writeln('================================');
-    receipt.writeln('Date: ${UKTimeService.now().toString().split('.')[0]}');
-    receipt.writeln('Order Type: ${orderType.toUpperCase()}');
-    receipt.writeln('================================');
+    // Use full 80mm paper width (48 characters)
+    receipt.writeln('================================================');
+    receipt.writeln('                    **TVP**'); // Bold restaurant name
+    receipt.writeln('================================================');
+    receipt.writeln(
+      'Date: ${DateFormat('dd/MM/yyyy HH:mm').format(UKTimeService.now())}',
+    );
+    if (orderId != null) {
+      receipt.writeln('**Order #: $orderId**'); // Bold order number
+    }
+    receipt.writeln(
+      '**Order Type: ${orderType.toUpperCase()}**',
+    ); // Bold order type
+    receipt.writeln('================================================');
     receipt.writeln();
 
     // Customer Details Section
-    if (customerName != null && customerName.isNotEmpty) {
+    if (!_shouldExcludeField(customerName)) {
       receipt.writeln('CUSTOMER DETAILS:');
-      receipt.writeln('--------------------------------');
+      receipt.writeln('------------------------------------------------');
       receipt.writeln('Name: $customerName');
 
-      if (phoneNumber != null && phoneNumber.isNotEmpty) {
+      if (!_shouldExcludeField(phoneNumber)) {
         receipt.writeln('Phone: $phoneNumber');
       }
 
       // Address details for delivery orders
       if (orderType.toLowerCase() == 'delivery') {
-        if (streetAddress != null && streetAddress.isNotEmpty) {
+        if (!_shouldExcludeField(streetAddress)) {
           receipt.writeln('Address: $streetAddress');
         }
-        if (city != null && city.isNotEmpty) {
+        if (!_shouldExcludeField(city)) {
           receipt.writeln('City: $city');
         }
-        if (postalCode != null && postalCode.isNotEmpty) {
+        if (!_shouldExcludeField(postalCode)) {
           receipt.writeln('Postcode: $postalCode');
         }
       }
 
-      receipt.writeln('================================');
+      receipt.writeln('================================================');
       receipt.writeln();
     }
 
     receipt.writeln('ITEMS:');
-    receipt.writeln('--------------------------------');
+    receipt.writeln('------------------------------------------------');
 
     for (CartItem item in cartItems) {
       double itemPricePerUnit = 0.0;
@@ -1110,15 +1450,19 @@ class ThermalPrinterService {
       }
       double itemTotal = itemPricePerUnit * item.quantity;
 
-      receipt.writeln('${item.quantity}x ${item.foodItem.name}');
+      receipt.writeln(
+        '${item.quantity}x **${item.foodItem.name}**',
+      ); // Bold item name only
 
       if (item.selectedOptions != null && item.selectedOptions!.isNotEmpty) {
         for (String option in item.selectedOptions!) {
-          receipt.writeln('  + $option');
+          if (!_shouldExcludeField(option)) {
+            receipt.writeln('  + $option');
+          }
         }
       }
 
-      if (item.comment != null && item.comment!.isNotEmpty) {
+      if (!_shouldExcludeField(item.comment)) {
         receipt.writeln('  Note: ${item.comment}');
       }
 
@@ -1126,50 +1470,51 @@ class ThermalPrinterService {
       receipt.writeln();
     }
 
-    receipt.writeln('--------------------------------');
-    receipt.writeln('Subtotal:         £${subtotal.toStringAsFixed(2)}');
-    receipt.writeln('================================');
-    receipt.writeln('TOTAL:            £${totalCharge.toStringAsFixed(2)}');
-    receipt.writeln('================================');
+    receipt.writeln('------------------------------------------------');
+    receipt.writeln(
+      'Subtotal:                     £${subtotal.toStringAsFixed(2)}',
+    );
+    receipt.writeln('================================================');
+    receipt.writeln(
+      '**TOTAL:                      £${totalCharge.toStringAsFixed(2)}**', // Bold total
+    );
+    receipt.writeln('================================================');
 
     // Payment Status Section
     receipt.writeln();
     receipt.writeln('PAYMENT STATUS:');
-    receipt.writeln('--------------------------------');
-    if (paymentType != null && paymentType.isNotEmpty) {
-      receipt.writeln('Payment Method: $paymentType');
+    receipt.writeln('------------------------------------------------');
+    if (!_shouldExcludeField(paymentType)) {
+      receipt.writeln('**Payment Method: $paymentType**'); // Bold payment type
     }
 
-    // Determine if order is paid or unpaid based on payment type and change due
-    String paymentStatus = 'UNPAID';
-    if (paymentType != null && paymentType.toLowerCase() == 'cash') {
-      if (changeDue > 0) {
-        paymentStatus = 'PAID';
+    // Use the actual paid status from payment details
+    String paymentStatus = (paidStatus == true) ? 'PAID' : 'UNPAID';
+
+    // Show payment details based on payment type and status
+    if (paidStatus == true) {
+      if (paymentType != null &&
+          paymentType.toLowerCase() == 'cash' &&
+          changeDue > 0) {
         receipt.writeln(
           'Amount Received:  £${(totalCharge + changeDue).toStringAsFixed(2)}',
         );
         receipt.writeln('Change Due:       £${changeDue.toStringAsFixed(2)}');
-      } else {
-        paymentStatus = 'PAID';
       }
-    } else if (paymentType != null &&
-        (paymentType.toLowerCase().contains('card') ||
-            paymentType.toLowerCase().contains('online') ||
-            paymentType.toLowerCase().contains('paypal'))) {
-      paymentStatus = 'PAID';
     }
 
-    receipt.writeln('Status: $paymentStatus');
-    receipt.writeln('================================');
+    receipt.writeln(
+      'Status: **$paymentStatus**',
+    ); // Bold payment status (PAID/UNPAID)
+    receipt.writeln('================================================');
 
     receipt.writeln();
     receipt.writeln('Thank you for your order!');
-    receipt.writeln('================================');
+    receipt.writeln('================================================');
 
     return receipt.toString();
   }
 
-  // Replace the existing _generateESCPOSReceipt method
   Future<List<int>> _generateESCPOSReceipt({
     required String transactionId,
     required String orderType,
@@ -1185,83 +1530,133 @@ class ThermalPrinterService {
     String? city,
     String? postalCode,
     String? paymentType,
+    bool? paidStatus,
+    int? orderId,
   }) async {
     final profile = await CapabilityProfile.load();
-    final generator = Generator(PaperSize.mm80, profile);
+    final generator = Generator(PaperSize.mm80, profile); // 80mm paper width
     List<int> bytes = [];
 
     bytes += generator.setGlobalCodeTable('CP1252');
+
+    // Bold restaurant name
     bytes += generator.text(
       'TVP',
       styles: const PosStyles(
         align: PosAlign.center,
-        height: PosTextSize.size2,
+        height: PosTextSize.size3,
+        width: PosTextSize.size2,
+        bold: true,
       ),
     );
     bytes += generator.text(
-      '================================',
+      '================================================',
       styles: const PosStyles(align: PosAlign.center),
     );
     bytes += generator.text(
-      'Date: ${UKTimeService.now().toString().split('.')[0]}',
+      'Date: ${DateFormat('dd/MM/yyyy HH:mm').format(UKTimeService.now())}',
     );
-    bytes += generator.text('Order Type: ${orderType.toUpperCase()}');
+
+    // Bold order number
+    if (orderId != null) {
+      bytes += generator.text(
+        'Order #: $orderId',
+        styles: const PosStyles(
+          height: PosTextSize.size2,
+          width: PosTextSize.size1,
+          bold: true,
+        ),
+      );
+    }
+
+    // Bold order type
     bytes += generator.text(
-      '================================',
+      'Order Type: ${orderType.toUpperCase()}',
+      styles: const PosStyles(bold: true),
+    );
+    bytes += generator.text(
+      '================================================',
       styles: const PosStyles(align: PosAlign.center),
     );
     bytes += generator.emptyLines(1);
 
-    // Customer Details Section
-    if (customerName != null && customerName.isNotEmpty) {
+    // Customer Details Section - NOT BOLD
+    if (!_shouldExcludeField(customerName)) {
       bytes += generator.text(
         'CUSTOMER DETAILS:',
-        styles: const PosStyles(bold: true, height: PosTextSize.size2),
+        styles: const PosStyles(
+          height: PosTextSize.size3,
+          width: PosTextSize.size2,
+        ),
       );
-      bytes += generator.text('--------------------------------');
+      bytes += generator.text(
+        '------------------------------------------------',
+      );
       bytes += generator.text(
         'Name: $customerName',
-        styles: const PosStyles(height: PosTextSize.size2),
+        styles: const PosStyles(
+          height: PosTextSize.size2,
+          width: PosTextSize.size1,
+        ),
       );
 
-      if (phoneNumber != null && phoneNumber.isNotEmpty) {
+      if (!_shouldExcludeField(phoneNumber)) {
         bytes += generator.text(
           'Phone: $phoneNumber',
-          styles: const PosStyles(height: PosTextSize.size2),
+          styles: const PosStyles(
+            height: PosTextSize.size2,
+            width: PosTextSize.size1,
+          ),
         );
       }
 
       // Address details for delivery orders
       if (orderType.toLowerCase() == 'delivery') {
-        if (streetAddress != null && streetAddress.isNotEmpty) {
+        if (!_shouldExcludeField(streetAddress)) {
           bytes += generator.text(
             'Address: $streetAddress',
-            styles: const PosStyles(height: PosTextSize.size2),
+            styles: const PosStyles(
+              height: PosTextSize.size2,
+              width: PosTextSize.size1,
+            ),
           );
         }
-        if (city != null && city.isNotEmpty) {
+        if (!_shouldExcludeField(city)) {
           bytes += generator.text(
             'City: $city',
-            styles: const PosStyles(height: PosTextSize.size2),
+            styles: const PosStyles(
+              height: PosTextSize.size2,
+              width: PosTextSize.size1,
+            ),
           );
         }
-        if (postalCode != null && postalCode.isNotEmpty) {
+        if (!_shouldExcludeField(postalCode)) {
           bytes += generator.text(
             'Postcode: $postalCode',
-            styles: const PosStyles(height: PosTextSize.size2),
+            styles: const PosStyles(
+              height: PosTextSize.size2,
+              width: PosTextSize.size1,
+            ),
           );
         }
       }
 
       bytes += generator.text(
-        '================================',
+        '================================================',
         styles: const PosStyles(align: PosAlign.center),
       );
       bytes += generator.emptyLines(1);
     }
 
-    bytes += generator.text('ITEMS:', styles: const PosStyles(bold: true));
-    bytes += generator.text('--------------------------------');
+    // ITEMS section - NOT BOLD
+    bytes += generator.text(
+      'ITEMS:',
+      styles: const PosStyles(
+        height: PosTextSize.size2,
+        width: PosTextSize.size1,
+      ),
+    );
+    bytes += generator.text('------------------------------------------------');
 
     for (CartItem item in cartItems) {
       double itemPricePerUnit = 0.0;
@@ -1271,110 +1666,162 @@ class ThermalPrinterService {
       }
       double itemTotal = itemPricePerUnit * item.quantity;
 
-      bytes += generator.text('${item.quantity}x ${item.foodItem.name}');
+      // Bold item name ONLY
+      bytes += generator.text(
+        '${item.quantity}x ${item.foodItem.name}',
+        styles: const PosStyles(
+          height: PosTextSize.size1,
+          width: PosTextSize.size1,
+          bold: true,
+        ),
+      );
 
       if (item.selectedOptions != null && item.selectedOptions!.isNotEmpty) {
         for (String option in item.selectedOptions!) {
-          bytes += generator.text('  + $option');
+          if (!_shouldExcludeField(option)) {
+            bytes += generator.text('  + $option');
+          }
         }
       }
 
-      if (item.comment != null && item.comment!.isNotEmpty) {
+      if (!_shouldExcludeField(item.comment)) {
         bytes += generator.text('  Note: ${item.comment}');
       }
 
       bytes += generator.text(
         '  £${itemTotal.toStringAsFixed(2)}',
-        styles: const PosStyles(align: PosAlign.right),
+        styles: const PosStyles(
+          align: PosAlign.right,
+          height: PosTextSize.size1,
+          width: PosTextSize.size1,
+        ),
       );
       bytes += generator.emptyLines(1);
     }
 
-    bytes += generator.text('--------------------------------');
+    bytes += generator.text('------------------------------------------------');
     bytes += generator.row([
-      PosColumn(text: 'Subtotal:', width: 8),
+      PosColumn(text: 'Subtotal:', width: 9),
       PosColumn(
         text: '£${subtotal.toStringAsFixed(2)}',
-        width: 4,
+        width: 3,
         styles: const PosStyles(align: PosAlign.right),
       ),
     ]);
     bytes += generator.text(
-      '================================',
+      '================================================',
       styles: const PosStyles(align: PosAlign.center),
     );
+
+    // Bold total amount
     bytes += generator.row([
-      PosColumn(text: 'TOTAL:', width: 8, styles: const PosStyles(bold: true)),
+      PosColumn(text: 'TOTAL:', width: 9, styles: const PosStyles(bold: true)),
       PosColumn(
         text: '£${totalCharge.toStringAsFixed(2)}',
-        width: 4,
+        width: 3,
         styles: const PosStyles(align: PosAlign.right, bold: true),
       ),
     ]);
     bytes += generator.text(
-      '================================',
+      '================================================',
       styles: const PosStyles(align: PosAlign.center),
     );
 
-    // Payment Status Section
+    // Payment Status Section - NOT BOLD except specific elements
     bytes += generator.emptyLines(1);
     bytes += generator.text(
       'PAYMENT STATUS:',
-      styles: const PosStyles(bold: true),
+      styles: const PosStyles(
+        height: PosTextSize.size2,
+        width: PosTextSize.size1,
+      ),
     );
-    bytes += generator.text('--------------------------------');
+    bytes += generator.text('------------------------------------------------');
 
-    if (paymentType != null && paymentType.isNotEmpty) {
-      bytes += generator.text('Payment Method: $paymentType');
+    // Bold payment method
+    if (!_shouldExcludeField(paymentType)) {
+      bytes += generator.text(
+        'Payment Method: $paymentType',
+        styles: const PosStyles(height: PosTextSize.size1, bold: true),
+      );
     }
 
-    // Determine if order is paid or unpaid based on payment type and change due
+    // Determine payment status based on payment method
     String paymentStatus = 'UNPAID';
-    if (paymentType != null && paymentType.toLowerCase() == 'cash') {
-      if (changeDue > 0) {
+
+    if (paymentType != null) {
+      final paymentTypeLower = paymentType.toLowerCase();
+
+      // For website orders: Card = PAID, COD/Cash = UNPAID
+      // For EPOS orders: Use existing logic
+      if (paymentTypeLower.contains('card') ||
+          paymentTypeLower.contains('online') ||
+          paymentTypeLower.contains('paypal')) {
         paymentStatus = 'PAID';
-        bytes += generator.row([
-          PosColumn(text: 'Amount Received:', width: 8),
-          PosColumn(
-            text: '£${(totalCharge + changeDue).toStringAsFixed(2)}',
-            width: 4,
-            styles: const PosStyles(align: PosAlign.right),
-          ),
-        ]);
-        bytes += generator.row([
-          PosColumn(text: 'Change Due:', width: 8),
-          PosColumn(
-            text: '£${changeDue.toStringAsFixed(2)}',
-            width: 4,
-            styles: const PosStyles(align: PosAlign.right),
-          ),
-        ]);
+      } else if (paymentTypeLower == 'cash' ||
+          paymentTypeLower.contains('cod')) {
+        // Cash/COD orders are UNPAID unless it's EPOS cash with change due
+        if (paymentTypeLower == 'cash' && changeDue > 0) {
+          // EPOS cash order with change due - it's been paid
+          paymentStatus = 'PAID';
+        } else {
+          // Website COD or EPOS cash without change - unpaid
+          paymentStatus = 'UNPAID';
+        }
       } else {
+        // Default to PAID for other payment methods
         paymentStatus = 'PAID';
       }
-    } else if (paymentType != null &&
-        (paymentType.toLowerCase().contains('card') ||
-            paymentType.toLowerCase().contains('online') ||
-            paymentType.toLowerCase().contains('paypal'))) {
-      paymentStatus = 'PAID';
     }
 
+    // Show payment details for paid orders
+    if (paymentStatus == 'PAID' &&
+        paymentType != null &&
+        paymentType.toLowerCase() == 'cash' &&
+        changeDue > 0) {
+      bytes += generator.row([
+        PosColumn(text: 'Amount Received:', width: 9),
+        PosColumn(
+          text: '£${(totalCharge + changeDue).toStringAsFixed(2)}',
+          width: 3,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+      bytes += generator.row([
+        PosColumn(text: 'Change Due:', width: 9),
+        PosColumn(
+          text: '£${changeDue.toStringAsFixed(2)}',
+          width: 3,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+    }
+
+    // Bold payment status (PAID/UNPAID)
     bytes += generator.text(
       'Status: $paymentStatus',
-      styles: const PosStyles(bold: true),
+      styles: const PosStyles(
+        bold: true,
+        height: PosTextSize.size2,
+        width: PosTextSize.size1,
+      ),
     );
     bytes += generator.text(
-      '================================',
+      '================================================',
       styles: const PosStyles(align: PosAlign.center),
     );
 
     bytes += generator.emptyLines(1);
     bytes += generator.text(
       'Thank you for your order!',
-      styles: const PosStyles(align: PosAlign.center),
+      styles: const PosStyles(
+        align: PosAlign.center,
+        height: PosTextSize.size2,
+        width: PosTextSize.size1,
+      ),
     );
     bytes += generator.text(
-      '================================',
+      '================================================',
       styles: const PosStyles(align: PosAlign.center),
     );
 
@@ -1670,7 +2117,7 @@ class ThermalPrinterService {
     );
     report.writeln('Period: $periodText');
     report.writeln(
-      'Generated: ${UKTimeService.now().toString().split('.')[0]}',
+      'Generated: ${DateFormat('dd/MM/yyyy HH:mm').format(UKTimeService.now())}',
     );
     report.writeln('================================');
     report.writeln();
@@ -1816,7 +2263,10 @@ class ThermalPrinterService {
     int? selectedMonth,
   }) async {
     final profile = await CapabilityProfile.load();
-    final generator = Generator(PaperSize.mm80, profile); // 80mm paper
+    final generator = Generator(
+      PaperSize.mm80,
+      profile,
+    ); // 80mm paper width // 80mm paper
     List<int> bytes = [];
 
     bytes += generator.setGlobalCodeTable('CP1252');
@@ -1826,12 +2276,13 @@ class ThermalPrinterService {
       'TVP',
       styles: const PosStyles(
         align: PosAlign.center,
-        height: PosTextSize.size2,
+        height: PosTextSize.size3,
+        width: PosTextSize.size2,
         bold: true,
       ),
     );
     bytes += generator.text(
-      '================================',
+      '================================================',
       styles: const PosStyles(align: PosAlign.center),
     );
     bytes += generator.emptyLines(1);
@@ -1842,10 +2293,11 @@ class ThermalPrinterService {
       styles: const PosStyles(
         align: PosAlign.center,
         bold: true,
-        height: PosTextSize.size1,
+        height: PosTextSize.size2,
+        width: PosTextSize.size1,
       ),
     );
-    bytes += generator.text('--------------------------------');
+    bytes += generator.text('------------------------------------------------');
 
     // Period information
     String periodText = _getPeriodText(
@@ -1858,10 +2310,10 @@ class ThermalPrinterService {
     );
     bytes += generator.text('Period: $periodText');
     bytes += generator.text(
-      'Generated: ${UKTimeService.now().toString().split('.')[0]}',
+      'Generated: ${DateFormat('dd/MM/yyyy HH:mm').format(UKTimeService.now())}',
     );
     bytes += generator.text(
-      '================================',
+      '================================================',
       styles: const PosStyles(align: PosAlign.center),
     );
     bytes += generator.emptyLines(1);
@@ -1874,7 +2326,9 @@ class ThermalPrinterService {
         'APPLIED FILTERS:',
         styles: const PosStyles(bold: true),
       );
-      bytes += generator.text('--------------------------------');
+      bytes += generator.text(
+        '------------------------------------------------',
+      );
       if (filters['source'] != 'All')
         bytes += generator.text('Source: ${filters['source']}');
       if (filters['payment'] != 'All')
@@ -1882,24 +2336,31 @@ class ThermalPrinterService {
       if (filters['orderType'] != 'All')
         bytes += generator.text('Order Type: ${filters['orderType']}');
       bytes += generator.text(
-        '================================',
+        '================================================',
         styles: const PosStyles(align: PosAlign.center),
       );
       bytes += generator.emptyLines(1);
     }
 
     // Summary Section
-    bytes += generator.text('SUMMARY:', styles: const PosStyles(bold: true));
-    bytes += generator.text('--------------------------------');
+    bytes += generator.text(
+      'SUMMARY:',
+      styles: const PosStyles(
+        bold: true,
+        height: PosTextSize.size2,
+        width: PosTextSize.size1,
+      ),
+    );
+    bytes += generator.text('------------------------------------------------');
 
     // Total Sales Amount
     final totalSales =
         reportData['total_sales'] ?? reportData['total_sales_amount'];
     bytes += generator.row([
-      PosColumn(text: 'Total Sales:', width: 7),
+      PosColumn(text: 'Total Sales:', width: 9),
       PosColumn(
         text: _formatCurrency(totalSales),
-        width: 5,
+        width: 3,
         styles: const PosStyles(align: PosAlign.right, bold: true),
       ),
     ]);
@@ -1907,10 +2368,10 @@ class ThermalPrinterService {
     // Total Orders Placed
     if (reportData['total_orders_placed'] != null) {
       bytes += generator.row([
-        PosColumn(text: 'Total Orders:', width: 7),
+        PosColumn(text: 'Total Orders:', width: 9),
         PosColumn(
           text: '${reportData['total_orders_placed']}',
-          width: 5,
+          width: 3,
           styles: const PosStyles(align: PosAlign.right),
         ),
       ]);
@@ -1924,11 +2385,11 @@ class ThermalPrinterService {
       bytes += generator.row([
         PosColumn(
           text: 'Sales ${isPositive ? 'Increase' : 'Decrease'}:',
-          width: 7,
+          width: 9,
         ),
         PosColumn(
           text: '${isPositive ? '+' : ''}${_formatCurrency(salesIncrease)}',
-          width: 5,
+          width: 3,
           styles: const PosStyles(align: PosAlign.right),
         ),
       ]);
@@ -1952,7 +2413,7 @@ class ThermalPrinterService {
     }
 
     bytes += generator.text(
-      '================================',
+      '================================================',
       styles: const PosStyles(align: PosAlign.center),
     );
     bytes += generator.emptyLines(1);
@@ -1962,9 +2423,15 @@ class ThermalPrinterService {
     if (paymentTypes != null && paymentTypes.isNotEmpty) {
       bytes += generator.text(
         'SALES BY PAYMENT METHOD:',
-        styles: const PosStyles(bold: true),
+        styles: const PosStyles(
+          bold: true,
+          height: PosTextSize.size2,
+          width: PosTextSize.size1,
+        ),
       );
-      bytes += generator.text('--------------------------------');
+      bytes += generator.text(
+        '------------------------------------------------',
+      );
       for (var payment in paymentTypes) {
         if (payment is Map) {
           final type =
@@ -1976,18 +2443,18 @@ class ThermalPrinterService {
             styles: const PosStyles(bold: true),
           );
           bytes += generator.row([
-            PosColumn(text: '  Orders:', width: 6),
+            PosColumn(text: '  Orders:', width: 9),
             PosColumn(
               text: count,
-              width: 6,
+              width: 3,
               styles: const PosStyles(align: PosAlign.right),
             ),
           ]);
           bytes += generator.row([
-            PosColumn(text: '  Amount:', width: 6),
+            PosColumn(text: '  Amount:', width: 9),
             PosColumn(
               text: total,
-              width: 6,
+              width: 3,
               styles: const PosStyles(align: PosAlign.right),
             ),
           ]);
@@ -1995,7 +2462,7 @@ class ThermalPrinterService {
         }
       }
       bytes += generator.text(
-        '================================',
+        '================================================',
         styles: const PosStyles(align: PosAlign.center),
       );
       bytes += generator.emptyLines(1);
@@ -2006,9 +2473,15 @@ class ThermalPrinterService {
     if (orderTypes != null && orderTypes.isNotEmpty) {
       bytes += generator.text(
         'SALES BY ORDER TYPE:',
-        styles: const PosStyles(bold: true),
+        styles: const PosStyles(
+          bold: true,
+          height: PosTextSize.size2,
+          width: PosTextSize.size1,
+        ),
       );
-      bytes += generator.text('--------------------------------');
+      bytes += generator.text(
+        '------------------------------------------------',
+      );
       for (var orderType in orderTypes) {
         if (orderType is Map) {
           final type =
@@ -2020,18 +2493,18 @@ class ThermalPrinterService {
             styles: const PosStyles(bold: true),
           );
           bytes += generator.row([
-            PosColumn(text: '  Orders:', width: 6),
+            PosColumn(text: '  Orders:', width: 9),
             PosColumn(
               text: count,
-              width: 6,
+              width: 3,
               styles: const PosStyles(align: PosAlign.right),
             ),
           ]);
           bytes += generator.row([
-            PosColumn(text: '  Amount:', width: 6),
+            PosColumn(text: '  Amount:', width: 9),
             PosColumn(
               text: total,
-              width: 6,
+              width: 3,
               styles: const PosStyles(align: PosAlign.right),
             ),
           ]);
@@ -2039,7 +2512,7 @@ class ThermalPrinterService {
         }
       }
       bytes += generator.text(
-        '================================',
+        '================================================',
         styles: const PosStyles(align: PosAlign.center),
       );
       bytes += generator.emptyLines(1);
@@ -2050,9 +2523,15 @@ class ThermalPrinterService {
     if (orderSources != null && orderSources.isNotEmpty) {
       bytes += generator.text(
         'SALES BY ORDER SOURCE:',
-        styles: const PosStyles(bold: true),
+        styles: const PosStyles(
+          bold: true,
+          height: PosTextSize.size2,
+          width: PosTextSize.size1,
+        ),
       );
-      bytes += generator.text('--------------------------------');
+      bytes += generator.text(
+        '------------------------------------------------',
+      );
       for (var source in orderSources) {
         if (source is Map) {
           final sourceName =
@@ -2064,18 +2543,18 @@ class ThermalPrinterService {
             styles: const PosStyles(bold: true),
           );
           bytes += generator.row([
-            PosColumn(text: '  Orders:', width: 6),
+            PosColumn(text: '  Orders:', width: 9),
             PosColumn(
               text: count,
-              width: 6,
+              width: 3,
               styles: const PosStyles(align: PosAlign.right),
             ),
           ]);
           bytes += generator.row([
-            PosColumn(text: '  Amount:', width: 6),
+            PosColumn(text: '  Amount:', width: 9),
             PosColumn(
               text: total,
-              width: 6,
+              width: 3,
               styles: const PosStyles(align: PosAlign.right),
             ),
           ]);
@@ -2083,7 +2562,7 @@ class ThermalPrinterService {
         }
       }
       bytes += generator.text(
-        '================================',
+        '================================================',
         styles: const PosStyles(align: PosAlign.center),
       );
       bytes += generator.emptyLines(1);
@@ -2095,7 +2574,7 @@ class ThermalPrinterService {
       styles: const PosStyles(align: PosAlign.center, bold: true),
     );
     bytes += generator.text(
-      '================================',
+      '================================================',
       styles: const PosStyles(align: PosAlign.center),
     );
 
@@ -2116,10 +2595,10 @@ class ThermalPrinterService {
   ) {
     switch (reportType) {
       case "Today's Report":
-        return DateFormat('yyyy-MM-dd').format(UKTimeService.now());
+        return DateFormat('dd/MM/yyyy').format(UKTimeService.now());
       case 'Daily Report':
         return selectedDate ??
-            DateFormat('yyyy-MM-dd').format(UKTimeService.now());
+            DateFormat('dd/MM/yyyy').format(UKTimeService.now());
       case 'Weekly Report':
         return 'Year: ${selectedYear ?? DateTime.now().year}, Week: ${selectedWeek ?? _getWeekNumber(UKTimeService.now())}';
       case 'Monthly Report':
@@ -2141,13 +2620,13 @@ class ThermalPrinterService {
         return 'Year: ${selectedYear ?? DateTime.now().year}, Month: $monthName';
       case 'Drivers Report':
         return selectedDate ??
-            DateFormat('yyyy-MM-dd').format(UKTimeService.now());
+            DateFormat('dd/MM/yyyy').format(UKTimeService.now());
       default:
         final period = reportData['period'];
         if (period != null && period is Map) {
           return '${period['from']} ~ ${period['to']}';
         }
-        return DateFormat('yyyy-MM-dd').format(UKTimeService.now());
+        return DateFormat('dd/MM/yyyy').format(UKTimeService.now());
     }
   }
 

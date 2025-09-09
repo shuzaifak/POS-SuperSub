@@ -39,8 +39,8 @@ class FoodItem {
 
     return FoodItem(
       id: (json['id'] ?? json['item_id']) as int,
-      name: (json['title'] as String?) ?? '',
-      category: (json['Type'] as String?) ?? '',
+      name: (json['title'] as String?) ?? (json['item_name'] as String?) ?? '',
+      category: (json['type'] as String?) ?? (json['Type'] as String?) ?? '',
       price: priceMap,
       image: (json['image'] as String?) ?? '',
       description: json['description'] as String?,
