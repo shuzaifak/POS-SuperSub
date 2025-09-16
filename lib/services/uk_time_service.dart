@@ -22,12 +22,19 @@ class UKTimeService {
       initializeTimeZones();
     }
 
-    // Get current UTC time and convert to UK time zone
-    final utcNow = DateTime.now().toUtc();
-    final ukTime = tz.TZDateTime.from(utcNow, _london);
+    // Get UK time directly from timezone
+    final ukTime = tz.TZDateTime.now(_london);
 
-    // Convert back to DateTime object for compatibility
-    return DateTime.parse(ukTime.toIso8601String());
+    // Convert to DateTime object for compatibility
+    return DateTime(
+      ukTime.year,
+      ukTime.month,
+      ukTime.day,
+      ukTime.hour,
+      ukTime.minute,
+      ukTime.second,
+      ukTime.millisecond,
+    );
   }
 
   // Alternative method: Get UK time directly from timezone

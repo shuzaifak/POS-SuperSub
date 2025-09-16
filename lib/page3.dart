@@ -1,5 +1,6 @@
 // lib/page3.dart
 
+// import 'dart:io';
 import 'package:flutter/material.dart';
 import 'models/food_item.dart';
 import 'package:epos/active_orders_list.dart';
@@ -73,7 +74,7 @@ class _Page3State extends State<Page3> {
       if (mounted) {
         CustomPopupService.show(
           context,
-          '❌ Error opening cash drawer',
+          '❌ Cash drawer error: $e',
           type: PopupType.failure,
         );
       }
@@ -90,7 +91,110 @@ class _Page3State extends State<Page3> {
     Navigator.pushNamed(context, '/paidouts');
   }
 
-  // // Test USB printer functionality
+  // // Comprehensive USB diagnostics for troubleshooting
+  // Future<void> _diagnoseUSBIssues() async {
+  //   try {
+  //     // Show loading dialog
+  //     if (mounted) {
+  //       CustomPopupService.show(
+  //         context,
+  //         '🔍 Running USB diagnostics...',
+  //         type: PopupType.success,
+  //       );
+  //     }
+
+  //     ThermalPrinterService printer = ThermalPrinterService();
+
+  //     // Simple USB connection test first
+  //     Map<String, bool> connections = await printer.testAllConnections();
+
+  //     // Build basic diagnostic report
+  //     Map<String, dynamic> diagnosis = {
+  //       'usb_available': connections['usb'] ?? false,
+  //       'bluetooth_available': connections['bluetooth'] ?? false,
+  //       'platform_supported':
+  //           Platform.isAndroid || Platform.isWindows || Platform.isLinux,
+  //     };
+
+  //     // Build diagnostic report
+  //     String report = '📊 USB Diagnostic Report:\n\n';
+
+  //     // Platform support
+  //     report +=
+  //         '🖥️ Platform: ${diagnosis['platform_supported'] ? '✅ Supported' : '❌ Not Supported'}\n';
+
+  //     // USB Connection
+  //     report +=
+  //         '🔌 USB Printer: ${diagnosis['usb_available'] ? '✅ Detected' : '❌ Not Found'}\n';
+
+  //     // Bluetooth Connection
+  //     report +=
+  //         '📡 Bluetooth: ${diagnosis['bluetooth_available'] ? '✅ Available' : '❌ Not Available'}\n\n';
+
+  //     // Provide recommendations based on results
+  //     if (!diagnosis['usb_available']) {
+  //       report += '💡 USB Troubleshooting:\n';
+  //       report += '• Ensure USB printer is connected and powered ON\n';
+  //       report += '• Check USB cable integrity\n';
+  //       report += '• Try a different USB port\n';
+  //       report += '• For Android: Enable USB debugging in Developer Options\n';
+  //       report += '• For Android: Grant USB permissions when prompted\n';
+  //       report += '• Restart the printer and try again\n\n';
+  //     }
+
+  //     if (!diagnosis['platform_supported']) {
+  //       report += '⚠️ Platform not supported for USB printing\n';
+  //       report += '💡 Use Bluetooth printing instead\n\n';
+  //     }
+
+  //     if (diagnosis['usb_available']) {
+  //       report += '✅ USB printer detected! You should be able to:\n';
+  //       report += '• Print receipts via USB\n';
+  //       report += '• Open cash drawer (if connected to printer)\n\n';
+  //       report += '🖨️ For Xprinter models:\n';
+  //       report += '• XP-58, XP-80, XP-365 series are well supported\n';
+  //       report += '• Uses ESC/POS commands for printing\n';
+  //       report += '• Cash drawer connects to printer RJ11/RJ12 port\n';
+  //     }
+
+  //     // Show comprehensive diagnostic results
+  //     if (mounted) {
+  //       showDialog(
+  //         context: context,
+  //         builder: (BuildContext context) {
+  //           return AlertDialog(
+  //             title: Text('🔍 USB Diagnostic Results'),
+  //             content: SingleChildScrollView(
+  //               child: Text(
+  //                 report,
+  //                 style: TextStyle(fontFamily: 'monospace', fontSize: 12),
+  //               ),
+  //             ),
+  //             actions: [
+  //               TextButton(
+  //                 onPressed: () {
+  //                   Navigator.of(context).pop();
+  //                 },
+  //                 child: Text('Close'),
+  //               ),
+  //             ],
+  //           );
+  //         },
+  //       );
+  //     }
+  //   } catch (e) {
+  //     print('Error during USB diagnosis: $e');
+  //     if (mounted) {
+  //       CustomPopupService.show(
+  //         context,
+  //         '❌ USB diagnostic failed: $e',
+  //         type: PopupType.failure,
+  //       );
+  //     }
+  //   }
+  // }
+
+  // // // Test USB printer functionality
   // Future<void> _testUSBPrinter() async {
   //   print('\n🧪 MANUAL USB PRINTER TEST INITIATED');
   //   print('=' * 50);
@@ -305,7 +409,37 @@ class _Page3State extends State<Page3> {
       left: 20,
       child: Column(
         children: [
-          // // USB TEST BUTTON - For testing USB printer functionality
+          // USB DIAGNOSTIC BUTTON - For troubleshooting USB printer issues
+          // GestureDetector(
+          //   onTap: _diagnoseUSBIssues,
+          //   child: Container(
+          //     width: 170,
+          //     height: 45,
+          //     margin: const EdgeInsets.only(bottom: 10),
+          //     decoration: BoxDecoration(
+          //       color: const Color(0xFFE3F2FD), // Light blue for diagnostics
+          //       borderRadius: BorderRadius.circular(25),
+          //       boxShadow: [
+          //         BoxShadow(
+          //           color: Colors.black26,
+          //           blurRadius: 4,
+          //           offset: Offset(0, 2),
+          //         ),
+          //       ],
+          //     ),
+          //     child: Center(
+          //       child: Text(
+          //         '🔍 USB Diagnostics',
+          //         style: TextStyle(
+          //           color: Colors.blue[800],
+          //           fontWeight: FontWeight.bold,
+          //           fontSize: 14,
+          //         ),
+          //       ),
+          //     ),
+          //   ),
+          // ),
+          // // OLD USB TEST BUTTON - For testing USB printer functionality
           // GestureDetector(
           //   onTap: _testUSBPrinter,
           //   child: Container(

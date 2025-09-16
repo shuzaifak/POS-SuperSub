@@ -41,6 +41,23 @@ class DynamicOrderListScreen extends StatefulWidget {
 
 class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
     with WidgetsBindingObserver {
+  // Helper method to check if an option should be excluded (same logic as thermal printer)
+  bool _shouldExcludeOption(String? value) {
+    if (value == null || value.isEmpty) return true;
+
+    final trimmedValue = value.trim().toUpperCase();
+
+    // Exclude N/A values
+    if (trimmedValue == 'N/A') return true;
+
+    // Exclude default pizza options (case insensitive)
+    if (trimmedValue == 'BASE: TOMATO' || trimmedValue == 'CRUST: NORMAL') {
+      return true;
+    }
+
+    return false;
+  }
+
   List<Order> activeOrders = [];
   List<Order> completedOrders = [];
   Order? _selectedOrder;
@@ -780,12 +797,18 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
           return 'Ready'; // Show Mark Ready for pending delivery orders
         case 'ready':
         case 'green':
+          // ORIGINAL DRIVER RESTRICTION LOGIC (COMMENTED OUT):
           // For delivery orders that are ready
+          /*
           if (order.driverId != null && order.driverId! > 0) {
             return 'Complete'; // Driver assigned, can mark complete
           } else {
             return 'On Its Way'; // Waiting for driver assignment, show next visual step
           }
+          */
+
+          // NEW LOGIC: Always allow completion regardless of driver assignment
+          return 'Complete';
         default:
           return 'Ready';
       }
@@ -1032,12 +1055,16 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
       } else if (lowerOption.startsWith('comment:') ||
           lowerOption.startsWith('note:') ||
           lowerOption.startsWith('notes:') ||
+          lowerOption.startsWith('review note:') ||
           lowerOption.startsWith('special instructions:')) {
         String commentValue = '';
         if (lowerOption.startsWith('comment:')) {
           commentValue = option.substring('comment:'.length).trim();
-        } else if (lowerOption.startsWith('note:')) {
-          commentValue = option.substring('note:'.length).trim();
+        } else if (lowerOption.startsWith('note:') ||
+            lowerOption.startsWith('review note:')) {
+          String prefix =
+              lowerOption.startsWith('review note:') ? 'review note:' : 'note:';
+          commentValue = option.substring(prefix.length).trim();
         } else if (lowerOption.startsWith('notes:')) {
           commentValue = option.substring('notes:'.length).trim();
         } else if (lowerOption.startsWith('special instructions:')) {
@@ -1145,138 +1172,138 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
     return result;
   }
 
-  Future<void> _showReceiptDialog(
-    Order order,
-    List<CartItem> cartItems,
-    double subtotal,
-  ) async {
-    String receiptContent = _generateReceiptContent(order, cartItems, subtotal);
+  // Future<void> _showReceiptDialog(
+  //   Order order,
+  //   List<CartItem> cartItems,
+  //   double subtotal,
+  // ) async {
+  //   String receiptContent = _generateReceiptContent(order, cartItems, subtotal);
 
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return Dialog(
-          child: Container(
-            width: 400,
-            height: 600,
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Receipt Preview',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
-                  ],
-                ),
-                const Divider(),
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[100],
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        receiptContent,
-                        style: const TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
+  //   showDialog(
+  //     context: context,
+  //     builder: (BuildContext context) {
+  //       return Dialog(
+  //         child: Container(
+  //           width: 400,
+  //           height: 600,
+  //           padding: const EdgeInsets.all(16),
+  //           child: Column(
+  //             children: [
+  //               Row(
+  //                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  //                 children: [
+  //                   const Text(
+  //                     'Receipt Preview',
+  //                     style: TextStyle(
+  //                       fontSize: 18,
+  //                       fontWeight: FontWeight.bold,
+  //                     ),
+  //                   ),
+  //                   IconButton(
+  //                     icon: const Icon(Icons.close),
+  //                     onPressed: () => Navigator.of(context).pop(),
+  //                   ),
+  //                 ],
+  //               ),
+  //               const Divider(),
+  //               Expanded(
+  //                 child: SingleChildScrollView(
+  //                   child: Container(
+  //                     padding: const EdgeInsets.all(12),
+  //                     decoration: BoxDecoration(
+  //                       color: Colors.grey[100],
+  //                       borderRadius: BorderRadius.circular(8),
+  //                     ),
+  //                     child: Text(
+  //                       receiptContent,
+  //                       style: const TextStyle(
+  //                         fontFamily: 'monospace',
+  //                         fontSize: 12,
+  //                       ),
+  //                     ),
+  //                   ),
+  //                 ),
+  //               ),
+  //             ],
+  //           ),
+  //         ),
+  //       );
+  //     },
+  //   );
+  // }
 
-  String _generateReceiptContent(
-    Order order,
-    List<CartItem> cartItems,
-    double subtotal,
-  ) {
-    StringBuffer content = StringBuffer();
-    content.writeln('================================================');
-    content.writeln('                RECEIPT PREVIEW                ');
-    content.writeln('================================================');
-    content.writeln('Order ID: ${order.orderId}');
-    content.writeln('Order Type: ${order.orderType}');
-    content.writeln('Date: ${DateTime.now().toString().split('.')[0]}');
-    content.writeln('------------------------------------------------');
+  // String _generateReceiptContent(
+  //   Order order,
+  //   List<CartItem> cartItems,
+  //   double subtotal,
+  // ) {
+  //   StringBuffer content = StringBuffer();
+  //   content.writeln('================================================');
+  //   content.writeln('                RECEIPT PREVIEW                ');
+  //   content.writeln('================================================');
+  //   content.writeln('Order ID: ${order.orderId}');
+  //   content.writeln('Order Type: ${order.orderType}');
+  //   content.writeln('Date: ${DateTime.now().toString().split('.')[0]}');
+  //   content.writeln('------------------------------------------------');
 
-    if (order.customerName.isNotEmpty == true) {
-      content.writeln('Customer: ${order.customerName}');
-    }
-    if (order.phoneNumber?.isNotEmpty == true) {
-      content.writeln('Phone: ${order.phoneNumber}');
-    }
-    if (order.streetAddress?.isNotEmpty == true) {
-      content.writeln('Address: ${order.streetAddress}');
-      if (order.city?.isNotEmpty == true) {
-        content.writeln('City: ${order.city}');
-      }
-      if (order.postalCode?.isNotEmpty == true) {
-        content.writeln('Postal Code: ${order.postalCode}');
-      }
-    }
-    content.writeln('------------------------------------------------');
+  //   if (order.customerName.isNotEmpty == true) {
+  //     content.writeln('Customer: ${order.customerName}');
+  //   }
+  //   if (order.phoneNumber?.isNotEmpty == true) {
+  //     content.writeln('Phone: ${order.phoneNumber}');
+  //   }
+  //   if (order.streetAddress?.isNotEmpty == true) {
+  //     content.writeln('Address: ${order.streetAddress}');
+  //     if (order.city?.isNotEmpty == true) {
+  //       content.writeln('City: ${order.city}');
+  //     }
+  //     if (order.postalCode?.isNotEmpty == true) {
+  //       content.writeln('Postal Code: ${order.postalCode}');
+  //     }
+  //   }
+  //   content.writeln('------------------------------------------------');
 
-    for (var item in cartItems) {
-      content.writeln('${item.foodItem.name} x${item.quantity}');
-      content.writeln(
-        '  £${(item.pricePerUnit * item.quantity).toStringAsFixed(2)}',
-      );
+  //   for (var item in cartItems) {
+  //     content.writeln('${item.foodItem.name} x${item.quantity}');
+  //     content.writeln(
+  //       '  £${(item.pricePerUnit * item.quantity).toStringAsFixed(2)}',
+  //     );
 
-      if (item.selectedOptions != null && item.selectedOptions!.isNotEmpty) {
-        for (var option in item.selectedOptions!) {
-          content.writeln('  + $option');
-        }
-      }
+  //     if (item.selectedOptions != null && item.selectedOptions!.isNotEmpty) {
+  //       for (var option in item.selectedOptions!) {
+  //         content.writeln('  + $option');
+  //       }
+  //     }
 
-      if (item.comment?.isNotEmpty == true) {
-        content.writeln('  Note: ${item.comment}');
-      }
-      content.writeln('');
-    }
+  //     if (item.comment?.isNotEmpty == true) {
+  //       content.writeln('  Note: ${item.comment}');
+  //     }
+  //     content.writeln('');
+  //   }
 
-    content.writeln('------------------------------------------------');
-    content.writeln('Subtotal: £${subtotal.toStringAsFixed(2)}');
-    content.writeln('TOTAL: £${order.orderTotalPrice.toStringAsFixed(2)}');
+  //   content.writeln('------------------------------------------------');
+  //   content.writeln('Subtotal: £${subtotal.toStringAsFixed(2)}');
+  //   content.writeln('TOTAL: £${order.orderTotalPrice.toStringAsFixed(2)}');
 
-    if (order.changeDue > 0) {
-      content.writeln('Change Due: £${order.changeDue.toStringAsFixed(2)}');
-    }
+  //   if (order.changeDue > 0) {
+  //     content.writeln('Change Due: £${order.changeDue.toStringAsFixed(2)}');
+  //   }
 
-    if (order.paymentType.isNotEmpty == true) {
-      content.writeln('Payment: ${order.paymentType}');
-    }
+  //   if (order.paymentType.isNotEmpty == true) {
+  //     content.writeln('Payment: ${order.paymentType}');
+  //   }
 
-    if (order.orderExtraNotes?.isNotEmpty == true) {
-      content.writeln('------------------------------------------------');
-      content.writeln('Notes: ${order.orderExtraNotes}');
-    }
+  //   if (order.orderExtraNotes?.isNotEmpty == true) {
+  //     content.writeln('------------------------------------------------');
+  //     content.writeln('Notes: ${order.orderExtraNotes}');
+  //   }
 
-    content.writeln('================================================');
-    content.writeln('           Thank you for your order!           ');
-    content.writeln('================================================');
+  //   content.writeln('================================================');
+  //   content.writeln('           Thank you for your order!           ');
+  //   content.writeln('================================================');
 
-    return content.toString();
-  }
+  //   return content.toString();
+  // }
 
   @override
   Widget build(BuildContext context) {
@@ -1597,24 +1624,35 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
                                               ),
                                               child: Row(
                                                 children: [
-                                                  // Numbering removed as requested - just empty space
-                                                  if (serialNumber != null)
-                                                    const SizedBox(width: 0)
-                                                  else
-                                                    const SizedBox(width: 0),
-
-                                                  SizedBox(
-                                                    width:
-                                                        serialNumber != null
-                                                            ? 15
-                                                            : 0,
+                                                  // Order Number Box (similar to active orders list)
+                                                  Container(
+                                                    width: 80,
+                                                    height: 70,
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.black,
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            35,
+                                                          ),
+                                                    ),
+                                                    alignment: Alignment.center,
+                                                    child: Text(
+                                                      '#${order.orderId}',
+                                                      style: const TextStyle(
+                                                        fontSize: 16,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        color: Colors.white,
+                                                        fontFamily: 'Poppins',
+                                                      ),
+                                                      textAlign:
+                                                          TextAlign.center,
+                                                    ),
                                                   ),
+                                                  const SizedBox(width: 15),
 
                                                   Expanded(
-                                                    flex:
-                                                        serialNumber != null
-                                                            ? 3
-                                                            : 4,
+                                                    flex: 3,
                                                     child: Container(
                                                       padding:
                                                           const EdgeInsets.symmetric(
@@ -1726,7 +1764,9 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
                                                               order.status
                                                                       .toLowerCase() ==
                                                                   'green') {
+                                                            // ORIGINAL DRIVER RESTRICTION LOGIC (COMMENTED OUT):
                                                             // For delivery orders that are ready, show message that driver assignment is needed
+                                                            /*
                                                             if (order.driverId ==
                                                                     null ||
                                                                 order.driverId! <=
@@ -1747,6 +1787,13 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
                                                                         .success,
                                                               );
                                                             }
+                                                            */
+
+                                                            // NEW LOGIC: Allow status update to completed regardless of driver assignment
+                                                            _updateOrderStatusAndRelist(
+                                                              order,
+                                                              'Completed',
+                                                            );
                                                           }
                                                         } else {
                                                           // For non-delivery orders (dine-in, takeaway, collection)
@@ -2652,13 +2699,19 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
 
             if (itemOptions['hasOptions'] == true) {
               if (itemOptions['size'] != null) {
-                selectedOptions.add('Size: ${itemOptions['size']}');
+                String sizeOption = 'Size: ${itemOptions['size']}';
+                if (!_shouldExcludeOption(sizeOption))
+                  selectedOptions.add(sizeOption);
               }
               if (itemOptions['crust'] != null) {
-                selectedOptions.add('Crust: ${itemOptions['crust']}');
+                String crustOption = 'Crust: ${itemOptions['crust']}';
+                if (!_shouldExcludeOption(crustOption))
+                  selectedOptions.add(crustOption);
               }
               if (itemOptions['base'] != null) {
-                selectedOptions.add('Base: ${itemOptions['base']}');
+                String baseOption = 'Base: ${itemOptions['base']}';
+                if (!_shouldExcludeOption(baseOption))
+                  selectedOptions.add(baseOption);
               }
               if (itemOptions['toppings'] != null &&
                   (itemOptions['toppings'] as List).isNotEmpty) {
@@ -2702,10 +2755,19 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
       // Calculate subtotal
       double subtotal = _selectedOrder!.orderTotalPrice;
 
-      // Show test dialog with receipt content
-      await _showReceiptDialog(_selectedOrder!, cartItems, subtotal);
+      // // Show test dialog with receipt content
+      // await _showReceiptDialog(_selectedOrder!, cartItems, subtotal);
 
       // Use the thermal printer service to print
+      // Calculate delivery charge for delivery orders
+      double? deliveryChargeAmount;
+      if (_shouldApplyDeliveryCharge(
+        _selectedOrder!.orderType,
+        _selectedOrder!.paymentType,
+      )) {
+        deliveryChargeAmount = 1.50; // Delivery charge amount
+      }
+
       bool
       success = await ThermalPrinterService().printReceiptWithUserInteraction(
         transactionId:
@@ -2725,6 +2787,8 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
         city: _selectedOrder!.city,
         postalCode: _selectedOrder!.postalCode,
         paymentType: _selectedOrder!.paymentType,
+        deliveryCharge: deliveryChargeAmount,
+        orderDateTime: UKTimeService.now(), // Always use UK time for printing
         onShowMethodSelection: (availableMethods) {
           CustomPopupService.show(
             context,
@@ -2874,5 +2938,27 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
         );
       }
     }
+  }
+
+  // Helper function to determine if delivery charges should apply
+  bool _shouldApplyDeliveryCharge(String? orderType, String? paymentType) {
+    if (orderType == null) return false;
+
+    // Check if orderType is delivery
+    if (orderType.toLowerCase() == 'delivery') {
+      return true;
+    }
+
+    // Check if paymentType indicates delivery (COD, Cash on delivery, etc.)
+    if (paymentType != null) {
+      final paymentTypeLower = paymentType.toLowerCase();
+      if (paymentTypeLower.contains('cod') ||
+          paymentTypeLower.contains('cash on delivery') ||
+          paymentTypeLower.contains('delivery')) {
+        return true;
+      }
+    }
+
+    return false;
   }
 }

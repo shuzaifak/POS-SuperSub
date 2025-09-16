@@ -49,31 +49,6 @@ class ApiService {
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
 
-        for (var item in data) {
-          String category =
-              (item['type'] as String?) ?? (item['Type'] as String?) ?? '';
-          String name =
-              (item['title'] as String?) ??
-              (item['item_name'] as String?) ??
-              '';
-          if (category.toLowerCase().contains('pizza')) {
-            print('🍕 PIZZA ITEM:');
-            print('  Category: "$category"');
-            print('  Name: "$name"');
-            print('  Price Options: ${item['price']}');
-            if (item['price'] is Map) {
-              Map<String, dynamic> priceOptions =
-                  item['price'] as Map<String, dynamic>;
-              print('  Available Sizes: ${priceOptions.keys.toList()}');
-              priceOptions.forEach((size, price) {
-                print('    Size "$size": £$price');
-              });
-            }
-            print('  Raw JSON: $item');
-            print('  ---');
-          }
-        }
-
         return data.map((json) => FoodItem.fromJson(json)).toList();
       } else {
         throw Exception(

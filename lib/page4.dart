@@ -13,6 +13,7 @@ import 'dart:ui';
 import 'package:epos/dynamic_order_list_screen.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:epos/services/thermal_printer_service.dart';
+// import 'package:epos/widgets/receipt_preview_dialog.dart';
 import 'package:epos/customer_details_widget.dart';
 import 'package:epos/payment_details_widget.dart';
 import 'package:epos/settings_screen.dart';
@@ -26,6 +27,7 @@ import 'package:epos/services/custom_popup_service.dart';
 import 'package:epos/providers/item_availability_provider.dart';
 import 'package:epos/providers/offline_provider.dart';
 import 'package:epos/services/offline_order_manager.dart';
+import 'package:epos/services/uk_time_service.dart';
 
 class Page4 extends StatefulWidget {
   final String? initialSelectedServiceImage;
@@ -952,7 +954,7 @@ class _Page4State extends State<Page4> {
     double total = _calculateCartItemsTotal();
 
     // Add delivery charge for delivery orders
-    if (_actualOrderType.toLowerCase() == 'delivery') {
+    if (_shouldApplyDeliveryCharge(_actualOrderType, _selectedPaymentType)) {
       total += 1.50;
     }
 
@@ -1826,6 +1828,222 @@ class _Page4State extends State<Page4> {
     }
   }
 
+  List<String> _formatDealOptions(List<String> selectedOptions) {
+    List<String> formattedOptions = [];
+
+    // Group options by type
+    List<String> dealFlavours = [];
+    Map<String, List<String>> itemGroups = {};
+    List<String> drinks = [];
+    List<String> sides = [];
+
+    for (String option in selectedOptions) {
+      String lowerOption = option.toLowerCase();
+
+      // Check if this is already a properly formatted Combo Meal or Pizza Offers item
+      if (option.startsWith('Pizza (12"): ') ||
+          option.startsWith('Shawarma: ') ||
+          option.startsWith('Burger: ') ||
+          (option.startsWith('Drink: ') && lowerOption.contains('1.5l')) ||
+          option.startsWith('Size: ') ||
+          option.startsWith('Selected Pizzas: ')) {
+        // Already formatted by Combo Meal or Pizza Offers logic - add as-is
+        formattedOptions.add(option);
+        continue;
+      }
+
+      if (lowerOption.contains('flavour') || lowerOption.contains('flavor')) {
+        dealFlavours.add(option);
+      } else if (lowerOption.contains('shawarma')) {
+        if (!itemGroups.containsKey('Shawarmas')) itemGroups['Shawarmas'] = [];
+        itemGroups['Shawarmas']!.add(option);
+      } else if (lowerOption.contains('pizza')) {
+        if (!itemGroups.containsKey('Pizzas')) itemGroups['Pizzas'] = [];
+        itemGroups['Pizzas']!.add(option);
+      } else if (lowerOption.contains('burger')) {
+        if (!itemGroups.containsKey('Burgers')) itemGroups['Burgers'] = [];
+        itemGroups['Burgers']!.add(option);
+      } else if (lowerOption.contains('drink') ||
+          lowerOption.contains('can') ||
+          lowerOption.contains('bottle') ||
+          lowerOption.contains('pepsi') ||
+          lowerOption.contains('coke') ||
+          lowerOption.contains('sprite') ||
+          lowerOption.contains('1.5l') ||
+          lowerOption.contains('330ml')) {
+        drinks.add(option);
+      } else if (lowerOption.contains('chips') ||
+          lowerOption.contains('fries') ||
+          lowerOption.contains('side')) {
+        sides.add(option);
+      } else {
+        // Add other options as-is for now
+        if (!lowerOption.contains('selected') &&
+            !lowerOption.contains('options')) {
+          if (!itemGroups.containsKey('Items')) itemGroups['Items'] = [];
+          itemGroups['Items']!.add(option);
+        }
+      }
+    }
+
+    // Add deal flavours first
+    formattedOptions.addAll(dealFlavours);
+
+    // Format each group
+    itemGroups.forEach((groupName, items) {
+      if (groupName == 'Shawarmas') {
+        formattedOptions.addAll(_formatShawarmaGroup(items));
+      } else if (groupName == 'Pizzas') {
+        formattedOptions.addAll(_formatPizzaGroup(items));
+      } else if (groupName == 'Burgers') {
+        formattedOptions.addAll(_formatBurgerGroup(items));
+      } else {
+        formattedOptions.addAll(items);
+      }
+    });
+
+    // Add drinks
+    for (String drink in drinks) {
+      // Avoid duplicate "Drink:" prefix if already present
+      if (drink.startsWith('Drink:')) {
+        formattedOptions.add(drink);
+      } else {
+        formattedOptions.add('Drink: $drink');
+      }
+    }
+
+    // Add sides without "Sides:" prefix
+    formattedOptions.addAll(sides);
+
+    return formattedOptions;
+  }
+
+  List<String> _formatShawarmaGroup(List<String> shawarmas) {
+    List<String> formattedItems = [];
+
+    for (int i = 0; i < shawarmas.length; i++) {
+      String shawarma = shawarmas[i];
+
+      // The cart items now come in the NEW format: "Shawarma 1 (Salad: Cucumber, Lettuce & Sauces: Ketchup, BBQ)"
+      // or "Shawarma 1 (No Salad & No Sauce)"
+      // Just return them as-is since they're already properly formatted
+      if (shawarma.startsWith('Shawarma ') && shawarma.contains('(')) {
+        // Already in the correct format, just add semicolon for consistency
+        formattedItems.add('$shawarma;');
+      } else {
+        // Fallback for legacy format - extract salad and sauce info
+        List<String> itemDetails = [];
+
+        // Check for salad
+        if (shawarma.toLowerCase().contains('salad')) {
+          itemDetails.add('Salad');
+        } else {
+          itemDetails.add('No Salad');
+        }
+
+        // Check for sauces
+        List<String> sauces = _extractSauces(shawarma);
+        if (sauces.isNotEmpty) {
+          itemDetails.add('Sauce: ${sauces.join(', ')}');
+        } else {
+          itemDetails.add('No Sauce');
+        }
+
+        formattedItems.add('Shawarma ${i + 1} (${itemDetails.join(', ')});');
+      }
+    }
+
+    return formattedItems;
+  }
+
+  List<String> _formatPizzaGroup(List<String> pizzas) {
+    List<String> formattedItems = [];
+
+    for (int i = 0; i < pizzas.length; i++) {
+      String pizza = pizzas[i];
+      String formattedItem = _extractItemName(pizza);
+
+      // Extract sauce info for Pizza
+      List<String> sauces = _extractSauces(pizza);
+      String sauceInfo;
+      if (sauces.isNotEmpty) {
+        sauceInfo =
+            sauces.length == 1
+                ? 'Sauce: ${sauces[0]}'
+                : 'Sauces: ${sauces.join(', ')}';
+      } else {
+        sauceInfo = 'No Sauce';
+      }
+
+      formattedItems.add('${formattedItem} (${sauceInfo});');
+    }
+
+    return formattedItems;
+  }
+
+  List<String> _formatBurgerGroup(List<String> burgers) {
+    List<String> formattedItems = [];
+
+    for (int i = 0; i < burgers.length; i++) {
+      String burger = burgers[i];
+      String formattedItem = _extractItemName(burger);
+
+      // Extract salad and sauce info for Burger
+      List<String> itemDetails = [];
+
+      // Check for salad
+      if (burger.toLowerCase().contains('salad')) {
+        itemDetails.add('Salad');
+      } else {
+        itemDetails.add('No Salad');
+      }
+
+      // Check for sauces
+      List<String> sauces = _extractSauces(burger);
+      if (sauces.isNotEmpty) {
+        itemDetails.add('Sauce: ${sauces.join(', ')}');
+      } else {
+        itemDetails.add('No Sauce');
+      }
+
+      formattedItems.add('${formattedItem} (${itemDetails.join(', ')});');
+    }
+
+    return formattedItems;
+  }
+
+  String _extractItemName(String option) {
+    // Extract the main item name from the option string
+    if (option.contains(':')) {
+      return option.split(':')[0].trim();
+    }
+    return option.trim();
+  }
+
+  List<String> _extractSauces(String option) {
+    List<String> sauces = [];
+    String lowerOption = option.toLowerCase();
+
+    // Common sauce names
+    List<String> sauceNames = [
+      'ketchup',
+      'mint sauce',
+      'bbq',
+      'mayo',
+      'garlic',
+      'hot sauce',
+      'chili',
+    ];
+
+    for (String sauce in sauceNames) {
+      if (lowerOption.contains(sauce)) {
+        sauces.add(sauce);
+      }
+    }
+
+    return sauces;
+  }
+
   Widget _buildSearchBar() {
     return GestureDetector(
       onTap: () {
@@ -2023,8 +2241,21 @@ class _Page4State extends State<Page4> {
     }
 
     setState(() {
-      if (_editingCartIndex != null) {
-        _cartItems[_editingCartIndex!] = newItem;
+      // Store the editing index before any state changes to prevent race conditions
+      final int? currentEditingIndex = _editingCartIndex;
+      print(
+        '🔍 CART OPERATION: currentEditingIndex = $currentEditingIndex, _editingCartIndex = $_editingCartIndex',
+      );
+
+      if (currentEditingIndex != null) {
+        print(
+          '🔍 CART UPDATE: Updating existing item at index $currentEditingIndex',
+        );
+        print(
+          '🔍 OLD ITEM: ${_cartItems[currentEditingIndex].selectedOptions}',
+        );
+        print('🔍 NEW ITEM: ${newItem.selectedOptions}');
+        _cartItems[currentEditingIndex] = newItem;
         CustomPopupService.show(
           context,
           '${newItem.foodItem.name} updated in cart!',
@@ -2034,10 +2265,16 @@ class _Page4State extends State<Page4> {
         // If not editing, add or increment as before
         int existingIndex = _cartItems.indexWhere((item) {
           bool sameFoodItem = item.foodItem.id == newItem.foodItem.id;
-          bool sameOptions =
-              (item.selectedOptions ?? []).join() ==
-              (newItem.selectedOptions ?? []).join();
+          String existingOptions = (item.selectedOptions ?? []).join();
+          String newOptions = (newItem.selectedOptions ?? []).join();
+          bool sameOptions = existingOptions == newOptions;
           bool sameComment = (item.comment ?? '') == (newItem.comment ?? '');
+
+          print(
+            '🔍 CART COMPARISON: sameFoodItem=$sameFoodItem, sameOptions=$sameOptions, sameComment=$sameComment',
+          );
+          print('🔍 EXISTING OPTIONS: "$existingOptions"');
+          print('🔍 NEW OPTIONS: "$newOptions"');
 
           return sameFoodItem && sameOptions && sameComment;
         });
@@ -2703,7 +2940,9 @@ class _Page4State extends State<Page4> {
   Widget _buildCartSummaryContent() {
     double cartItemsTotal = _calculateCartItemsTotal();
     double deliveryCharge =
-        (_actualOrderType.toLowerCase() == 'delivery') ? 1.50 : 0.0;
+        _shouldApplyDeliveryCharge(_actualOrderType, _selectedPaymentType)
+            ? 1.50
+            : 0.0;
     double subtotal = cartItemsTotal + deliveryCharge;
     double currentDiscountAmount = _calculateDiscountAmount();
     double finalTotal = subtotal - currentDiscountAmount;
@@ -2751,6 +2990,7 @@ class _Page4State extends State<Page4> {
                     bool isMeal = false;
                     List<String> toppings = [];
                     List<String> sauceDips = [];
+                    String? selectedSeasoning;
                     bool hasOptions = false;
 
                     if (item.selectedOptions?.isNotEmpty ?? false) {
@@ -2769,10 +3009,14 @@ class _Page4State extends State<Page4> {
                             hasOptions = true;
                           }
                         } else if (lowerOption.contains('size:')) {
-                          String size = option.split(':').last.trim();
-                          if (size.toLowerCase() != 'default') {
-                            selectedSize = size;
-                            hasOptions = true;
+                          // Skip individual size extraction for Pizza Offers - it's handled in deal formatting
+                          if (item.foodItem.name.toLowerCase() !=
+                              'pizza offers') {
+                            String size = option.split(':').last.trim();
+                            if (size.toLowerCase() != 'default') {
+                              selectedSize = size;
+                              hasOptions = true;
+                            }
                           }
                         } else if (lowerOption.contains('crust:')) {
                           String crust = option.split(':').last.trim();
@@ -2831,6 +3075,13 @@ class _Page4State extends State<Page4> {
                                     .toList();
                             sauceDips.addAll(dipsList);
                           }
+                        } else if (lowerOption.contains('seasoning:') ||
+                            lowerOption.contains('chips seasoning:')) {
+                          String seasoningValue = option.split(':').last.trim();
+                          if (seasoningValue.isNotEmpty) {
+                            selectedSeasoning = seasoningValue;
+                            hasOptions = true;
+                          }
                         } else if (lowerOption == 'no salad' ||
                             lowerOption == 'no sauce' ||
                             lowerOption == 'no cream') {
@@ -2842,21 +3093,11 @@ class _Page4State extends State<Page4> {
                     // Handle deal-specific options display
                     List<String> dealOptions = [];
                     if (item.foodItem.category == 'Deals' && hasOptions) {
-                      for (var option in item.selectedOptions!) {
-                        // Parse deal-specific options (updated patterns including grouped selections)
-                        if (option.contains('Pizza') ||
-                            option.contains('Shawarma') ||
-                            option.contains('Burger') ||
-                            option.contains('Calzone') ||
-                            option.contains('Drink') ||
-                            option.contains('Sauces') ||
-                            option.contains('Options') ||
-                            option.contains('Fries') ||
-                            option.contains('Selected') ||
-                            option.contains('Size') ||
-                            option.contains('Chips')) {
-                          dealOptions.add(option);
-                        }
+                      // Skip reformatting for Family Meal - it already has perfect format
+                      if (item.foodItem.name.toLowerCase() == 'family meal') {
+                        dealOptions = item.selectedOptions!;
+                      } else {
+                        dealOptions = _formatDealOptions(item.selectedOptions!);
                       }
                     }
 
@@ -2966,6 +3207,20 @@ class _Page4State extends State<Page4> {
                                                     if (sauceDips.isNotEmpty)
                                                       Text(
                                                         'Sauce Dips: ${sauceDips.join(', ')}',
+                                                        style: const TextStyle(
+                                                          fontSize: 15,
+                                                          fontFamily: 'Poppins',
+                                                          color: Colors.black,
+                                                        ),
+                                                        maxLines: 2,
+                                                        overflow:
+                                                            TextOverflow
+                                                                .ellipsis,
+                                                      ),
+                                                    if (selectedSeasoning !=
+                                                        null)
+                                                      Text(
+                                                        'Seasoning: $selectedSeasoning',
                                                         style: const TextStyle(
                                                           fontSize: 15,
                                                           fontFamily: 'Poppins',
@@ -3321,7 +3576,10 @@ class _Page4State extends State<Page4> {
             const SizedBox(height: 10),
 
             // Show delivery charges for delivery orders
-            if (_actualOrderType.toLowerCase() == 'delivery') ...[
+            if (_shouldApplyDeliveryCharge(
+              _actualOrderType,
+              _selectedPaymentType,
+            )) ...[
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
                 child: Row(
@@ -3778,6 +4036,32 @@ class _Page4State extends State<Page4> {
       // First submit order to backend and get order ID
       String? backendOrderId = await _submitOrderAndGetId(orderData);
 
+      // Always use UK time for receipts and dialogs
+      DateTime orderCreationTime = UKTimeService.now();
+
+      // Show receipt preview dialog before printing
+      // await ReceiptPreviewDialog.show(
+      //   context,
+      //   transactionId: id1,
+      //   orderType: _actualOrderType,
+      //   cartItems: _cartItems,
+      //   subtotal: originalSubtotal,
+      //   totalCharge: finalTotalCharge,
+      //   extraNotes: extraNotes,
+      //   changeDue: finalChangeDue,
+      //   customerName: customerDetails.name,
+      //   customerEmail: customerDetails.email,
+      //   phoneNumber: customerDetails.phoneNumber,
+      //   streetAddress: customerDetails.streetAddress,
+      //   city: customerDetails.city,
+      //   postalCode: customerDetails.postalCode,
+      //   paymentType: paymentDetails.paymentType,
+      //   paidStatus: paymentDetails.paidStatus,
+      //   orderId: backendOrderId != null ? int.tryParse(backendOrderId) : null,
+      //   deliveryCharge: 0.0, // Add delivery charge if needed
+      //   orderDateTime: orderCreationTime,
+      // );
+
       // Then print receipt with the order ID
       await _printReceiptWithOrderId(
         orderData: orderData,
@@ -3788,6 +4072,7 @@ class _Page4State extends State<Page4> {
         changeDue: finalChangeDue,
         paidStatus: paymentDetails.paidStatus,
         orderId: backendOrderId,
+        orderDateTime: orderCreationTime,
       );
     } catch (e) {
       print('Error in order completion: $e');
@@ -3907,10 +4192,17 @@ class _Page4State extends State<Page4> {
     required double changeDue,
     required bool paidStatus,
     String? orderId,
+    DateTime? orderDateTime,
   }) async {
     try {
       // Extract customer details from orderData
       final guestData = orderData['guest'] as Map<String, dynamic>?;
+
+      // Calculate delivery charge for delivery orders
+      double? deliveryChargeAmount;
+      if (_shouldApplyDeliveryCharge(_actualOrderType, _selectedPaymentType)) {
+        deliveryChargeAmount = 1.50; // Delivery charge amount
+      }
 
       await ThermalPrinterService().printReceiptWithUserInteraction(
         transactionId: transactionId,
@@ -3929,6 +4221,8 @@ class _Page4State extends State<Page4> {
         paymentType: _selectedPaymentType,
         paidStatus: paidStatus,
         orderId: orderId != null ? int.tryParse(orderId) : null,
+        deliveryCharge: deliveryChargeAmount,
+        orderDateTime: orderDateTime,
         onShowMethodSelection: (availableMethods) {
           if (mounted) {
             CustomPopupService.show(
@@ -4469,6 +4763,28 @@ class _Page4State extends State<Page4> {
         );
       },
     );
+  }
+
+  // Helper function to determine if delivery charges should apply
+  bool _shouldApplyDeliveryCharge(String? orderType, String? paymentType) {
+    if (orderType == null) return false;
+
+    // Check if orderType is delivery
+    if (orderType.toLowerCase() == 'delivery') {
+      return true;
+    }
+
+    // Check if paymentType indicates delivery (COD, Cash on delivery, etc.)
+    if (paymentType != null) {
+      final paymentTypeLower = paymentType.toLowerCase();
+      if (paymentTypeLower.contains('cod') ||
+          paymentTypeLower.contains('cash on delivery') ||
+          paymentTypeLower.contains('delivery')) {
+        return true;
+      }
+    }
+
+    return false;
   }
 }
 

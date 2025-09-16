@@ -11,6 +11,7 @@ import 'dart:async';
 import 'dart:io' show Platform;
 import 'dart:math' as math;
 import 'package:epos/services/uk_time_service.dart';
+import 'package:epos/services/xprinter_service.dart';
 
 class ThermalPrinterService {
   static final ThermalPrinterService _instance =
@@ -25,6 +26,10 @@ class ThermalPrinterService {
   UsbPort? _persistentUsbPort;
   String? _connectedBluetoothDevice;
   bool _isBluetoothConnected = false;
+
+  // Xprinter SDK integration
+  final XprinterService _xprinterService = XprinterService();
+  bool _useXprinterSDK = true; // Flag to enable/disable Xprinter SDK
 
   // Cached devices for speed
   List<BluetoothInfo> _cachedThermalDevices = [];
@@ -50,7 +55,18 @@ class ThermalPrinterService {
   // Helper method to check if a field should be excluded from receipt
   bool _shouldExcludeField(String? value) {
     if (value == null || value.isEmpty) return true;
-    return value.trim().toUpperCase() == 'N/A';
+
+    final trimmedValue = value.trim().toUpperCase();
+
+    // Exclude N/A values
+    if (trimmedValue == 'N/A') return true;
+
+    // Exclude default pizza options (case insensitive)
+    if (trimmedValue == 'BASE: TOMATO' || trimmedValue == 'CRUST: NORMAL') {
+      return true;
+    }
+
+    return false;
   }
 
   Future<Map<String, bool>> testAllConnections() async {
@@ -163,6 +179,33 @@ class ThermalPrinterService {
       return SIMULATE_PRINTER_SUCCESS;
     }
 
+    // Try Xprinter SDK first if enabled and on Android
+    if (_useXprinterSDK && Platform.isAndroid) {
+      try {
+        print('🎯 Trying Xprinter SDK for USB connection...');
+        final devices = await _xprinterService.getUsbDevices();
+
+        if (devices.isNotEmpty) {
+          // Try to connect to the first available device
+          final firstDevice = devices.first;
+          final devicePath = firstDevice['deviceName'] as String?;
+
+          if (devicePath != null) {
+            bool connected = await _xprinterService.connectUsb(devicePath);
+            if (connected) {
+              print('✅ Xprinter SDK USB connection successful');
+              return true;
+            }
+          }
+        }
+        print(
+          '⚠️ Xprinter SDK connection failed, falling back to legacy method',
+        );
+      } catch (e) {
+        print('⚠️ Xprinter SDK error, falling back to legacy method: $e');
+      }
+    }
+
     try {
       if (!await _isUSBSerialAvailable()) return false;
 
@@ -269,6 +312,8 @@ class ThermalPrinterService {
     String? paymentType,
     bool? paidStatus,
     int? orderId,
+    double? deliveryCharge,
+    DateTime? orderDateTime,
     Function(List<String> availableMethods)? onShowMethodSelection,
   }) async {
     if (kIsWeb && !ENABLE_DRAWER_TEST_MODE) {
@@ -314,6 +359,7 @@ class ThermalPrinterService {
       paymentType: paymentType,
       paidStatus: paidStatus,
       orderId: orderId,
+      deliveryCharge: deliveryCharge,
     );
 
     Future<String> receiptContentFuture = Future.value(
@@ -334,6 +380,8 @@ class ThermalPrinterService {
         paymentType: paymentType,
         paidStatus: paidStatus,
         orderId: orderId,
+        deliveryCharge: deliveryCharge,
+        orderDateTime: orderDateTime,
       ),
     );
 
@@ -388,7 +436,8 @@ class ThermalPrinterService {
         //     paymentType?.toLowerCase() == 'cash' &&
         //     _isDrawerOpeningEnabled) {
         //   print('💰 Auto-opening cash drawer for cash payment');
-        //   await openCashDrawer(reason: "Cash payment completed");
+        //   await openCashDrawer(reason: "Cash payment completed
+        // ");
         // }
 
         return true;
@@ -418,45 +467,116 @@ class ThermalPrinterService {
     }
   }
 
-  // SUPER OPTIMIZED: Ultra-fast USB printing
   Future<bool> _printUSBSuperFast(List<int> receiptData) async {
     if (kIsWeb ||
         (!Platform.isAndroid && !Platform.isWindows && !Platform.isLinux)) {
-      return false;
+      throw Exception('USB printing not supported on this platform');
     }
     if (ENABLE_MOCK_MODE) {
-      await Future.delayed(Duration(milliseconds: 1000)); // Simulate print time
-      debugPrint('🧪 MOCK: USB printing simulated');
+      await Future.delayed(Duration(milliseconds: 800)); // Faster simulation
+      debugPrint('🧪 MOCK: USB printing simulated (ENHANCED)');
       debugPrint('📄 Receipt data length: ${receiptData.length} bytes');
-      debugPrint(
-        '📄 Receipt preview: ${String.fromCharCodes(receiptData.take(100))}...',
-      );
       return SIMULATE_PRINTER_SUCCESS;
     }
 
+    // Try Xprinter SDK first if enabled and connected
+    if (_useXprinterSDK && Platform.isAndroid && _xprinterService.isConnected) {
+      try {
+        print('🎯 Using Xprinter SDK for USB printing...');
+        String receiptString = String.fromCharCodes(receiptData);
+
+        // Fix pound symbol encoding for XPrinter (use CP437 character code 0x9C)
+        receiptString = receiptString.replaceAll(
+          '£',
+          String.fromCharCode(0x9C),
+        );
+
+        bool success = await _xprinterService.printReceipt(receiptString);
+
+        if (success) {
+          print('✅ Xprinter SDK USB printing successful');
+          return true;
+        } else {
+          print(
+            '⚠️ Xprinter SDK printing failed, falling back to legacy method',
+          );
+        }
+      } catch (e) {
+        print(
+          '⚠️ Xprinter SDK printing error, falling back to legacy method: $e',
+        );
+      }
+    }
+
     try {
-      // Ensure we have a persistent connection
+      // Enhanced connection verification
       if (_persistentUsbPort == null) {
+        print('🔧 USB: No existing connection, establishing new one...');
         if (_cachedUsbDevices.isEmpty) {
           _cachedUsbDevices = await UsbSerial.listDevices();
         }
-        if (_cachedUsbDevices.isEmpty) return false;
+        if (_cachedUsbDevices.isEmpty) {
+          throw Exception(
+            'No USB printer devices found. Please check connection and ensure printer is powered on.',
+          );
+        }
 
         if (!await _establishUSBConnection(_cachedUsbDevices.first)) {
-          return false;
+          throw Exception(
+            'Failed to establish USB connection. Please check USB cable and printer power.',
+          );
         }
       }
 
-      // Ultra-fast printing with minimal delays
-      await _persistentUsbPort!.write(Uint8List.fromList(receiptData));
-      await Future.delayed(Duration(milliseconds: 50)); // Minimal delay
+      // Quick connection health check before printing
+      try {
+        await _persistentUsbPort!.write(
+          Uint8List.fromList([0x1B, 0x40]),
+        ); // Quick init
+        await Future.delayed(Duration(milliseconds: 50));
+      } catch (healthError) {
+        print('🔧 USB: Connection health check failed, reconnecting...');
+        await _closeUsbConnection();
 
-      print('✅ USB super-fast print successful');
+        if (!await _establishUSBConnection(_cachedUsbDevices.first)) {
+          throw Exception(
+            'Failed to re-establish USB connection after health check failure',
+          );
+        }
+      }
+
+      print('🚀 USB: Starting super-fast print job...');
+
+      // Split large data into chunks for stability (optimized for device type)
+      bool isXprinterDevice =
+          _cachedUsbDevices.isNotEmpty && _isXprinter(_cachedUsbDevices.first);
+      int chunkSize =
+          isXprinterDevice ? 1024 : 512; // Larger chunks for Xprinter
+      for (int i = 0; i < receiptData.length; i += chunkSize) {
+        int end =
+            (i + chunkSize < receiptData.length)
+                ? i + chunkSize
+                : receiptData.length;
+        List<int> chunk = receiptData.sublist(i, end);
+
+        await _persistentUsbPort!.write(Uint8List.fromList(chunk));
+
+        // Minimal delay between chunks to prevent buffer overflow
+        if (i + chunkSize < receiptData.length) {
+          await Future.delayed(Duration(milliseconds: 10));
+        }
+      }
+
+      // Final small delay to ensure completion
+      await Future.delayed(Duration(milliseconds: 100));
+
+      print('✅ USB super-fast print completed successfully');
       return true;
     } catch (e) {
+      String errorMsg = 'USB printing failed: $e';
       print('❌ USB super-fast print error: $e');
       await _closeUsbConnection();
-      return false;
+      throw Exception(errorMsg);
     }
   }
 
@@ -465,25 +585,44 @@ class ThermalPrinterService {
       return false;
     }
     if (ENABLE_MOCK_MODE) {
-      await Future.delayed(Duration(milliseconds: 1200)); // Simulate print time
-      print('🧪 MOCK: Bluetooth printing simulated');
-      print('📄 Receipt content preview:');
-      print(
-        receiptContent.substring(0, math.min(200, receiptContent.length)) +
-            '...',
-      );
+      await Future.delayed(Duration(milliseconds: 1000)); // Faster simulation
+      print('🧪 MOCK: Bluetooth printing simulated (ENHANCED)');
       return SIMULATE_PRINTER_SUCCESS;
     }
 
     try {
-      // Ensure we have a persistent connection
+      // Enhanced connection verification and recovery
       if (!_isBluetoothConnected) {
+        print('📱 BT: No existing connection, establishing new one...');
+        if (!await _establishBluetoothConnection()) {
+          print('❌ BT: Failed to establish connection for printing');
+          return false;
+        }
+      }
+
+      // Connection health check
+      try {
+        bool isConnected = await PrintBluetoothThermal.connectionStatus;
+        if (!isConnected) {
+          print('🔧 BT: Connection lost, attempting reconnection...');
+          await _closeBluetoothConnection();
+
+          if (!await _establishBluetoothConnection()) {
+            return false;
+          }
+        }
+      } catch (healthError) {
+        print('🔧 BT: Health check failed, reconnecting...');
+        await _closeBluetoothConnection();
+
         if (!await _establishBluetoothConnection()) {
           return false;
         }
       }
 
-      // Use the ESC/POS formatted data instead of plain text
+      print('🚀 BT: Starting super-fast print job...');
+
+      // Convert to optimized ESC/POS with chunked transmission
       final profile = await CapabilityProfile.load();
       final generator = Generator(PaperSize.mm80, profile);
       List<int> ticket = await _convertReceiptContentToESCPOS(
@@ -491,9 +630,22 @@ class ThermalPrinterService {
         generator,
       );
 
-      await PrintBluetoothThermal.writeBytes(ticket);
+      // Send in optimized chunks for better stability
+      const chunkSize = 256; // Smaller chunks for Bluetooth stability
+      for (int i = 0; i < ticket.length; i += chunkSize) {
+        int end =
+            (i + chunkSize < ticket.length) ? i + chunkSize : ticket.length;
+        List<int> chunk = ticket.sublist(i, end);
 
-      print('✅ Bluetooth super-fast print successful');
+        await PrintBluetoothThermal.writeBytes(chunk);
+
+        // Small delay between chunks to prevent Bluetooth buffer overflow
+        if (i + chunkSize < ticket.length) {
+          await Future.delayed(Duration(milliseconds: 50));
+        }
+      }
+
+      print('✅ Bluetooth super-fast print completed successfully');
       return true;
     } catch (e) {
       print('❌ Bluetooth super-fast print error: $e');
@@ -655,6 +807,8 @@ class ThermalPrinterService {
     String? paymentType,
     bool? paidStatus,
     int? orderId,
+    double? deliveryCharge,
+    DateTime? orderDateTime,
   }) async {
     try {
       // Test receipt content generation
@@ -675,6 +829,8 @@ class ThermalPrinterService {
         paymentType: paymentType,
         paidStatus: paidStatus,
         orderId: orderId,
+        deliveryCharge: deliveryCharge,
+        orderDateTime: orderDateTime,
       );
 
       // Test ESC/POS receipt generation
@@ -695,6 +851,7 @@ class ThermalPrinterService {
         paymentType: paymentType,
         paidStatus: paidStatus,
         orderId: orderId,
+        deliveryCharge: deliveryCharge,
       );
 
       print('✅ Receipt generation validation successful');
@@ -708,9 +865,17 @@ class ThermalPrinterService {
     }
   }
 
-  // IMPROVED: Robust USB connection establishment
   Future<bool> _establishUSBConnection(UsbDevice device) async {
-    print('🔗 USB DEBUGGING: Starting connection establishment...');
+    print('🔗 USB DEBUGGING: Starting enhanced connection establishment...');
+
+    // Check if this is an Xprinter device for optimized handling
+    bool isXprinter = _isXprinter(device);
+    if (isXprinter) {
+      print(
+        '🎯 USB DEBUGGING: Xprinter device detected - using optimized settings',
+      );
+    }
+
     print('📄 USB DEBUGGING: Target Device Details:');
     print('   - Name: ${device.deviceName}');
     print(
@@ -722,147 +887,371 @@ class ThermalPrinterService {
     print('   - Manufacturer: ${device.manufacturerName ?? "Unknown"}');
     print('   - Product: ${device.productName ?? "Unknown"}');
 
-    try {
-      print('🔧 USB DEBUGGING: Step 1 - Creating USB port...');
-      _persistentUsbPort = await device.create();
-
-      if (_persistentUsbPort == null) {
-        print('❌ USB DEBUGGING: Failed to create USB port!');
-        print('   - This usually means:');
-        print('     • Device is not available');
-        print('     • USB permissions not granted');
-        print('     • Device is being used by another process');
-        print('   - Try: Disconnect and reconnect the USB cable');
-        return false;
-      }
-      print('✅ USB DEBUGGING: USB port created successfully');
-
-      print('🔧 USB DEBUGGING: Step 2 - Opening USB port...');
-      bool opened = await _persistentUsbPort!.open();
-
-      if (!opened) {
-        print('❌ USB DEBUGGING: Failed to open USB port!');
-        print('   - This usually means:');
-        print('     • Device driver not installed');
-        print('     • USB port is locked by system');
-        print('     • Hardware communication failure');
-        print('   - Try: Installing USB-to-Serial drivers');
-        _persistentUsbPort = null;
-        return false;
-      }
-      print('✅ USB DEBUGGING: USB port opened successfully');
-
-      print('🔧 USB DEBUGGING: Step 3 - Testing baud rates...');
-      // Try different baud rates for better compatibility
-      List<int> baudRates = [9600, 19200, 38400, 57600, 115200];
-      bool connectionSuccessful = false;
-
-      for (int baudRate in baudRates) {
-        try {
-          print('⚡ USB DEBUGGING: Testing baud rate: $baudRate');
-
-          await _persistentUsbPort!.setPortParameters(
-            baudRate,
-            8, // Data bits
-            1, // Stop bits
-            0, // Parity (none)
-          );
-          print('   ✓ Port parameters set successfully');
-
-          print('📤 USB DEBUGGING: Sending initialization command (ESC @)...');
-          // Send initialization command and wait for response
-          await _persistentUsbPort!.write(
-            Uint8List.fromList([0x1B, 0x40]), // ESC @ (initialize)
-          );
-          await Future.delayed(Duration(milliseconds: 200));
-          print('   ✓ Initialization command sent');
-
-          print('📤 USB DEBUGGING: Sending test command (line feed)...');
-          // Try sending a simple command to test connection
-          await _persistentUsbPort!.write(
-            Uint8List.fromList([0x1B, 0x4A, 0x02]), // ESC J n (feed 2 lines)
-          );
-          await Future.delayed(Duration(milliseconds: 100));
-          print('   ✓ Test command sent successfully');
-
-          connectionSuccessful = true;
-          print('✅ USB DEBUGGING: Connection established successfully!');
-          print('   - Working baud rate: $baudRate');
-          print('   - Printer should have responded (check for paper feed)');
-          break;
-        } catch (e) {
-          debugPrint('Baud rate $baudRate failed: $e');
-          continue;
-        }
-      }
-
-      if (!connectionSuccessful) {
-        debugPrint('❌ All baud rates failed, closing connection');
+    // Close any existing connection first
+    if (_persistentUsbPort != null) {
+      try {
         await _persistentUsbPort!.close();
-        _persistentUsbPort = null;
-        return false;
-      }
-
-      return true;
-    } catch (e) {
-      debugPrint('❌ Failed to establish USB connection: $e');
-      if (_persistentUsbPort != null) {
-        try {
-          await _persistentUsbPort!.close();
-        } catch (closeError) {
-          debugPrint('Error closing failed USB connection: $closeError');
-        }
+      } catch (e) {
+        print('🔧 USB DEBUGGING: Closed existing connection');
       }
       _persistentUsbPort = null;
-      return false;
     }
+
+    int maxAttempts = isXprinter ? 5 : 3; // More attempts for Xprinter devices
+
+    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        print('🔧 USB DEBUGGING: Connection attempt $attempt/$maxAttempts');
+
+        print('🔧 USB DEBUGGING: Step 1 - Creating USB port...');
+        _persistentUsbPort = await device.create();
+
+        if (_persistentUsbPort == null) {
+          print(
+            '❌ USB DEBUGGING: Failed to create USB port on attempt $attempt',
+          );
+          if (attempt < maxAttempts) {
+            print('   ⏳ Waiting before retry...');
+            await Future.delayed(Duration(milliseconds: 2000));
+            continue;
+          }
+          print('   FINAL FAILURE REASONS:');
+          print('     • Device is not available or in use');
+          print('     • USB permissions not granted');
+          print('     • Hardware connection issue');
+          print('   SOLUTIONS:');
+          print('     • Disconnect and reconnect USB cable');
+          print('     • Restart the printer');
+          print('     • Check cable integrity');
+          print('     • Grant USB permissions in Android settings');
+          return false;
+        }
+        print('✅ USB DEBUGGING: USB port created successfully');
+
+        print('🔧 USB DEBUGGING: Step 2 - Opening USB port...');
+        bool opened = await _persistentUsbPort!.open();
+
+        if (!opened) {
+          print('❌ USB DEBUGGING: Failed to open USB port on attempt $attempt');
+          if (attempt < maxAttempts) {
+            print('   ⏳ Cleaning up and retrying...');
+            try {
+              await _persistentUsbPort!.close();
+            } catch (e) {}
+            _persistentUsbPort = null;
+            await Future.delayed(Duration(milliseconds: 2000));
+            continue;
+          }
+          print('   FINAL FAILURE REASONS:');
+          print('     • Device driver not installed');
+          print('     • USB port locked by system');
+          print('     • Hardware communication failure');
+          print('   SOLUTIONS:');
+          print('     • Install appropriate USB-to-Serial drivers');
+          print('     • Restart device and try again');
+          print('     • Check if printer needs specific drivers');
+          _persistentUsbPort = null;
+          return false;
+        }
+        print('✅ USB DEBUGGING: USB port opened successfully');
+
+        print('🔧 USB DEBUGGING: Step 3 - Testing communication...');
+
+        // Enhanced baud rate testing with Xprinter-optimized rates
+        List<int> baudRates = [
+          115200,
+          9600,
+          57600,
+          38400,
+          19200,
+          230400,
+          460800,
+        ];
+        bool connectionSuccessful = false;
+
+        for (int baudRate in baudRates) {
+          try {
+            print('⚡ USB DEBUGGING: Testing baud rate: $baudRate');
+
+            await _persistentUsbPort!.setPortParameters(
+              baudRate,
+              8, // Data bits
+              1, // Stop bits
+              0, // Parity (none)
+            );
+
+            // Wait for port to stabilize
+            await Future.delayed(Duration(milliseconds: 100));
+            print('   ✓ Port parameters set successfully');
+
+            print('📤 USB DEBUGGING: Sending printer initialization...');
+
+            // Send comprehensive Xprinter-optimized initialization sequence
+            List<int> initSequence = [
+              0x1B, 0x40, // ESC @ (initialize printer)
+              0x1B, 0x21, 0x00, // ESC ! 0 (reset character formatting)
+              0x1B, 0x61, 0x00, // ESC a 0 (left alignment)
+              0x1C, 0x2E, // FS . (select Chinese character mode)
+              0x1B, 0x74, 0x00, // ESC t 0 (select character table)
+              0x1B, 0x52, 0x00, // ESC R 0 (select international character set)
+            ];
+
+            await _persistentUsbPort!.write(Uint8List.fromList(initSequence));
+            await Future.delayed(Duration(milliseconds: 300));
+            print('   ✓ Initialization sequence sent');
+
+            print('📤 USB DEBUGGING: Sending test print command...');
+            // Send a simple test that should be visible
+            List<int> testCommand = [
+              ...('USB Test OK\n').codeUnits,
+              0x1B, 0x4A, 0x02, // ESC J 2 (feed 2 lines)
+            ];
+
+            await _persistentUsbPort!.write(Uint8List.fromList(testCommand));
+            await Future.delayed(Duration(milliseconds: 200));
+            print('   ✓ Test command sent successfully');
+
+            connectionSuccessful = true;
+            print('🎉 USB DEBUGGING: Connection established successfully!');
+            print('   - Working baud rate: $baudRate');
+            print(
+              '   - Printer should have printed "USB Test OK" and fed paper',
+            );
+            break;
+          } catch (e) {
+            print('   ❌ Baud rate $baudRate failed: $e');
+            continue;
+          }
+        }
+
+        if (connectionSuccessful) {
+          return true;
+        } else {
+          print('❌ USB DEBUGGING: All baud rates failed on attempt $attempt');
+          if (attempt < maxAttempts) {
+            print('   ⏳ Closing connection and retrying...');
+            try {
+              await _persistentUsbPort!.close();
+            } catch (e) {}
+            _persistentUsbPort = null;
+            await Future.delayed(Duration(milliseconds: 2000));
+            continue;
+          } else {
+            print('   COMMUNICATION FAILED - POSSIBLE CAUSES:');
+            print('     • Printer not responding to ESC/POS commands');
+            print('     • Wrong printer protocol (not ESC/POS compatible)');
+            print('     • Hardware malfunction');
+            print('   SOLUTIONS:');
+            print('     • Verify printer supports ESC/POS commands');
+            print('     • Check printer manual for correct settings');
+            print('     • Try different printer or cable');
+            await _persistentUsbPort!.close();
+            _persistentUsbPort = null;
+            return false;
+          }
+        }
+      } catch (e) {
+        print(
+          '❌ USB DEBUGGING: Connection attempt $attempt failed with error: $e',
+        );
+        if (_persistentUsbPort != null) {
+          try {
+            await _persistentUsbPort!.close();
+          } catch (closeError) {
+            print('   Error closing failed connection: $closeError');
+          }
+          _persistentUsbPort = null;
+        }
+
+        if (attempt < maxAttempts) {
+          print('   ⏳ Waiting before next attempt...');
+          await Future.delayed(Duration(milliseconds: 2000));
+        }
+      }
+    }
+
+    print('❌ USB DEBUGGING: All connection attempts exhausted');
+    return false;
   }
 
-  // IMPROVED: Robust Bluetooth connection establishment
   Future<bool> _establishBluetoothConnection() async {
+    print('📱 BT DEBUGGING: Starting enhanced Bluetooth connection...');
+
     try {
-      if (_cachedThermalDevices.isEmpty) return false;
-
-      BluetoothInfo? printer = _findThermalPrinterDevice(_cachedThermalDevices);
-      printer ??= _cachedThermalDevices.first;
-
-      // Disconnect any existing connection first
-      if (_isBluetoothConnected) {
-        await PrintBluetoothThermal.disconnect;
-        await Future.delayed(Duration(milliseconds: 200));
+      if (_cachedThermalDevices.isEmpty) {
+        print('📱 BT DEBUGGING: No cached devices, fetching paired devices...');
+        _cachedThermalDevices = await PrintBluetoothThermal.pairedBluetooths;
       }
 
-      bool connected = await PrintBluetoothThermal.connect(
-        macPrinterAddress: printer.macAdress,
+      if (_cachedThermalDevices.isEmpty) {
+        print('❌ BT DEBUGGING: No paired Bluetooth devices found');
+        print('   SOLUTIONS:');
+        print('     • Go to Android Bluetooth settings');
+        print('     • Pair with your thermal printer first');
+        print('     • Ensure printer is in pairing mode');
+        return false;
+      }
+
+      print(
+        '📱 BT DEBUGGING: Found ${_cachedThermalDevices.length} paired devices:',
+      );
+      for (int i = 0; i < _cachedThermalDevices.length; i++) {
+        var device = _cachedThermalDevices[i];
+        print('   Device $i: ${device.name} (${device.macAdress})');
+      }
+
+      // Disconnect any existing connection with retry
+      if (_isBluetoothConnected) {
+        print('📱 BT DEBUGGING: Disconnecting existing connection...');
+        for (int i = 0; i < 3; i++) {
+          try {
+            await PrintBluetoothThermal.disconnect;
+            await Future.delayed(Duration(milliseconds: 500));
+
+            bool stillConnected = await PrintBluetoothThermal.connectionStatus;
+            if (!stillConnected) {
+              print('✅ BT DEBUGGING: Successfully disconnected');
+              break;
+            }
+            print('⏳ BT DEBUGGING: Disconnect attempt ${i + 1}/3...');
+          } catch (e) {
+            print('⚠️ BT DEBUGGING: Disconnect attempt ${i + 1} error: $e');
+          }
+        }
+
+        _isBluetoothConnected = false;
+        _connectedBluetoothDevice = null;
+        await Future.delayed(Duration(milliseconds: 1000));
+      }
+
+      // Find the best printer device
+      BluetoothInfo? printer = _findThermalPrinterDevice(_cachedThermalDevices);
+
+      if (printer == null) {
+        print(
+          '⚠️ BT DEBUGGING: No obvious thermal printer found, using first device',
+        );
+        printer = _cachedThermalDevices.first;
+      } else {
+        print('🎯 BT DEBUGGING: Selected thermal printer: ${printer.name}');
+      }
+
+      print(
+        '📱 BT DEBUGGING: Attempting connection to ${printer.name} (${printer.macAdress})',
       );
 
-      if (connected) {
-        _isBluetoothConnected = true;
-        _connectedBluetoothDevice = printer.macAdress;
+      // Connection with retries and better error handling
+      bool connected = false;
+      int maxAttempts = 4;
 
-        // Send initialization command
-        await PrintBluetoothThermal.writeBytes([0x1B, 0x40]); // ESC @
-        await Future.delayed(Duration(milliseconds: 100));
+      for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          print('📱 BT DEBUGGING: Connection attempt $attempt/$maxAttempts...');
 
-        print('✅ Bluetooth persistent connection established');
-        return true;
+          // Longer timeout for connection
+          connected = await PrintBluetoothThermal.connect(
+            macPrinterAddress: printer.macAdress,
+          ).timeout(Duration(seconds: 8));
+
+          if (connected) {
+            print('✅ BT DEBUGGING: Connection established!');
+
+            // Verify connection is actually working
+            await Future.delayed(Duration(milliseconds: 500));
+            bool statusCheck = await PrintBluetoothThermal.connectionStatus;
+
+            if (statusCheck) {
+              print('✅ BT DEBUGGING: Connection verified');
+              break;
+            } else {
+              print('⚠️ BT DEBUGGING: Connection status check failed');
+              connected = false;
+            }
+          }
+
+          if (!connected && attempt < maxAttempts) {
+            print('⏳ BT DEBUGGING: Connection failed, waiting before retry...');
+            await Future.delayed(Duration(milliseconds: 2000));
+          }
+        } catch (e) {
+          print('❌ BT DEBUGGING: Connection attempt $attempt error: $e');
+          connected = false;
+
+          if (attempt < maxAttempts) {
+            await Future.delayed(Duration(milliseconds: 2000));
+          }
+        }
       }
 
-      return false;
+      if (!connected) {
+        print('❌ BT DEBUGGING: All connection attempts failed');
+        print('   TROUBLESHOOTING:');
+        print('     • Ensure printer is turned ON');
+        print('     • Check if printer is already connected to another device');
+        print('     • Try restarting the printer');
+        print('     • Re-pair the printer in Bluetooth settings');
+        print('     • Ensure printer is within range');
+        return false;
+      }
+
+      _isBluetoothConnected = true;
+      _connectedBluetoothDevice = printer.macAdress;
+
+      // Enhanced initialization with better error handling
+      try {
+        print('📱 BT DEBUGGING: Sending initialization commands...');
+
+        // Comprehensive initialization sequence
+        List<List<int>> initCommands = [
+          [0x1B, 0x40], // ESC @ (initialize)
+          [0x1B, 0x61, 0x00], // ESC a 0 (left align)
+          [0x1B, 0x21, 0x00], // ESC ! 0 (reset formatting)
+        ];
+
+        for (var command in initCommands) {
+          await PrintBluetoothThermal.writeBytes(command);
+          await Future.delayed(Duration(milliseconds: 100));
+        }
+
+        print('✅ BT DEBUGGING: Initialization completed');
+
+        // Test communication
+        print('📱 BT DEBUGGING: Testing communication...');
+        List<int> testData = ('BT Test OK\n').codeUnits + [0x1B, 0x4A, 0x01];
+        await PrintBluetoothThermal.writeBytes(testData);
+
+        print('🎉 BT DEBUGGING: Bluetooth connection fully established!');
+        print('   - Device: ${printer.name}');
+        print('   - MAC: ${printer.macAdress}');
+        print('   - Printer should have printed "BT Test OK"');
+
+        return true;
+      } catch (e) {
+        print('❌ BT DEBUGGING: Initialization failed: $e');
+        _isBluetoothConnected = false;
+        _connectedBluetoothDevice = null;
+
+        try {
+          await PrintBluetoothThermal.disconnect;
+        } catch (disconnectError) {
+          print('Error during cleanup disconnect: $disconnectError');
+        }
+
+        return false;
+      }
     } catch (e) {
-      print('❌ Failed to establish Bluetooth connection: $e');
+      print('❌ BT DEBUGGING: Bluetooth connection establishment failed: $e');
       _isBluetoothConnected = false;
       _connectedBluetoothDevice = null;
       return false;
     }
   }
 
-  // NEW: Connection health monitoring
   void _startConnectionHealthMonitoring() {
     if (_isMonitoringConnection) return;
 
     _isMonitoringConnection = true;
-    _connectionHealthTimer = Timer.periodic(Duration(seconds: 30), (
+    _connectionHealthTimer = Timer.periodic(Duration(seconds: 15), (
       timer,
     ) async {
       if (!_isMonitoringConnection) {
@@ -870,27 +1259,67 @@ class ThermalPrinterService {
         return;
       }
 
-      // Check USB connection health
+      // Enhanced USB connection health check
       if (_persistentUsbPort != null) {
         try {
+          // Quick heartbeat test
           await _persistentUsbPort!.write(Uint8List.fromList([0x1B, 0x40]));
+          await Future.delayed(Duration(milliseconds: 100));
+          print('🔧 USB connection health: OK');
         } catch (e) {
-          print('🔧 USB connection lost, attempting reconnection...');
+          print('🔧 USB connection health: FAILED - $e');
+          print('🔧 Attempting USB auto-recovery...');
+
           await _closeUsbConnection();
+
+          // Auto-recovery attempt
+          if (_cachedUsbDevices.isNotEmpty) {
+            bool recovered = await _establishUSBConnection(
+              _cachedUsbDevices.first,
+            );
+            if (recovered) {
+              print('✅ USB auto-recovery successful');
+            } else {
+              print('❌ USB auto-recovery failed');
+            }
+          }
         }
       }
 
-      // Check Bluetooth connection health
+      // Enhanced Bluetooth connection health check
       if (_isBluetoothConnected) {
         try {
           bool isConnected = await PrintBluetoothThermal.connectionStatus;
           if (!isConnected) {
-            print('🔧 Bluetooth connection lost, attempting reconnection...');
+            print('🔧 Bluetooth connection health: DISCONNECTED');
+            print('🔧 Attempting Bluetooth auto-recovery...');
+
             await _closeBluetoothConnection();
+
+            // Auto-recovery attempt
+            bool recovered = await _establishBluetoothConnection();
+            if (recovered) {
+              print('✅ Bluetooth auto-recovery successful');
+            } else {
+              print('❌ Bluetooth auto-recovery failed');
+            }
+          } else {
+            // Send heartbeat to ensure connection is truly active
+            await PrintBluetoothThermal.writeBytes([0x1B, 0x40]);
+            print('🔧 Bluetooth connection health: OK');
           }
         } catch (e) {
-          print('🔧 Bluetooth health check failed: $e');
+          print('🔧 Bluetooth connection health: FAILED - $e');
+          print('🔧 Attempting Bluetooth auto-recovery...');
+
           await _closeBluetoothConnection();
+
+          bool recovered = await _establishBluetoothConnection();
+          if (recovered) {
+            print('✅ Bluetooth auto-recovery successful');
+          } else {
+            print('❌ Bluetooth auto-recovery failed');
+          }
         }
       }
     });
@@ -921,6 +1350,8 @@ class ThermalPrinterService {
     String? paymentType,
     bool? paidStatus,
     int? orderId,
+    double? deliveryCharge,
+    DateTime? orderDateTime,
   }) async {
     if (kIsWeb) return false;
 
@@ -948,6 +1379,7 @@ class ThermalPrinterService {
       paymentType: paymentType,
       paidStatus: paidStatus,
       orderId: orderId,
+      deliveryCharge: deliveryCharge,
     );
 
     String receiptContent = _generateReceiptContent(
@@ -967,6 +1399,8 @@ class ThermalPrinterService {
       paymentType: paymentType,
       paidStatus: paidStatus,
       orderId: orderId,
+      deliveryCharge: deliveryCharge,
+      orderDateTime: orderDateTime,
     );
 
     return await _printWithPreGeneratedData(
@@ -1006,8 +1440,47 @@ class ThermalPrinterService {
   }
 
   Future<void> _closeAllConnections() async {
-    await _closeUsbConnection();
-    await _closeBluetoothConnection();
+    print('🧹 Cleaning up all printer connections...');
+
+    // Stop monitoring first
+    _stopConnectionHealthMonitoring();
+
+    // Enhanced USB cleanup with retry
+    if (_persistentUsbPort != null) {
+      for (int attempt = 1; attempt <= 3; attempt++) {
+        try {
+          await _persistentUsbPort!.close();
+          print('✅ USB connection closed (attempt $attempt)');
+          break;
+        } catch (e) {
+          print('⚠️ USB close attempt $attempt failed: $e');
+          if (attempt < 3) {
+            await Future.delayed(Duration(milliseconds: 500));
+          }
+        }
+      }
+      _persistentUsbPort = null;
+    }
+
+    // Enhanced Bluetooth cleanup with retry
+    if (_isBluetoothConnected) {
+      for (int attempt = 1; attempt <= 3; attempt++) {
+        try {
+          await PrintBluetoothThermal.disconnect;
+          print('✅ Bluetooth connection closed (attempt $attempt)');
+          break;
+        } catch (e) {
+          print('⚠️ Bluetooth close attempt $attempt failed: $e');
+          if (attempt < 3) {
+            await Future.delayed(Duration(milliseconds: 500));
+          }
+        }
+      }
+      _isBluetoothConnected = false;
+      _connectedBluetoothDevice = null;
+    }
+
+    print('🧹 Connection cleanup completed');
   }
 
   void _clearCache() {
@@ -1020,16 +1493,14 @@ class ThermalPrinterService {
   // ===== CASH DRAWER FUNCTIONALITY =====
 
   /// Opens the cash drawer using ESC/POS commands
-  /// Returns true if the command was sent successfully
+  /// Returns true if the command was sent successfully, throws exception on error
   Future<bool> openCashDrawer({String reason = "Manual open"}) async {
     if (!_isDrawerOpeningEnabled) {
-      print('💰 Cash drawer opening is disabled');
-      return false;
+      throw Exception('Cash drawer functionality is disabled in settings');
     }
 
     if (kIsWeb && !ENABLE_DRAWER_TEST_MODE) {
-      print('💰 Cash drawer not supported on web platform');
-      return false;
+      throw Exception('Cash drawer not supported on web platform');
     }
 
     if (kIsWeb && ENABLE_DRAWER_TEST_MODE) {
@@ -1050,61 +1521,120 @@ class ThermalPrinterService {
       return true;
     }
 
-    // Standard ESC/POS cash drawer command
-    // ESC p m t1 t2 - where m=0 (drawer 1), t1=pulse duration, t2=pulse interval
-    List<int> drawerCommand = [
-      0x1B, 0x70, // ESC p
-      0x00, // m (drawer connector pin 2)
-      0x19, // t1 (pulse ON time: 25ms)
-      0xFA, // t2 (pulse OFF time: 250ms)
+    // Try Xprinter SDK first if enabled and connected
+    if (_useXprinterSDK && Platform.isAndroid && _xprinterService.isConnected) {
+      try {
+        print('🎯 Using Xprinter SDK to open cash drawer...');
+        bool success = await _xprinterService.openCashBox();
+
+        if (success) {
+          print('✅ Xprinter SDK cash drawer opened successfully');
+          return true;
+        } else {
+          print(
+            '⚠️ Xprinter SDK cash drawer failed, falling back to legacy method',
+          );
+        }
+      } catch (e) {
+        print(
+          '⚠️ Xprinter SDK cash drawer error, falling back to legacy method: $e',
+        );
+      }
+    }
+
+    // Enhanced ESC/POS cash drawer commands - try multiple variations
+    List<List<int>> drawerCommands = [
+      // Standard ESC/POS command
+      [0x1B, 0x70, 0x00, 0x19, 0x19], // ESC p m t1 t2
+      // Alternative command for different drawer types
+      [0x1B, 0x70, 0x00, 0x32, 0x96], // Longer pulse
+      // Direct printer-specific command
+      [0x10, 0x14, 0x01, 0x00, 0x05], // DLE DC4 command
     ];
 
     // Try to send command via available connection
     bool success = false;
+    String lastError = '';
 
-    // First try USB connection
-    if (_persistentUsbPort != null) {
-      success = await _sendDrawerCommandUSB(drawerCommand);
-      if (success) {
-        print('✅ Cash drawer opened via USB');
-        return true;
+    // Try each drawer command variation
+    for (int cmdIndex = 0; cmdIndex < drawerCommands.length; cmdIndex++) {
+      List<int> drawerCommand = drawerCommands[cmdIndex];
+      print(
+        '💰 Trying drawer command ${cmdIndex + 1}/${drawerCommands.length}',
+      );
+
+      try {
+        // First try USB connection
+        if (_persistentUsbPort != null) {
+          success = await _sendDrawerCommandUSB(drawerCommand);
+          if (success) {
+            print('✅ Cash drawer opened via USB with command ${cmdIndex + 1}');
+            return true;
+          }
+        }
+
+        // Then try Bluetooth connection
+        if (_isBluetoothConnected) {
+          success = await _sendDrawerCommandBluetooth(drawerCommand);
+          if (success) {
+            print(
+              '✅ Cash drawer opened via Bluetooth with command ${cmdIndex + 1}',
+            );
+            return true;
+          }
+        }
+
+        // Finally try establishing new connections
+        success = await _openDrawerWithNewConnection(drawerCommand);
+        if (success) {
+          print(
+            '✅ Cash drawer opened with new connection using command ${cmdIndex + 1}',
+          );
+          return true;
+        }
+      } catch (e) {
+        lastError = e.toString();
+        print('⚠️ Command ${cmdIndex + 1} failed: $e');
+        continue;
       }
     }
 
-    // Then try Bluetooth connection
-    if (_isBluetoothConnected) {
-      success = await _sendDrawerCommandBluetooth(drawerCommand);
-      if (success) {
-        print('✅ Cash drawer opened via Bluetooth');
-        return true;
-      }
-    }
-
-    // If no existing connection, try to establish one and send command
-    success = await _openDrawerWithNewConnection(drawerCommand);
-
-    if (success) {
-      print('✅ Cash drawer opened successfully');
-    } else {
-      print('❌ Failed to open cash drawer - no printer connection available');
-    }
-
-    return success;
+    // If we get here, all attempts failed
+    String errorMsg =
+        'Failed to open cash drawer after trying all methods. Last error: $lastError. Please check printer connection and ensure drawer is properly connected.';
+    print('❌ $errorMsg');
+    throw Exception(errorMsg);
   }
 
   /// Send drawer command via USB
   Future<bool> _sendDrawerCommandUSB(List<int> command) async {
     try {
-      if (_persistentUsbPort == null) return false;
+      if (_persistentUsbPort == null) {
+        print('❌ USB drawer: No active USB connection');
+        throw Exception('USB connection not available for cash drawer');
+      }
 
+      print(
+        '💰 USB: Sending cash drawer command: ${command.map((e) => '0x${e.toRadixString(16).toUpperCase().padLeft(2, '0')}').join(' ')}',
+      );
+
+      // Send the drawer command
       await _persistentUsbPort!.write(Uint8List.fromList(command));
-      await Future.delayed(
-        Duration(milliseconds: 100),
-      ); // Wait for command execution
+
+      // Wait for command execution and verify
+      await Future.delayed(Duration(milliseconds: 200));
+
+      // Send additional pulse for stubborn drawers
+      List<int> extraPulse = [0x1B, 0x70, 0x00, 0x32, 0x96]; // Longer pulse
+      await _persistentUsbPort!.write(Uint8List.fromList(extraPulse));
+      await Future.delayed(Duration(milliseconds: 100));
+
+      print('✅ USB: Cash drawer command sent successfully');
       return true;
     } catch (e) {
-      print('❌ USB drawer command error: $e');
-      return false;
+      String errorMsg = 'USB cash drawer command failed: $e';
+      print('❌ $errorMsg');
+      throw Exception(errorMsg);
     }
   }
 
@@ -1219,7 +1749,6 @@ class ThermalPrinterService {
     _clearCache();
   }
 
-  // Platform-specific helper methods
   Future<bool> _isUSBSerialAvailable() async {
     print('🔍 USB DEBUGGING: Checking USB Serial availability...');
 
@@ -1232,26 +1761,54 @@ class ThermalPrinterService {
     }
 
     try {
-      // Request USB permissions for Android
+      // Request USB permissions for Android FIRST
       if (Platform.isAndroid) {
         print('📱 USB DEBUGGING: Requesting Android USB permissions...');
         await _requestUSBPermissions();
+
+        // Add delay to ensure permissions are processed
+        await Future.delayed(Duration(milliseconds: 500));
       }
 
       print('🔍 USB DEBUGGING: Listing USB devices...');
-      List<UsbDevice> devices = await UsbSerial.listDevices();
-      print('✅ USB DEBUGGING: Found ${devices.length} USB devices');
+
+      // Try multiple times with delays - sometimes first attempt fails
+      List<UsbDevice> devices = [];
+      for (int attempt = 1; attempt <= 3; attempt++) {
+        try {
+          devices = await UsbSerial.listDevices();
+          print(
+            '✅ USB DEBUGGING: Attempt $attempt - Found ${devices.length} USB devices',
+          );
+
+          if (devices.isNotEmpty) break;
+
+          if (attempt < 3) {
+            print('⏳ USB DEBUGGING: No devices found, waiting before retry...');
+            await Future.delayed(Duration(milliseconds: 1000));
+          }
+        } catch (e) {
+          print('⚠️ USB DEBUGGING: Attempt $attempt failed: $e');
+          if (attempt < 3) {
+            await Future.delayed(Duration(milliseconds: 1000));
+          }
+        }
+      }
 
       if (devices.isEmpty) {
-        print('⚠️ USB DEBUGGING: No USB devices detected!');
-        print('   - Make sure USB printer is connected');
-        print('   - Check USB cable integrity');
-        print('   - Verify printer is powered on');
-        print('   - Try different USB port');
+        print('❌ USB DEBUGGING: No USB devices detected after 3 attempts!');
+        print('   TROUBLESHOOTING STEPS:');
+        print('   1. Ensure USB printer is connected and powered ON');
+        print('   2. Check USB cable integrity (try different cable)');
+        print('   3. Try different USB port');
+        print('   4. For Android: Enable "USB Debugging" in Developer Options');
+        print('   5. For Android: Check "Allow USB debugging" popup');
+        print('   6. Restart the printer and try again');
+        print('   7. Check if printer needs specific drivers');
         return false;
       }
 
-      // Debug print device details
+      // Debug print device details with enhanced analysis
       for (int i = 0; i < devices.length; i++) {
         var device = devices[i];
         print('📄 USB DEBUGGING: Device $i Details:');
@@ -1266,13 +1823,23 @@ class ThermalPrinterService {
         print('   - Product Name: ${device.productName ?? "Unknown"}');
         print('   - Serial: ${device.serial ?? "Unknown"}');
 
-        // Check for common thermal printer VID/PIDs
-        _analyzePrinterCompatibility(device);
+        // Enhanced printer compatibility analysis
+        bool isCompatible = _analyzePrinterCompatibility(device);
+        if (isCompatible) {
+          print('🎯 USB DEBUGGING: This device is likely compatible!');
+        }
       }
 
       return devices.isNotEmpty;
     } on MissingPluginException catch (e) {
       print('❌ USB DEBUGGING: USB Serial plugin not available: $e');
+      print('   - Make sure usb_serial plugin is properly installed');
+      print('   - Check pubspec.yaml for correct plugin version');
+      return false;
+    } on PlatformException catch (e) {
+      print('❌ USB DEBUGGING: Platform exception: $e');
+      print('   - This may be a permissions issue');
+      print('   - Try restarting the app with USB already connected');
       return false;
     } catch (e) {
       print('❌ USB DEBUGGING: USB Serial availability check error: $e');
@@ -1280,49 +1847,188 @@ class ThermalPrinterService {
     }
   }
 
-  // Helper method to analyze if device is likely a thermal printer
-  void _analyzePrinterCompatibility(UsbDevice device) {
-    // Common thermal printer VID/PIDs
+  bool _isXprinter(UsbDevice device) {
+    // Check VID/PID for known Xprinter devices
+    if (device.vid != null && device.pid != null) {
+      List<int> xprinterVids = [
+        11575, // 0x2D37 - Official Xprinter VID from USB-IF
+        0x0416,
+        0x1234,
+        0x0525,
+        0x28E9,
+        0x6790,
+        0x519C, // Additional/alternative VIDs
+      ];
+      if (xprinterVids.contains(device.vid)) {
+        return true;
+      }
+    }
+
+    // Check device names for Xprinter indicators
+    String deviceName = (device.deviceName).toLowerCase();
+    String manufacturer = (device.manufacturerName ?? '').toLowerCase();
+    String product = (device.productName ?? '').toLowerCase();
+
+    return manufacturer.contains('xprinter') ||
+        manufacturer.contains('x-printer') ||
+        manufacturer.contains('xp-printer') ||
+        manufacturer.contains('gao xing') ||
+        product.contains('xprinter') ||
+        product.contains('x-printer') ||
+        product.contains('xp-') ||
+        deviceName.contains('xprinter') ||
+        deviceName.contains('x-printer');
+  }
+
+  bool _analyzePrinterCompatibility(UsbDevice device) {
+    // Expanded thermal printer VID/PIDs database
     final Map<int, List<int>> knownPrinters = {
-      0x04b8: [0x0202, 0x0203, 0x0208], // Epson
-      0x04f9: [0x2040, 0x2041, 0x2042], // Brother
-      0x0456: [0x0808, 0x0809], // Star Micronics
-      0x1FC9: [0x2016], // Citizen
-      0x0483: [0x5740], // Various thermal printers
+      // Epson thermal printers
+      0x04b8: [0x0202, 0x0203, 0x0208, 0x020E, 0x0210, 0x0219],
+      // Brother thermal printers
+      0x04f9: [0x2040, 0x2041, 0x2042, 0x2048, 0x204A, 0x204D],
+      // Star Micronics
+      0x0456: [0x0808, 0x0809, 0x080A, 0x080B, 0x080C],
+      // Citizen thermal printers
+      0x1FC9: [0x2016, 0x2017, 0x2018],
+      // Various generic thermal printers
+      0x0483: [0x5740, 0x5741],
+      // Bixolon thermal printers
+      0x0419: [0x3FF0, 0x3FF1, 0x3FF2],
+      // Custom/Generic thermal printers (common VIDs)
+      0x1A86: [
+        0x7523,
+        0x5523,
+      ], // CH340 USB-Serial chips (common in thermal printers)
+      0x10C4: [0xEA60], // CP210x USB-Serial chips
+      0x067B: [0x2303], // PL2303 USB-Serial chips
+      // Xprinter thermal printers (comprehensive list)
+      0x0416: [
+        0x5011,
+        0x5012,
+        0x5013,
+        0x5014,
+        0x5015,
+      ], // Common Xprinter VID/PIDs
+      0x1234: [
+        0x5678,
+        0x5679,
+        0x567A,
+        0x567B,
+        0x567C,
+      ], // Alternative Xprinter IDs
+      0x0525: [0xA4A7, 0xA4A8, 0xA4A9, 0xA4AA], // Some Xprinter models
+      0x28E9: [0x028A, 0x028B, 0x028C], // Additional Xprinter models
+      0x6790: [0x29C1, 0x29C2, 0x29C3], // Newer Xprinter models
+      0x519C: [0x5781, 0x5782, 0x5783], // Xprinter XP series
+      // Additional generic thermal printer chips
+      0x1CBE: [0x0003], // Generic thermal printer chips
+      0x2E28: [0x0001, 0x0002], // More generic IDs
     };
 
-    bool isKnownPrinter =
-        knownPrinters[device.vid]?.contains(device.pid) ?? false;
+    bool isKnownPrinter = false;
+
+    if (device.vid != null && device.pid != null) {
+      isKnownPrinter = knownPrinters[device.vid]?.contains(device.pid) ?? false;
+    }
+
+    // Also check by device name/manufacturer
+    String deviceName = (device.deviceName).toLowerCase();
+    String manufacturer = (device.manufacturerName ?? '').toLowerCase();
+    String product = (device.productName ?? '').toLowerCase();
+
+    bool nameIndicatesPrinter =
+        deviceName.contains('printer') ||
+        deviceName.contains('thermal') ||
+        deviceName.contains('pos') ||
+        deviceName.contains('receipt') ||
+        manufacturer.contains('printer') ||
+        manufacturer.contains('thermal') ||
+        manufacturer.contains('epson') ||
+        manufacturer.contains('brother') ||
+        manufacturer.contains('star') ||
+        manufacturer.contains('citizen') ||
+        manufacturer.contains('bixolon') ||
+        manufacturer.contains('xprinter') ||
+        manufacturer.contains('x-printer') ||
+        manufacturer.contains('xp-printer') ||
+        manufacturer.contains('gprinter') ||
+        manufacturer.contains('gao xing') ||
+        product.contains('printer') ||
+        product.contains('thermal') ||
+        product.contains('xprinter') ||
+        product.contains('x-printer') ||
+        product.contains('xp-') ||
+        product.contains('gp-') ||
+        product.contains('pos') ||
+        product.contains('receipt') ||
+        product.toLowerCase().contains('80mm') ||
+        product.toLowerCase().contains('58mm');
+
+    // Check for common USB-Serial converter chips used in thermal printers
+    bool isSerialConverter =
+        manufacturer.contains('ch340') ||
+        manufacturer.contains('cp210') ||
+        manufacturer.contains('pl2303') ||
+        manufacturer.contains('ftdi') ||
+        product.contains('usb serial') ||
+        product.contains('uart');
 
     if (isKnownPrinter) {
-      print('✅ USB DEBUGGING: Device appears to be a known thermal printer!');
+      print('✅ USB DEBUGGING: Device is a KNOWN thermal printer!');
+      return true;
+    } else if (nameIndicatesPrinter) {
+      print(
+        '✅ USB DEBUGGING: Device name/manufacturer suggests thermal printer',
+      );
+      return true;
+    } else if (isSerialConverter) {
+      print(
+        '🔧 USB DEBUGGING: Device appears to be USB-Serial converter (commonly used by thermal printers)',
+      );
+      return true;
     } else {
       print('⚠️ USB DEBUGGING: Device may not be a thermal printer');
-      print('   - VID/PID not in known thermal printer database');
+      print('   - VID/PID not in known database');
+      print('   - Name doesn\'t clearly indicate printer');
       print('   - May still work if it supports ESC/POS commands');
+      return false;
     }
   }
 
   Future<void> _requestUSBPermissions() async {
-    if (kIsWeb || !Platform.isAndroid) return; // Only needed on Android
+    if (kIsWeb || !Platform.isAndroid) return;
 
     try {
-      // For USB OTG access on Android
+      print('📱 USB DEBUGGING: Requesting comprehensive USB permissions...');
+
+      // Request all relevant permissions for USB access
       List<Permission> usbPermissions = [
         Permission.storage,
         Permission.manageExternalStorage,
+        // Add location permission as some Android versions need it for USB
+        Permission.location,
       ];
 
-      Map<Permission, PermissionStatus> statuses =
-          await usbPermissions.request();
+      // Request permissions one by one for better debugging
+      for (Permission permission in usbPermissions) {
+        PermissionStatus status = await permission.status;
+        print('   Permission ${permission.toString()}: ${status.toString()}');
 
-      for (var entry in statuses.entries) {
-        if (entry.value != PermissionStatus.granted) {
-          debugPrint('USB Permission ${entry.key} not granted: ${entry.value}');
+        if (status != PermissionStatus.granted) {
+          PermissionStatus newStatus = await permission.request();
+          print(
+            '   After request ${permission.toString()}: ${newStatus.toString()}',
+          );
         }
       }
+
+      // For Android API 23+, we might need to request USB permission at runtime
+      if (Platform.isAndroid) {
+        print('   ✅ USB permissions processing completed');
+      }
     } catch (e) {
-      debugPrint('Error requesting USB permissions: $e');
+      print('❌ Error requesting USB permissions: $e');
     }
   }
 
@@ -1363,17 +2069,62 @@ class ThermalPrinterService {
   }
 
   BluetoothInfo? _findThermalPrinterDevice(List<BluetoothInfo> devices) {
+    print(
+      '🔍 BT DEBUGGING: Analyzing ${devices.length} devices for thermal printer...',
+    );
+
+    // Prioritized keywords for thermal printer detection
+    List<List<String>> printerKeywords = [
+      // High priority - very likely to be thermal printers
+      ['thermal', 'receipt'],
+      ['pos', 'printer'],
+      ['rp-', 'rpp-'], // Common thermal printer model prefixes
+      ['tm-', 'tsp-'], // Epson and Star model prefixes
+      ['spp-'], // Samsung printer prefix
+      // Medium priority - likely printers
+      ['printer'],
+      ['print'],
+
+      // Brand names
+      ['epson', 'star', 'citizen', 'bixolon', 'brother'],
+    ];
+
+    BluetoothInfo? bestMatch = null;
+    int bestPriority = -1;
+
     for (BluetoothInfo device in devices) {
       String deviceName = device.name.toLowerCase();
-      if (deviceName.contains('printer') ||
-          deviceName.contains('thermal') ||
-          deviceName.contains('pos') ||
-          deviceName.contains('receipt') ||
-          deviceName.contains('rp')) {
-        return device;
+      print('   Analyzing: ${device.name}');
+
+      for (int priority = 0; priority < printerKeywords.length; priority++) {
+        List<String> keywords = printerKeywords[priority];
+
+        for (String keyword in keywords) {
+          if (deviceName.contains(keyword)) {
+            print('     ✓ Match found: "$keyword" (priority $priority)');
+
+            if (priority < bestPriority || bestMatch == null) {
+              bestMatch = device;
+              bestPriority = priority;
+              print('     🎯 New best match!');
+            }
+            break;
+          }
+        }
+
+        if (bestPriority != -1 && priority > bestPriority) {
+          break; // No need to check lower priority if we have a high priority match
+        }
       }
     }
-    return null;
+
+    if (bestMatch != null) {
+      print('🏆 BT DEBUGGING: Best thermal printer match: ${bestMatch.name}');
+    } else {
+      print('⚠️ BT DEBUGGING: No obvious thermal printer detected');
+    }
+
+    return bestMatch;
   }
 
   String _generateReceiptContent({
@@ -1393,6 +2144,8 @@ class ThermalPrinterService {
     String? paymentType,
     bool? paidStatus,
     int? orderId,
+    double? deliveryCharge,
+    DateTime? orderDateTime,
   }) {
     StringBuffer receipt = StringBuffer();
 
@@ -1400,8 +2153,9 @@ class ThermalPrinterService {
     receipt.writeln('================================================');
     receipt.writeln('                    **TVP**'); // Bold restaurant name
     receipt.writeln('================================================');
+    DateTime displayDateTime = orderDateTime ?? UKTimeService.now();
     receipt.writeln(
-      'Date: ${DateFormat('dd/MM/yyyy HH:mm').format(UKTimeService.now())}',
+      'Date: ${DateFormat('dd/MM/yyyy HH:mm').format(displayDateTime)}',
     );
     if (orderId != null) {
       receipt.writeln('**Order #: $orderId**'); // Bold order number
@@ -1471,6 +2225,16 @@ class ThermalPrinterService {
     }
 
     receipt.writeln('------------------------------------------------');
+
+    // Show delivery charges for delivery orders before subtotal
+    if (orderType.toLowerCase() == 'delivery' &&
+        deliveryCharge != null &&
+        deliveryCharge > 0) {
+      receipt.writeln(
+        'Delivery Charges:             £${deliveryCharge.toStringAsFixed(2)}',
+      );
+    }
+
     receipt.writeln(
       'Subtotal:                     £${subtotal.toStringAsFixed(2)}',
     );
@@ -1488,8 +2252,35 @@ class ThermalPrinterService {
       receipt.writeln('**Payment Method: $paymentType**'); // Bold payment type
     }
 
-    // Use the actual paid status from payment details
-    String paymentStatus = (paidStatus == true) ? 'PAID' : 'UNPAID';
+    // Determine payment status based on order source and payment method
+    String paymentStatus = 'UNPAID';
+
+    // For website orders: Use payment type logic instead of paidStatus
+    // Website orders are identified by order_source: Website and payment_type: Cash on Delivery
+    bool isWebsiteOrder =
+        orderType.toLowerCase().contains('website') ||
+        orderType.toLowerCase().contains('online') ||
+        (paymentType != null &&
+            paymentType.toLowerCase().contains('cash on delivery'));
+
+    if (isWebsiteOrder && paymentType != null) {
+      final paymentTypeLower = paymentType.toLowerCase();
+
+      // Website orders: Card/Online = PAID, Cash on Delivery = UNPAID
+      if (paymentTypeLower.contains('card') ||
+          paymentTypeLower.contains('online') ||
+          paymentTypeLower.contains('paypal')) {
+        paymentStatus = 'PAID';
+      } else if (paymentTypeLower.contains('cash on delivery') ||
+          paymentTypeLower.contains('cod')) {
+        paymentStatus = 'UNPAID';
+      } else {
+        paymentStatus = 'PAID'; // Default for other payment methods
+      }
+    } else {
+      // For EPOS orders: Use the actual paid status from payment details
+      paymentStatus = (paidStatus == true) ? 'PAID' : 'UNPAID';
+    }
 
     // Show payment details based on payment type and status
     if (paidStatus == true) {
@@ -1532,6 +2323,7 @@ class ThermalPrinterService {
     String? paymentType,
     bool? paidStatus,
     int? orderId,
+    double? deliveryCharge,
   }) async {
     final profile = await CapabilityProfile.load();
     final generator = Generator(PaperSize.mm80, profile); // 80mm paper width
@@ -1700,6 +2492,21 @@ class ThermalPrinterService {
     }
 
     bytes += generator.text('------------------------------------------------');
+
+    // Show delivery charges for delivery orders before subtotal
+    if (orderType.toLowerCase() == 'delivery' &&
+        deliveryCharge != null &&
+        deliveryCharge > 0) {
+      bytes += generator.row([
+        PosColumn(text: 'Delivery Charges:', width: 9),
+        PosColumn(
+          text: '£${deliveryCharge.toStringAsFixed(2)}',
+          width: 3,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+    }
+
     bytes += generator.row([
       PosColumn(text: 'Subtotal:', width: 9),
       PosColumn(

@@ -19,6 +19,13 @@ android {
         jvmTarget = JavaVersion.VERSION_11.toString()
     }
 
+    // Add repository for local AAR files
+    repositories {
+        flatDir {
+            dirs("libs")
+        }
+    }
+
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.epos"
@@ -41,4 +48,13 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // Add Xprinter SDK AAR dependency
+    // Using the existing printer-lib-3.2.0.aar file in the android/app/libs/ directory
+    implementation(files("libs/printer-lib-3.2.0.aar"))
+    
+    // Add any additional dependencies required by Xprinter SDK
+    implementation("androidx.appcompat:appcompat:1.6.1")
 }

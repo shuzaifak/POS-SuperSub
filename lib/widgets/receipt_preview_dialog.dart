@@ -1,34 +1,111 @@
 // lib/widgets/receipt_preview_dialog.dart
 
 import 'package:flutter/material.dart';
-import 'package:epos/models/order.dart';
 import 'package:epos/models/cart_item.dart';
+import 'package:intl/intl.dart';
 
 class ReceiptPreviewDialog extends StatelessWidget {
-  final Order order;
+  final String transactionId;
+  final String orderType;
   final List<CartItem> cartItems;
   final double subtotal;
+  final double totalCharge;
+  final String? extraNotes;
+  final double changeDue;
+  final String? customerName;
+  final String? customerEmail;
+  final String? phoneNumber;
+  final String? streetAddress;
+  final String? city;
+  final String? postalCode;
+  final String? paymentType;
+  final bool? paidStatus;
+  final int? orderId;
+  final double? deliveryCharge;
+  final DateTime? orderDateTime;
 
   const ReceiptPreviewDialog({
     Key? key,
-    required this.order,
+    required this.transactionId,
+    required this.orderType,
     required this.cartItems,
     required this.subtotal,
+    required this.totalCharge,
+    this.extraNotes,
+    required this.changeDue,
+    this.customerName,
+    this.customerEmail,
+    this.phoneNumber,
+    this.streetAddress,
+    this.city,
+    this.postalCode,
+    this.paymentType,
+    this.paidStatus,
+    this.orderId,
+    this.deliveryCharge,
+    this.orderDateTime,
   }) : super(key: key);
 
+  // Helper method to check if a field should be excluded from receipt (same as thermal printer)
+  bool _shouldExcludeField(String? value) {
+    if (value == null || value.isEmpty) return true;
+
+    final trimmedValue = value.trim().toUpperCase();
+
+    // Exclude N/A values
+    if (trimmedValue == 'N/A') return true;
+
+    // Exclude default pizza options (case insensitive)
+    if (trimmedValue == 'BASE: TOMATO' || trimmedValue == 'CRUST: NORMAL') {
+      return true;
+    }
+
+    return false;
+  }
+
   static Future<void> show(
-    BuildContext context,
-    Order order,
-    List<CartItem> cartItems,
-    double subtotal,
-  ) async {
+    BuildContext context, {
+    required String transactionId,
+    required String orderType,
+    required List<CartItem> cartItems,
+    required double subtotal,
+    required double totalCharge,
+    String? extraNotes,
+    required double changeDue,
+    String? customerName,
+    String? customerEmail,
+    String? phoneNumber,
+    String? streetAddress,
+    String? city,
+    String? postalCode,
+    String? paymentType,
+    bool? paidStatus,
+    int? orderId,
+    double? deliveryCharge,
+    DateTime? orderDateTime,
+  }) async {
     return showDialog(
       context: context,
       builder: (BuildContext context) {
         return ReceiptPreviewDialog(
-          order: order,
+          transactionId: transactionId,
+          orderType: orderType,
           cartItems: cartItems,
           subtotal: subtotal,
+          totalCharge: totalCharge,
+          extraNotes: extraNotes,
+          changeDue: changeDue,
+          customerName: customerName,
+          customerEmail: customerEmail,
+          phoneNumber: phoneNumber,
+          streetAddress: streetAddress,
+          city: city,
+          postalCode: postalCode,
+          paymentType: paymentType,
+          paidStatus: paidStatus,
+          orderId: orderId,
+          deliveryCharge: deliveryCharge,
+          orderDateTime: orderDateTime,
         );
       },
     );
@@ -36,7 +113,7 @@ class ReceiptPreviewDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    String receiptContent = _generateReceiptContent();
+    String receiptContent = _generateThermalPrinterContent();
 
     return Dialog(
       child: Container(
@@ -83,72 +160,164 @@ class ReceiptPreviewDialog extends StatelessWidget {
     );
   }
 
-  String _generateReceiptContent() {
-    StringBuffer content = StringBuffer();
-    content.writeln('================================================');
-    content.writeln('                RECEIPT PREVIEW                ');
-    content.writeln('================================================');
-    content.writeln('Order ID: ${order.orderId}');
-    content.writeln('Order Type: ${order.orderType}');
-    content.writeln('Date: ${DateTime.now().toString().split('.')[0]}');
-    content.writeln('------------------------------------------------');
+  String _generateThermalPrinterContent() {
+    // This is the EXACT same logic as ThermalPrinterService._generateReceiptContent
+    StringBuffer receipt = StringBuffer();
 
-    if (order.customerName.isNotEmpty == true) {
-      content.writeln('Customer: ${order.customerName}');
+    // Use full 80mm paper width (48 characters)
+    receipt.writeln('================================================');
+    receipt.writeln('                    **TVP**'); // Bold restaurant name
+    receipt.writeln('================================================');
+    DateTime displayDateTime = orderDateTime ?? DateTime.now();
+    receipt.writeln(
+      'Date: ${DateFormat('dd/MM/yyyy HH:mm').format(displayDateTime)}',
+    );
+    if (orderId != null) {
+      receipt.writeln('**Order #: $orderId**'); // Bold order number
     }
-    if (order.phoneNumber?.isNotEmpty == true) {
-      content.writeln('Phone: ${order.phoneNumber}');
-    }
-    if (order.streetAddress?.isNotEmpty == true) {
-      content.writeln('Address: ${order.streetAddress}');
-      if (order.city?.isNotEmpty == true) {
-        content.writeln('City: ${order.city}');
-      }
-      if (order.postalCode?.isNotEmpty == true) {
-        content.writeln('Postal Code: ${order.postalCode}');
-      }
-    }
-    content.writeln('------------------------------------------------');
+    receipt.writeln(
+      '**Order Type: ${orderType.toUpperCase()}**',
+    ); // Bold order type
+    receipt.writeln('================================================');
+    receipt.writeln();
 
-    for (var item in cartItems) {
-      content.writeln('${item.foodItem.name} x${item.quantity}');
-      content.writeln(
-        '  £${(item.pricePerUnit * item.quantity).toStringAsFixed(2)}',
-      );
+    // Customer Details Section
+    if (customerName?.isNotEmpty == true) {
+      receipt.writeln('CUSTOMER DETAILS:');
+      receipt.writeln('------------------------------------------------');
+      receipt.writeln('Name: $customerName');
+
+      if (phoneNumber?.isNotEmpty == true) {
+        receipt.writeln('Phone: $phoneNumber');
+      }
+
+      // Address details for delivery orders
+      if (orderType.toLowerCase() == 'delivery') {
+        if (streetAddress?.isNotEmpty == true) {
+          receipt.writeln('Address: $streetAddress');
+        }
+        if (city?.isNotEmpty == true) {
+          receipt.writeln('City: $city');
+        }
+        if (postalCode?.isNotEmpty == true) {
+          receipt.writeln('Postcode: $postalCode');
+        }
+      }
+
+      receipt.writeln('================================================');
+      receipt.writeln();
+    }
+
+    receipt.writeln('ITEMS:');
+    receipt.writeln('------------------------------------------------');
+
+    for (CartItem item in cartItems) {
+      double itemPricePerUnit = 0.0;
+      if (item.foodItem.price.isNotEmpty) {
+        var firstKey = item.foodItem.price.keys.first;
+        itemPricePerUnit = item.foodItem.price[firstKey] ?? 0.0;
+      }
+      double itemTotal = itemPricePerUnit * item.quantity;
+
+      receipt.writeln(
+        '${item.quantity}x **${item.foodItem.name}**',
+      ); // Bold item name only
 
       if (item.selectedOptions != null && item.selectedOptions!.isNotEmpty) {
-        for (var option in item.selectedOptions!) {
-          content.writeln('  + $option');
+        for (String option in item.selectedOptions!) {
+          if (!_shouldExcludeField(option)) {
+            receipt.writeln('  + $option');
+          }
         }
       }
 
       if (item.comment?.isNotEmpty == true) {
-        content.writeln('  Note: ${item.comment}');
+        receipt.writeln('  Note: ${item.comment}');
       }
-      content.writeln('');
+
+      receipt.writeln('  £${itemTotal.toStringAsFixed(2)}');
+      receipt.writeln();
     }
 
-    content.writeln('------------------------------------------------');
-    content.writeln('Subtotal: £${subtotal.toStringAsFixed(2)}');
-    content.writeln('TOTAL: £${order.orderTotalPrice.toStringAsFixed(2)}');
+    receipt.writeln('------------------------------------------------');
 
-    if (order.changeDue > 0) {
-      content.writeln('Change Due: £${order.changeDue.toStringAsFixed(2)}');
+    // Show delivery charges for delivery orders before subtotal
+    if (orderType.toLowerCase() == 'delivery' &&
+        deliveryCharge != null &&
+        deliveryCharge! > 0) {
+      receipt.writeln(
+        'Delivery Charges:             £${deliveryCharge!.toStringAsFixed(2)}',
+      );
     }
 
-    if (order.paymentType.isNotEmpty == true) {
-      content.writeln('Payment: ${order.paymentType}');
+    receipt.writeln(
+      'Subtotal:                     £${subtotal.toStringAsFixed(2)}',
+    );
+    receipt.writeln('================================================');
+    receipt.writeln(
+      '**TOTAL:                      £${totalCharge.toStringAsFixed(2)}**',
+    ); // Bold total
+    receipt.writeln('================================================');
+
+    // Payment Status Section
+    receipt.writeln();
+    receipt.writeln('PAYMENT STATUS:');
+    receipt.writeln('------------------------------------------------');
+    if (paymentType?.isNotEmpty == true) {
+      receipt.writeln('**Payment Method: $paymentType**'); // Bold payment type
     }
 
-    if (order.orderExtraNotes?.isNotEmpty == true) {
-      content.writeln('------------------------------------------------');
-      content.writeln('Notes: ${order.orderExtraNotes}');
+    // Determine payment status based on order source and payment method
+    String paymentStatus = 'UNPAID';
+
+    // For website orders: Use payment type logic instead of paidStatus
+    // Website orders are identified by order_source: Website and payment_type: Cash on Delivery
+    bool isWebsiteOrder =
+        orderType.toLowerCase().contains('website') ||
+        orderType.toLowerCase().contains('online') ||
+        (paymentType != null &&
+            paymentType!.toLowerCase().contains('cash on delivery'));
+
+    if (isWebsiteOrder && paymentType != null) {
+      final paymentTypeLower = paymentType!.toLowerCase();
+
+      // Website orders: Card/Online = PAID, Cash on Delivery = UNPAID
+      if (paymentTypeLower.contains('card') ||
+          paymentTypeLower.contains('online') ||
+          paymentTypeLower.contains('paypal')) {
+        paymentStatus = 'PAID';
+      } else if (paymentTypeLower.contains('cash on delivery') ||
+          paymentTypeLower.contains('cod')) {
+        paymentStatus = 'UNPAID';
+      } else {
+        paymentStatus = 'PAID'; // Default for other payment methods
+      }
+    } else {
+      // For EPOS orders: Use the actual paid status from payment details
+      paymentStatus = (paidStatus == true) ? 'PAID' : 'UNPAID';
     }
 
-    content.writeln('================================================');
-    content.writeln('           Thank you for your order!           ');
-    content.writeln('================================================');
+    // Show payment details based on payment type and status
+    if (paidStatus == true) {
+      if (paymentType != null &&
+          paymentType!.toLowerCase() == 'cash' &&
+          changeDue > 0) {
+        receipt.writeln(
+          'Amount Received:  £${(totalCharge + changeDue).toStringAsFixed(2)}',
+        );
+        receipt.writeln('Change Due:       £${changeDue.toStringAsFixed(2)}');
+      }
+    }
 
-    return content.toString();
+    receipt.writeln(
+      'Status: **$paymentStatus**',
+    ); // Bold payment status (PAID/UNPAID)
+    receipt.writeln('================================================');
+
+    receipt.writeln();
+    receipt.writeln('Thank you for your order!');
+    receipt.writeln('================================================');
+
+    return receipt.toString();
   }
 }

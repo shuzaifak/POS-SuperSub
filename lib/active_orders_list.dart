@@ -8,6 +8,7 @@ import 'package:epos/providers/active_orders_provider.dart';
 import 'package:epos/services/thermal_printer_service.dart';
 import 'package:epos/services/custom_popup_service.dart';
 import 'package:epos/services/api_service.dart';
+import 'package:epos/services/uk_time_service.dart';
 import 'package:epos/payment_details_widget.dart';
 import 'package:epos/models/order_models.dart';
 import 'package:epos/discount_page.dart';
@@ -32,6 +33,23 @@ class ActiveOrdersList extends StatefulWidget {
 }
 
 class _ActiveOrdersListState extends State<ActiveOrdersList> {
+  // Helper method to check if an option should be excluded (same logic as thermal printer)
+  bool _shouldExcludeOption(String? value) {
+    if (value == null || value.isEmpty) return true;
+
+    final trimmedValue = value.trim().toUpperCase();
+
+    // Exclude N/A values
+    if (trimmedValue == 'N/A') return true;
+
+    // Exclude default pizza options (case insensitive)
+    if (trimmedValue == 'BASE: TOMATO' || trimmedValue == 'CRUST: NORMAL') {
+      return true;
+    }
+
+    return false;
+  }
+
   Order? _selectedOrder;
   final ScrollController _scrollController = ScrollController();
   bool _isPrinterConnected = false;
@@ -1034,13 +1052,19 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
 
             if (itemOptions['hasOptions'] == true) {
               if (itemOptions['size'] != null) {
-                selectedOptions.add('Size: ${itemOptions['size']}');
+                String sizeOption = 'Size: ${itemOptions['size']}';
+                if (!_shouldExcludeOption(sizeOption))
+                  selectedOptions.add(sizeOption);
               }
               if (itemOptions['crust'] != null) {
-                selectedOptions.add('Crust: ${itemOptions['crust']}');
+                String crustOption = 'Crust: ${itemOptions['crust']}';
+                if (!_shouldExcludeOption(crustOption))
+                  selectedOptions.add(crustOption);
               }
               if (itemOptions['base'] != null) {
-                selectedOptions.add('Base: ${itemOptions['base']}');
+                String baseOption = 'Base: ${itemOptions['base']}';
+                if (!_shouldExcludeOption(baseOption))
+                  selectedOptions.add(baseOption);
               }
               if (itemOptions['toppings'] != null &&
                   (itemOptions['toppings'] as List).isNotEmpty) {
@@ -1085,6 +1109,15 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
       double subtotal = _selectedOrder!.orderTotalPrice;
 
       // Use the thermal printer service to print
+      // Calculate delivery charge for delivery orders
+      double? deliveryChargeAmount;
+      if (_shouldApplyDeliveryCharge(
+        _selectedOrder!.orderType,
+        _selectedOrder!.paymentType,
+      )) {
+        deliveryChargeAmount = 1.50; // Delivery charge amount
+      }
+
       bool
       success = await ThermalPrinterService().printReceiptWithUserInteraction(
         transactionId:
@@ -1104,6 +1137,8 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
         city: _selectedOrder!.city,
         postalCode: _selectedOrder!.postalCode,
         paymentType: _selectedOrder!.paymentType,
+        deliveryCharge: deliveryChargeAmount,
+        orderDateTime: UKTimeService.now(), // Always use UK time for printing
         onShowMethodSelection: (availableMethods) {
           CustomPopupService.show(
             context,
@@ -1336,12 +1371,16 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
       } else if (lowerOption.startsWith('comment:') ||
           lowerOption.startsWith('note:') ||
           lowerOption.startsWith('notes:') ||
+          lowerOption.startsWith('review note:') ||
           lowerOption.startsWith('special instructions:')) {
         String commentValue = '';
         if (lowerOption.startsWith('comment:')) {
           commentValue = option.substring('comment:'.length).trim();
-        } else if (lowerOption.startsWith('note:')) {
-          commentValue = option.substring('note:'.length).trim();
+        } else if (lowerOption.startsWith('note:') ||
+            lowerOption.startsWith('review note:')) {
+          String prefix =
+              lowerOption.startsWith('review note:') ? 'review note:' : 'note:';
+          commentValue = option.substring(prefix.length).trim();
         } else if (lowerOption.startsWith('notes:')) {
           commentValue = option.substring('notes:'.length).trim();
         } else if (lowerOption.startsWith('special instructions:')) {
@@ -2339,5 +2378,27 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
         ],
       );
     }
+  }
+
+  // Helper function to determine if delivery charges should apply
+  bool _shouldApplyDeliveryCharge(String? orderType, String? paymentType) {
+    if (orderType == null) return false;
+
+    // Check if orderType is delivery
+    if (orderType.toLowerCase() == 'delivery') {
+      return true;
+    }
+
+    // Check if paymentType indicates delivery (COD, Cash on delivery, etc.)
+    if (paymentType != null) {
+      final paymentTypeLower = paymentType.toLowerCase();
+      if (paymentTypeLower.contains('cod') ||
+          paymentTypeLower.contains('cash on delivery') ||
+          paymentTypeLower.contains('delivery')) {
+        return true;
+      }
+    }
+
+    return false;
   }
 }

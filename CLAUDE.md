@@ -69,13 +69,14 @@ The app uses Flutter Provider for state management with a complex dependency gra
 - **DriverApiService** (`lib/services/driver_api_service.dart`) - Driver-specific API operations
 - **NotificationAudioService** (`lib/services/notification_audio_service.dart`) - Audio notification management
 - **OfflineOrderManager** (`lib/services/offline_order_manager.dart`) - Advanced offline order handling
+- **XprinterService** (`lib/services/xprinter_service.dart`) - Native Xprinter SDK integration for direct USB printing
 
 ### Multi-Brand Support
 Brand configuration is handled in `lib/config/brand_info.dart`:
 - Current brand is set via `_currentBrand` constant ('TVP', 'Dallas', 'SuperSub', 'TEST')
 - Default headers include brand identification for API calls
 - Headers include both 'brand' and 'x-client-id' fields
-- Currently set to 'TVP' brand in the codebase
+- Currently set to 'TEST' brand in the codebase
 
 ### Data Models & Hive Integration
 - **FoodItem** (`lib/models/food_item.dart`) - Menu item structure with pricing, availability
@@ -104,6 +105,7 @@ Brand configuration is handled in `lib/config/brand_info.dart`:
 8. **Driver Management Screen** (`lib/driver_management_screen.dart`) → Driver assignment and tracking
 9. **Edit Items Screen** (`lib/edit_items_screen.dart`) → Menu item management and configuration
 10. **Settings Screen** (`lib/settings_screen.dart`) → Application configuration
+11. **Xprinter Test Screen** (`lib/screens/xprinter_test_screen.dart`) → Native printer testing and debugging interface
 
 ### Backend Integration
 - **Primary URL**: `https://corsproxy.io/?https://thevillage-backend.onrender.com`
@@ -123,10 +125,12 @@ Brand configuration is handled in `lib/config/brand_info.dart`:
 ### Printing Support
 - **Bluetooth Printing**: Thermal printer integration via `print_bluetooth_thermal`
 - **USB Serial Printing**: Direct printer connection via `usb_serial`
+- **Native Xprinter Integration**: Direct USB printing via native Android plugin (`XprinterService`)
 - **Receipt Generation**: Customizable formatting using `esc_pos_utils_plus`
 - **Preview System**: Receipt preview dialogs before printing
 - **Mock Mode**: Testing mode available with ENABLE_MOCK_MODE flag
 - **Duplicate Prevention**: Global tracking to prevent duplicate receipt printing
+- **Multi-Platform Printer Support**: Supports multiple printing methods with fallback options
 
 ### Testing & Quality
 - Uses `flutter_lints` package for static analysis (analysis_options.yaml)
@@ -198,6 +202,7 @@ Brand configuration is handled in `lib/config/brand_info.dart`:
 - `lib/services/api_service.dart` - Backend communication with CORS proxy and failover
 - `lib/services/order_api_service.dart` - WebSocket order management
 - `lib/services/thermal_printer_service.dart` - Receipt printing management
+- `lib/services/xprinter_service.dart` - Native Xprinter SDK integration
 - `lib/services/offline_storage_service.dart` - Hive database management
 - `lib/services/notification_audio_service.dart` - Audio notification system
 

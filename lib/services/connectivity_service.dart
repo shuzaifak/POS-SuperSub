@@ -41,7 +41,9 @@ class ConnectivityService {
   Future<void> _checkInitialConnectivity() async {
     try {
       final results = await _connectivity.checkConnectivity();
-      print('🌐 DEBUG: Initial connectivity check results: ${results.map((r) => r.name).join(', ')}');
+      print(
+        '🌐 DEBUG: Initial connectivity check results: ${results.map((r) => r.name).join(', ')}',
+      );
       await _updateConnectivityStatus(results);
       print('🌐 DEBUG: Initial connectivity status set to: $_isOnline');
     } catch (e) {
@@ -55,12 +57,18 @@ class ConnectivityService {
     await _updateConnectivityStatus(results);
   }
 
-  Future<void> _updateConnectivityStatus(List<ConnectivityResult> results) async {
+  Future<void> _updateConnectivityStatus(
+    List<ConnectivityResult> results,
+  ) async {
     final wasOnline = _isOnline;
     // Check if any connection is available (not none)
-    _isOnline = results.isNotEmpty && !results.every((result) => result == ConnectivityResult.none);
+    _isOnline =
+        results.isNotEmpty &&
+        !results.every((result) => result == ConnectivityResult.none);
 
-    print('🌐 Connectivity changed: ${results.map((r) => r.name).join(', ')} (Online: $_isOnline)');
+    print(
+      '🌐 Connectivity changed: ${results.map((r) => r.name).join(', ')} (Online: $_isOnline)',
+    );
 
     // Save connectivity status
     await OfflineStorageService.saveConnectivityStatus(_isOnline);
@@ -134,10 +142,12 @@ class ConnectivityService {
 
       print('🔍 Checking for pending orders to sync...');
       print('🔍 Found ${pendingOrders.length} pending orders');
-      
+
       // Debug: Show details of pending orders
       for (final order in pendingOrders) {
-        print('🔍 Pending order: ${order.transactionId} (Status: ${order.status})');
+        print(
+          '🔍 Pending order: ${order.transactionId} (Status: ${order.status})',
+        );
       }
 
       if (pendingOrders.isEmpty) {
@@ -172,13 +182,15 @@ class ConnectivityService {
 
       // Cleanup old synced orders
       await OfflineStorageService.cleanupOldOrders();
-      
+
       // Notify listeners about sync completion to trigger UI refresh
       _notifyListeners();
-      
+
       // Notify sync completion listeners for immediate refresh
       if (successCount > 0) {
-        print('🔄 Notifying sync completion listeners for immediate refresh...');
+        print(
+          '🔄 Notifying sync completion listeners for immediate refresh...',
+        );
         _notifySyncCompletion();
       }
     } catch (e) {
@@ -191,19 +203,21 @@ class ConnectivityService {
 
   Future<void> _syncSingleOrder(OfflineOrder order) async {
     print('📤 Processing offline order: ${order.transactionId}');
-    print('📤 Order details: ${order.customerName}, ${order.orderType}, £${order.orderTotalPrice}');
-    
+    print(
+      '📤 Order details: ${order.customerName}, ${order.orderType}, £${order.orderTotalPrice}',
+    );
+
     try {
       // Build order data in the same format as the app normally uses
       final orderData = _buildOrderDataFromOfflineOrder(order);
       print('📤 Built order data for API: ${orderData['transaction_id']}');
-      
+
       // Use the existing ApiService.createOrderFromMap method
       // This ensures the order goes through the same validation and processing
       print('📤 Calling ApiService.createOrderFromMap...');
       final orderId = await ApiService.createOrderFromMap(orderData);
       print('📤 API call completed, received orderId: $orderId');
-      
+
       if (orderId.isNotEmpty) {
         // Extract numeric ID if possible, otherwise use 0 as placeholder
         int numericOrderId = 0;
@@ -213,13 +227,17 @@ class ConnectivityService {
           // orderId might be a message, not a number
           print('Order ID is not numeric: $orderId');
         }
-        
-        await OfflineStorageService.markOrderAsSynced(order.localId, numericOrderId);
-        print('✅ Offline order ${order.transactionId} processed successfully with ID: $orderId');
+
+        await OfflineStorageService.markOrderAsSynced(
+          order.localId,
+          numericOrderId,
+        );
+        print(
+          '✅ Offline order ${order.transactionId} processed successfully with ID: $orderId',
+        );
       } else {
         throw Exception('API returned empty order ID');
       }
-      
     } catch (e) {
       print('❌ Failed to process offline order ${order.transactionId}: $e');
       throw Exception('Failed to process offline order: $e');
@@ -240,25 +258,33 @@ class ConnectivityService {
       },
       "transaction_id": order.transactionId,
       "payment_type": order.paymentType,
-      "amount_received": order.orderTotalPrice, // Assuming full payment for offline orders
+      "amount_received":
+          order.orderTotalPrice, // Assuming full payment for offline orders
       "discount_percentage": 0.0, // No discount for offline orders
       "order_type": order.orderType,
-      "order_source": "EPOS", // Backend expects uppercase EPOS for synced offline orders
-      "status": "yellow", // Backend expects "yellow" status (displays as "Pending" in UI)
+      "order_source":
+          "EPOS", // Backend expects uppercase EPOS for synced offline orders
+      "status":
+          "yellow", // Backend expects "yellow" status (displays as "Pending" in UI)
       "total_price": order.orderTotalPrice,
       "original_total_price": order.orderTotalPrice,
       "discount_amount": 0.0,
       "order_extra_notes": order.orderExtraNotes ?? "",
       "change_due": order.changeDue,
-      "items": order.items.map((item) => {
-        "item_id": item.foodItem.id,
-        "name": item.foodItem.name,
-        "quantity": item.quantity,
-        "total_price": item.totalPrice,
-        "comment": item.comment,
-        "selected_size": "default", // Default size
-        "selected_options": item.selectedOptions ?? [],
-      }).toList(),
+      "items":
+          order.items
+              .map(
+                (item) => {
+                  "item_id": item.foodItem.id,
+                  "name": item.foodItem.name,
+                  "quantity": item.quantity,
+                  "total_price": item.totalPrice,
+                  "comment": item.comment,
+                  "selected_size": "default", // Default size
+                  "selected_options": item.selectedOptions ?? [],
+                },
+              )
+              .toList(),
     };
   }
 
@@ -278,8 +304,10 @@ class ConnectivityService {
       // Find the offline order by transaction ID
       final offlineOrders = OfflineStorageService.getAllOfflineOrders();
       final order = offlineOrders.firstWhere(
-        (order) => order.transactionId == transactionId && order.status == 'pending',
-        orElse: () => throw Exception('Offline order not found or already synced'),
+        (order) =>
+            order.transactionId == transactionId && order.status == 'pending',
+        orElse:
+            () => throw Exception('Offline order not found or already synced'),
       );
 
       print('🔄 Starting sync for single offline order: $transactionId');
@@ -287,7 +315,7 @@ class ConnectivityService {
       _notifyListeners();
 
       await _syncSingleOrder(order);
-      
+
       print('✅ Single order sync completed for: $transactionId');
       _notifySyncCompletion();
       return true;
@@ -304,7 +332,7 @@ class ConnectivityService {
   Future<bool> forceSyncNow() async {
     print('🔄 Force sync requested...');
     print('🔄 Current status: online=$_isOnline, syncing=$_isSyncing');
-    
+
     if (!_isOnline) {
       print('❌ Cannot sync: device is offline');
       return false;
@@ -319,7 +347,9 @@ class ConnectivityService {
     final pendingBefore = OfflineStorageService.getPendingOrders();
     print('📊 DEBUG: Orders before sync: ${pendingBefore.length}');
     for (final order in pendingBefore) {
-      print('📊 DEBUG: Before sync - Order ${order.transactionId}, Status: ${order.status}');
+      print(
+        '📊 DEBUG: Before sync - Order ${order.transactionId}, Status: ${order.status}',
+      );
     }
 
     print('🔄 Starting forced sync...');
@@ -329,20 +359,26 @@ class ConnectivityService {
     // DEBUGGING: Check orders after sync
     final pendingAfter = OfflineStorageService.getPendingOrders();
     final allAfter = OfflineStorageService.getAllOfflineOrders();
-    print('📊 DEBUG: Orders after sync - Pending: ${pendingAfter.length}, Total: ${allAfter.length}');
+    print(
+      '📊 DEBUG: Orders after sync - Pending: ${pendingAfter.length}, Total: ${allAfter.length}',
+    );
     for (final order in allAfter) {
-      print('📊 DEBUG: After sync - Order ${order.transactionId}, Status: ${order.status}');
+      print(
+        '📊 DEBUG: After sync - Order ${order.transactionId}, Status: ${order.status}',
+      );
     }
-    
+
     print('🔄 Forced sync completed');
-    
+
     // Check if any orders were actually synced and notify for immediate refresh
     final pendingAfterFinal = OfflineStorageService.getPendingOrders();
     if (pendingBefore.length > pendingAfterFinal.length) {
-      print('🔄 Manual sync had success, notifying completion listeners for immediate refresh...');
+      print(
+        '🔄 Manual sync had success, notifying completion listeners for immediate refresh...',
+      );
       _notifySyncCompletion();
     }
-    
+
     return true;
   }
 
@@ -355,7 +391,8 @@ class ConnectivityService {
     try {
       // Simple connectivity check without adding new API endpoints
       final results = await _connectivity.checkConnectivity();
-      return results.isNotEmpty && !results.every((result) => result == ConnectivityResult.none);
+      return results.isNotEmpty &&
+          !results.every((result) => result == ConnectivityResult.none);
     } catch (e) {
       print('❌ Internet connectivity test failed: $e');
       return false;

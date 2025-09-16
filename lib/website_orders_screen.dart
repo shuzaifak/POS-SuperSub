@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'package:epos/services/thermal_printer_service.dart';
+// import 'package:epos/widgets/receipt_preview_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:epos/models/order.dart';
 import 'package:epos/providers/website_orders_provider.dart';
@@ -36,11 +37,28 @@ class WebsiteOrdersScreen extends StatefulWidget {
 }
 
 class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
+  // Helper method to check if an option should be excluded (same logic as thermal printer)
+  bool _shouldExcludeOption(String? value) {
+    if (value == null || value.isEmpty) return true;
+
+    final trimmedValue = value.trim().toUpperCase();
+
+    // Exclude N/A values
+    if (trimmedValue == 'N/A') return true;
+
+    // Exclude default pizza options (case insensitive)
+    if (trimmedValue == 'BASE: TOMATO' || trimmedValue == 'CRUST: NORMAL') {
+      return true;
+    }
+
+    return false;
+  }
+
   List<Order> activeOrders = [];
   List<Order> completedOrders = [];
   Order? _selectedOrder;
   late int _selectedBottomNavItem;
-  String _selectedOrderType = 'pickup';
+  String _selectedOrderType = 'delivery';
   final ScrollController _driversScrollController = ScrollController();
   final ScrollController _ordersScrollController = ScrollController();
   final ScrollController _orderDetailsScrollController = ScrollController();
@@ -305,31 +323,70 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
 
             if (itemOptions['hasOptions'] == true) {
               if (itemOptions['size'] != null) {
-                selectedOptions.add('Size: ${itemOptions['size']}');
+                String sizeOption = 'Size: ${itemOptions['size']}';
+                if (!_shouldExcludeOption(sizeOption))
+                  selectedOptions.add(sizeOption);
               }
               if (itemOptions['crust'] != null) {
-                selectedOptions.add('Crust: ${itemOptions['crust']}');
+                String crustOption = 'Crust: ${itemOptions['crust']}';
+                if (!_shouldExcludeOption(crustOption))
+                  selectedOptions.add(crustOption);
               }
               if (itemOptions['base'] != null) {
-                selectedOptions.add('Base: ${itemOptions['base']}');
+                String baseOption = 'Base: ${itemOptions['base']}';
+                if (!_shouldExcludeOption(baseOption))
+                  selectedOptions.add(baseOption);
               }
               if (itemOptions['toppings'] != null &&
                   (itemOptions['toppings'] as List).isNotEmpty) {
-                selectedOptions.add(
-                  'Extra Toppings: ${(itemOptions['toppings'] as List<String>).join(', ')}',
-                );
+                selectedOptions.addAll(itemOptions['toppings'] as List<String>);
               }
               if (itemOptions['sauceDips'] != null &&
                   (itemOptions['sauceDips'] as List).isNotEmpty) {
-                selectedOptions.add(
-                  'Sauce Dips: ${(itemOptions['sauceDips'] as List<String>).join(', ')}',
+                selectedOptions.addAll(
+                  itemOptions['sauceDips'] as List<String>,
                 );
               }
               if (itemOptions['isMeal'] == true) {
                 selectedOptions.add('MEAL');
               }
               if (itemOptions['drink'] != null) {
-                selectedOptions.add('Drink: ${itemOptions['drink']}');
+                selectedOptions.add('${itemOptions['drink']}');
+              }
+            }
+
+            // ENHANCED: If no meaningful options were extracted, show the full description
+            // This ensures deal details and complex items are fully displayed in receipts
+            if (selectedOptions.isEmpty &&
+                orderItem.description.isNotEmpty &&
+                orderItem.description != orderItem.itemName) {
+              // Split description by newlines and add each as a separate line
+              List<String> descriptionLines =
+                  orderItem.description
+                      .split('\n')
+                      .map((line) => line.trim())
+                      .where(
+                        (line) =>
+                            line.isNotEmpty &&
+                            line != orderItem.itemName &&
+                            !line.toLowerCase().startsWith(
+                              'review note:',
+                            ), // Exclude review notes from UI display
+                      )
+                      .toList();
+
+              selectedOptions.addAll(descriptionLines);
+            }
+
+            // Combine original comment with extracted review note
+            String? finalComment = orderItem.comment;
+            String? extractedComment = itemOptions['extractedComment'];
+
+            if (extractedComment != null && extractedComment.isNotEmpty) {
+              if (finalComment != null && finalComment.isNotEmpty) {
+                finalComment = '$finalComment - $extractedComment';
+              } else {
+                finalComment = extractedComment;
               }
             }
 
@@ -347,7 +404,7 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
               quantity: orderItem.quantity,
               selectedOptions:
                   selectedOptions.isNotEmpty ? selectedOptions : null,
-              comment: orderItem.comment,
+              comment: finalComment,
               pricePerUnit: pricePerUnit,
             );
           }).toList();
@@ -357,6 +414,41 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
 
       // // Show test dialog with receipt content
       // await _showReceiptDialog(_selectedOrder!, cartItems, subtotal);
+
+      // Calculate delivery charge for delivery orders
+      double? deliveryChargeAmount;
+      if (_shouldApplyDeliveryCharge(
+        _selectedOrder!.orderType,
+        _selectedOrder!.paymentType,
+      )) {
+        deliveryChargeAmount = 1.50; // Delivery charge amount
+      }
+
+      // Show receipt preview dialog before printing
+      // await ReceiptPreviewDialog.show(
+      //   context,
+      //   transactionId:
+      //       _selectedOrder!.transactionId.isNotEmpty
+      //           ? _selectedOrder!.transactionId
+      //           : _selectedOrder!.orderId.toString(),
+      //   orderType: _selectedOrder!.orderType,
+      //   cartItems: cartItems,
+      //   subtotal: subtotal,
+      //   totalCharge: _selectedOrder!.orderTotalPrice,
+      //   changeDue: _selectedOrder!.changeDue,
+      //   extraNotes: _selectedOrder!.orderExtraNotes,
+      //   customerName: _selectedOrder!.customerName,
+      //   customerEmail: _selectedOrder!.customerEmail,
+      //   phoneNumber: _selectedOrder!.phoneNumber,
+      //   streetAddress: _selectedOrder!.streetAddress,
+      //   city: _selectedOrder!.city,
+      //   postalCode: _selectedOrder!.postalCode,
+      //   deliveryCharge: deliveryChargeAmount,
+      //   paymentType: _selectedOrder!.paymentType,
+      //   paidStatus: _selectedOrder!.paidStatus,
+      //   orderId: _selectedOrder!.orderId,
+      //   orderDateTime: UKTimeService.now(),
+      // );
 
       // Use the thermal printer service to print
       bool
@@ -377,10 +469,12 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
         streetAddress: _selectedOrder!.streetAddress,
         city: _selectedOrder!.city,
         postalCode: _selectedOrder!.postalCode,
+        deliveryCharge: deliveryChargeAmount,
         paymentType: _selectedOrder!.paymentType,
         paidStatus:
             _selectedOrder!
                 .paidStatus, // Pass the actual paid status from order
+        orderDateTime: UKTimeService.now(), // Always use UK time for printing
         onShowMethodSelection: (availableMethods) {
           CustomPopupService.show(
             context,
@@ -1139,9 +1233,9 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
 
     final String currentStatusLower = order.status.toLowerCase();
     final String orderTypeLower = order.orderType.toLowerCase();
-    final bool hasDriver =
-        order.driverId != null &&
-        order.driverId != 0; // Fixed: use != 0 instead of isNotEmpty
+    // final bool hasDriver =
+    //     order.driverId != null &&
+    //     order.driverId != 0; // Fixed: use != 0 instead of isNotEmpty
 
     final bool isWebsiteDeliveryOrder = orderTypeLower == 'delivery';
 
@@ -1154,12 +1248,18 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
         case 'ready':
         case 'preparing':
         case 'green':
+          // ORIGINAL DRIVER RESTRICTION LOGIC (COMMENTED OUT):
           // If it's ready but no driver assigned yet, keep it as ready
           // If driver is assigned, it should show "On Its Way" in display but status stays 'green'
+          /*
           if (hasDriver) {
             return 'Ready'; // Don't change status, just display changes
           }
           return 'Ready'; // Stays 'ready' (frontend enforcement)
+          */
+
+          // NEW LOGIC: Allow progression to completed regardless of driver assignment
+          return 'Completed';
         case 'completed':
         case 'delivered':
         case 'blue':
@@ -1481,12 +1581,15 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
           }
         }
       } else if (lowerOption.startsWith('sauce dips:') ||
+          lowerOption.startsWith('sauces:') ||
           lowerOption.startsWith('dips:') ||
           lowerOption.startsWith('sauce:') ||
           lowerOption.contains('dip:')) {
         String sauceDipsValue = '';
         if (lowerOption.startsWith('sauce dips:')) {
           sauceDipsValue = option.substring('sauce dips:'.length).trim();
+        } else if (lowerOption.startsWith('sauces:')) {
+          sauceDipsValue = option.substring('sauces:'.length).trim();
         } else if (lowerOption.startsWith('dips:')) {
           sauceDipsValue = option.substring('dips:'.length).trim();
         } else if (lowerOption.startsWith('sauce:')) {
@@ -1510,15 +1613,61 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
           options['sauceDips'] = currentSauceDips.toSet().toList();
           anyNonDefaultOptionFound = true;
         }
+      } else if (lowerOption.startsWith('salads:') ||
+          lowerOption.startsWith('salad:')) {
+        String saladValue = '';
+        if (lowerOption.startsWith('salads:')) {
+          saladValue = option.substring('salads:'.length).trim();
+        } else if (lowerOption.startsWith('salad:')) {
+          saladValue = option.substring('salad:'.length).trim();
+        }
+
+        if (saladValue.isNotEmpty) {
+          List<String> saladList =
+              saladValue
+                  .split(',')
+                  .map((t) => t.trim())
+                  .where((t) => t.isNotEmpty)
+                  .toList();
+          List<String> currentToppings = List<String>.from(options['toppings']);
+          currentToppings.addAll(saladList);
+          options['toppings'] = currentToppings.toSet().toList();
+          anyNonDefaultOptionFound = true;
+        }
+      } else if (lowerOption.startsWith('seasonings:') ||
+          lowerOption.startsWith('seasoning:')) {
+        String seasoningValue = '';
+        if (lowerOption.startsWith('seasonings:')) {
+          seasoningValue = option.substring('seasonings:'.length).trim();
+        } else if (lowerOption.startsWith('seasoning:')) {
+          seasoningValue = option.substring('seasoning:'.length).trim();
+        }
+
+        if (seasoningValue.isNotEmpty) {
+          List<String> seasoningList =
+              seasoningValue
+                  .split(',')
+                  .map((t) => t.trim())
+                  .where((t) => t.isNotEmpty)
+                  .toList();
+          List<String> currentToppings = List<String>.from(options['toppings']);
+          currentToppings.addAll(seasoningList);
+          options['toppings'] = currentToppings.toSet().toList();
+          anyNonDefaultOptionFound = true;
+        }
       } else if (lowerOption.startsWith('comment:') ||
           lowerOption.startsWith('note:') ||
           lowerOption.startsWith('notes:') ||
+          lowerOption.startsWith('review note:') ||
           lowerOption.startsWith('special instructions:')) {
         String commentValue = '';
         if (lowerOption.startsWith('comment:')) {
           commentValue = option.substring('comment:'.length).trim();
-        } else if (lowerOption.startsWith('note:')) {
-          commentValue = option.substring('note:'.length).trim();
+        } else if (lowerOption.startsWith('note:') ||
+            lowerOption.startsWith('review note:')) {
+          String prefix =
+              lowerOption.startsWith('review note:') ? 'review note:' : 'note:';
+          commentValue = option.substring(prefix.length).trim();
         } else if (lowerOption.startsWith('notes:')) {
           commentValue = option.substring('notes:'.length).trim();
         } else if (lowerOption.startsWith('special instructions:')) {
@@ -1794,12 +1943,18 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
           return 'Ready'; // Show Mark Ready for pending delivery orders
         case 'ready':
         case 'green':
+          // ORIGINAL DRIVER RESTRICTION LOGIC (COMMENTED OUT):
           // For delivery orders that are ready
+          /*
           if (order.driverId != null && order.driverId! > 0) {
             return 'Complete'; // Driver assigned, can mark complete
           } else {
             return 'On Its Way'; // Waiting for driver assignment, show next visual step
           }
+          */
+
+          // NEW LOGIC: Always allow completion regardless of driver assignment
+          return 'Complete';
         default:
           return 'Ready';
       }
@@ -2187,26 +2342,31 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                                           ),
                                           child: Row(
                                             children: [
-                                              // Numbering removed as requested - just empty space
-                                              if (serialNumber != null)
-                                                const SizedBox(width: 0)
-                                              else
-                                                const SizedBox(width: 0),
-
-                                              SizedBox(
-                                                width:
-                                                    serialNumber != null
-                                                        ? (isLargeScreen
-                                                            ? 18
-                                                            : 15)
-                                                        : 0,
+                                              // Order Number Box (similar to active orders list)
+                                              Container(
+                                                width: 80,
+                                                height: isLargeScreen ? 80 : 70,
+                                                decoration: BoxDecoration(
+                                                  color: Colors.black,
+                                                  borderRadius:
+                                                      BorderRadius.circular(35),
+                                                ),
+                                                alignment: Alignment.center,
+                                                child: Text(
+                                                  '#${order.orderId}',
+                                                  style: const TextStyle(
+                                                    fontSize: 16,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: Colors.white,
+                                                    fontFamily: 'Poppins',
+                                                  ),
+                                                  textAlign: TextAlign.center,
+                                                ),
                                               ),
+                                              const SizedBox(width: 15),
 
                                               Expanded(
-                                                flex:
-                                                    serialNumber != null
-                                                        ? 3
-                                                        : 4,
+                                                flex: 3,
                                                 child: GestureDetector(
                                                   onTap: () {
                                                     setState(() {
@@ -2312,9 +2472,11 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                                                           order,
                                                         ); // Pass the full order object
 
+                                                    // ORIGINAL RESTRICTION LOGIC (COMMENTED OUT):
                                                     // Specific rule for Website Delivery Orders:
                                                     // If it's a delivery order and currently 'ready', AND the _nextStatus function also says 'ready'
                                                     // (meaning it cannot progress further from this app), then show a message and stop.
+                                                    /* 
                                                     final bool
                                                     isWebsiteDeliveryOrder =
                                                         order.orderType
@@ -2338,6 +2500,16 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                                                       }
                                                       return; // Prevent update
                                                     }
+                                                    */
+
+                                                    // NEW LOGIC: Allow status updates regardless of driver assignment
+                                                    // final bool
+                                                    // // isWebsiteDeliveryOrder =
+                                                    // //     order.orderType
+                                                    // //         .toLowerCase() ==
+                                                    // //     'delivery';
+
+                                                    // Allow status progression for delivery orders
 
                                                     final orderProvider =
                                                         Provider.of<
@@ -2786,7 +2958,7 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                                                                           color:
                                                                               Colors.black,
                                                                           fontWeight:
-                                                                              FontWeight.w600,
+                                                                              FontWeight.normal,
                                                                         ),
                                                                         overflow:
                                                                             baseItemName.contains(
@@ -3007,32 +3179,145 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                                                                           .toList(),
                                                                   ],
 
-                                                                  // Display item comment/notes if present (moved outside the hasOptions check)
-                                                                  if (item.comment !=
-                                                                          null &&
+                                                                  // ENHANCED: Show full description for complex deal items to capture all components
+                                                                  if (hasOptions &&
                                                                       item
-                                                                          .comment!
-                                                                          .isNotEmpty)
-                                                                    Text(
-                                                                      'Note: ${item.comment!}',
-                                                                      style: TextStyle(
-                                                                        fontSize:
-                                                                            isLargeScreen
-                                                                                ? 17
-                                                                                : 15,
-                                                                        fontFamily:
-                                                                            'Poppins',
-                                                                        color:
-                                                                            Colors.orange[700],
-                                                                        fontWeight:
-                                                                            FontWeight.w500,
-                                                                      ),
-                                                                      maxLines:
-                                                                          3,
-                                                                      overflow:
-                                                                          TextOverflow
-                                                                              .ellipsis,
+                                                                          .description
+                                                                          .isNotEmpty &&
+                                                                      item.description !=
+                                                                          item.itemName) ...[
+                                                                    // For deals, show all description lines but avoid exact duplicates of already parsed info
+                                                                    Builder(
+                                                                      builder: (
+                                                                        context,
+                                                                      ) {
+                                                                        List<
+                                                                          String
+                                                                        >
+                                                                        descriptionLines =
+                                                                            item.description
+                                                                                .split(
+                                                                                  '\n',
+                                                                                )
+                                                                                .map(
+                                                                                  (
+                                                                                    line,
+                                                                                  ) =>
+                                                                                      line.trim(),
+                                                                                )
+                                                                                .where(
+                                                                                  (
+                                                                                    line,
+                                                                                  ) =>
+                                                                                      line.isNotEmpty,
+                                                                                )
+                                                                                .toList();
+
+                                                                        // Create a set of already displayed information to avoid exact duplicates
+                                                                        Set<
+                                                                          String
+                                                                        >
+                                                                        alreadyShown =
+                                                                            {};
+
+                                                                        // Add the base item name only if it was actually displayed above
+                                                                        if (baseItemName !=
+                                                                                item.itemName &&
+                                                                            baseItemName.trim().isNotEmpty) {
+                                                                          alreadyShown.add(
+                                                                            baseItemName.toLowerCase().trim(),
+                                                                          );
+                                                                        }
+
+                                                                        // Add parsed options that were already displayed
+                                                                        if (selectedSize !=
+                                                                            null)
+                                                                          alreadyShown.add(
+                                                                            'size: ${selectedSize}'.toLowerCase(),
+                                                                          );
+                                                                        if (selectedCrust !=
+                                                                            null)
+                                                                          alreadyShown.add(
+                                                                            'crust: ${selectedCrust}'.toLowerCase(),
+                                                                          );
+                                                                        if (selectedBase !=
+                                                                            null)
+                                                                          alreadyShown.add(
+                                                                            'base: ${selectedBase}'.toLowerCase(),
+                                                                          );
+                                                                        if (selectedDrink !=
+                                                                                null &&
+                                                                            selectedDrink
+                                                                                .trim()
+                                                                                .isNotEmpty)
+                                                                          alreadyShown.add(
+                                                                            'drink: ${selectedDrink}'.toLowerCase(),
+                                                                          );
+                                                                        if (isMeal)
+                                                                          alreadyShown.add(
+                                                                            'meal',
+                                                                          );
+
+                                                                        // Filter out only exact duplicates of what's already displayed
+                                                                        List<
+                                                                          String
+                                                                        >
+                                                                        filteredLines =
+                                                                            descriptionLines.where((
+                                                                              line,
+                                                                            ) {
+                                                                              String
+                                                                              lowerLine =
+                                                                                  line.toLowerCase().trim();
+
+                                                                              // Only filter if it's an exact match of something already shown
+                                                                              return !alreadyShown.contains(
+                                                                                lowerLine,
+                                                                              );
+                                                                            }).toList();
+
+                                                                        if (filteredLines
+                                                                            .isNotEmpty) {
+                                                                          return Column(
+                                                                            crossAxisAlignment:
+                                                                                CrossAxisAlignment.start,
+                                                                            children: [
+                                                                              const SizedBox(
+                                                                                height:
+                                                                                    8,
+                                                                              ),
+                                                                              ...filteredLines
+                                                                                  .map(
+                                                                                    (
+                                                                                      line,
+                                                                                    ) => Padding(
+                                                                                      padding: const EdgeInsets.only(
+                                                                                        bottom:
+                                                                                            2,
+                                                                                      ),
+                                                                                      child: Text(
+                                                                                        line,
+                                                                                        style: TextStyle(
+                                                                                          fontSize:
+                                                                                              isLargeScreen
+                                                                                                  ? 17
+                                                                                                  : 15,
+                                                                                          fontFamily:
+                                                                                              'Poppins',
+                                                                                          color:
+                                                                                              Colors.black,
+                                                                                        ),
+                                                                                      ),
+                                                                                    ),
+                                                                                  )
+                                                                                  .toList(),
+                                                                            ],
+                                                                          );
+                                                                        }
+                                                                        return const SizedBox.shrink();
+                                                                      },
                                                                     ),
+                                                                  ],
                                                                 ],
                                                               ),
                                                             ),
@@ -3159,30 +3444,6 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                                                                   ? 15.0
                                                                   : 12.0,
                                                         ),
-                                                    decoration: BoxDecoration(
-                                                      color: const Color(
-                                                        0xFFFDF1C7,
-                                                      ),
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            8.0,
-                                                          ),
-                                                    ),
-                                                    child: Center(
-                                                      child: Text(
-                                                        'Comment: ${item.comment ?? extractedComment ?? ''}',
-                                                        textAlign:
-                                                            TextAlign.center,
-                                                        style: TextStyle(
-                                                          fontSize:
-                                                              isLargeScreen
-                                                                  ? 18
-                                                                  : 16,
-                                                          color: Colors.black,
-                                                          fontFamily: 'Poppins',
-                                                        ),
-                                                      ),
-                                                    ),
                                                   ),
                                                 ),
                                             ],
@@ -3439,5 +3700,27 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
         },
       ),
     );
+  }
+
+  // Helper function to determine if delivery charges should apply
+  bool _shouldApplyDeliveryCharge(String? orderType, String? paymentType) {
+    if (orderType == null) return false;
+
+    // Check if orderType is delivery
+    if (orderType.toLowerCase() == 'delivery') {
+      return true;
+    }
+
+    // Check if paymentType indicates delivery (COD, Cash on delivery, etc.)
+    if (paymentType != null) {
+      final paymentTypeLower = paymentType.toLowerCase();
+      if (paymentTypeLower.contains('cod') ||
+          paymentTypeLower.contains('cash on delivery') ||
+          paymentTypeLower.contains('delivery')) {
+        return true;
+      }
+    }
+
+    return false;
   }
 }

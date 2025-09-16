@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:epos/services/order_api_service.dart';
 import 'package:epos/services/thermal_printer_service.dart';
+import 'package:epos/services/uk_time_service.dart';
+// import 'package:epos/widgets/receipt_preview_dialog.dart';
 import 'package:epos/models/order.dart';
 import 'package:epos/models/cart_item.dart';
 import 'package:epos/models/food_item.dart';
@@ -23,6 +25,23 @@ class MainAppWrapper extends StatefulWidget {
 }
 
 class _MainAppWrapperState extends State<MainAppWrapper> {
+  // Helper method to check if an option should be excluded (same logic as thermal printer)
+  bool _shouldExcludeOption(String? value) {
+    if (value == null || value.isEmpty) return true;
+
+    final trimmedValue = value.trim().toUpperCase();
+
+    // Exclude N/A values
+    if (trimmedValue == 'N/A') return true;
+
+    // Exclude default pizza options (case insensitive)
+    if (trimmedValue == 'BASE: TOMATO' || trimmedValue == 'CRUST: NORMAL') {
+      return true;
+    }
+
+    return false;
+  }
+
   late OrderApiService _orderApiService;
   StreamSubscription<Order>? _newOrderSubscription;
 
@@ -536,27 +555,48 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
       List<String> selectedOptions = [];
 
       if (itemOptions['hasOptions'] == true) {
-        if (itemOptions['size'] != null)
-          selectedOptions.add('Size: ${itemOptions['size']}');
-        if (itemOptions['crust'] != null)
-          selectedOptions.add('Crust: ${itemOptions['crust']}');
-        if (itemOptions['base'] != null)
-          selectedOptions.add('Base: ${itemOptions['base']}');
+        if (itemOptions['size'] != null) {
+          String sizeOption = 'Size: ${itemOptions['size']}';
+          if (!_shouldExcludeOption(sizeOption))
+            selectedOptions.add(sizeOption);
+        }
+        if (itemOptions['crust'] != null) {
+          String crustOption = 'Crust: ${itemOptions['crust']}';
+          if (!_shouldExcludeOption(crustOption))
+            selectedOptions.add(crustOption);
+        }
+        if (itemOptions['base'] != null) {
+          String baseOption = 'Base: ${itemOptions['base']}';
+          if (!_shouldExcludeOption(baseOption))
+            selectedOptions.add(baseOption);
+        }
         if (itemOptions['toppings'] != null &&
             (itemOptions['toppings'] as List).isNotEmpty) {
-          selectedOptions.add(
-            'Extra Toppings: ${(itemOptions['toppings'] as List<String>).join(', ')}',
-          );
+          selectedOptions.addAll(itemOptions['toppings'] as List<String>);
         }
         if (itemOptions['sauceDips'] != null &&
             (itemOptions['sauceDips'] as List).isNotEmpty) {
-          selectedOptions.add(
-            'Sauce Dips: ${(itemOptions['sauceDips'] as List<String>).join(', ')}',
-          );
+          selectedOptions.addAll(itemOptions['sauceDips'] as List<String>);
         }
         if (itemOptions['isMeal'] == true) selectedOptions.add('MEAL');
         if (itemOptions['drink'] != null)
-          selectedOptions.add('Drink: ${itemOptions['drink']}');
+          selectedOptions.add('${itemOptions['drink']}');
+      }
+
+      // ENHANCED: If no meaningful options were extracted, show the full description
+      // This ensures deal details and complex items are fully displayed in receipts
+      if (selectedOptions.isEmpty &&
+          orderItem.description.isNotEmpty &&
+          orderItem.description != orderItem.itemName) {
+        // Split description by newlines and add each as a separate line
+        List<String> descriptionLines =
+            orderItem.description
+                .split('\n')
+                .map((line) => line.trim())
+                .where((line) => line.isNotEmpty && line != orderItem.itemName)
+                .toList();
+
+        selectedOptions.addAll(descriptionLines);
       }
 
       String? finalComment = orderItem.comment;
@@ -803,6 +843,7 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
       } else if (lowerOption.startsWith('comment:') ||
           lowerOption.startsWith('note:') ||
           lowerOption.startsWith('notes:') ||
+          lowerOption.startsWith('review note:') ||
           lowerOption.startsWith('special instructions:')) {
         String commentValue = '';
         if (lowerOption.startsWith('comment:')) {
@@ -811,6 +852,8 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
           commentValue = option.substring('note:'.length).trim();
         } else if (lowerOption.startsWith('notes:')) {
           commentValue = option.substring('notes:'.length).trim();
+        } else if (lowerOption.startsWith('review note:')) {
+          commentValue = option.substring('review note:'.length).trim();
         } else if (lowerOption.startsWith('special instructions:')) {
           commentValue =
               option.substring('special instructions:'.length).trim();
@@ -976,6 +1019,35 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
       print("MainAppWrapper: Printing receipt for order ${order.orderId}");
       List<CartItem> cartItems = _convertOrderToCartItems(order);
 
+      // Calculate delivery charge for delivery orders
+      double? deliveryChargeAmount;
+      if (_shouldApplyDeliveryCharge(order.orderType, order.paymentType)) {
+        deliveryChargeAmount = 1.50; // Delivery charge amount
+      }
+
+      // Show receipt preview dialog before printing
+      // await ReceiptPreviewDialog.show(
+      //   context,
+      //   transactionId: order.orderId.toString(),
+      //   orderType: order.orderType,
+      //   cartItems: cartItems,
+      //   subtotal: order.orderTotalPrice,
+      //   totalCharge: order.orderTotalPrice,
+      //   extraNotes: order.orderExtraNotes,
+      //   changeDue: order.changeDue,
+      //   customerName: order.customerName,
+      //   customerEmail: order.customerEmail,
+      //   phoneNumber: order.phoneNumber,
+      //   streetAddress: order.streetAddress,
+      //   city: order.city,
+      //   postalCode: order.postalCode,
+      //   paymentType: order.paymentType,
+      //   paidStatus: order.paidStatus,
+      //   orderId: order.orderId,
+      //   deliveryCharge: deliveryChargeAmount,
+      //   orderDateTime: UKTimeService.now(),
+      // );
+
       bool success = await ThermalPrinterService()
           .printReceiptWithUserInteraction(
             transactionId: order.orderId.toString(),
@@ -992,6 +1064,9 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
             city: order.city,
             postalCode: order.postalCode,
             paymentType: order.paymentType,
+            deliveryCharge: deliveryChargeAmount,
+            orderDateTime:
+                UKTimeService.now(), // Always use UK time for printing
             onShowMethodSelection: (availableMethods) {
               _showPopup(
                 "Available printing methods: ${availableMethods.join(', ')}",
@@ -1146,5 +1221,27 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
 
       _previousOrderStatuses[order.orderId] = currentStatus;
     }
+  }
+
+  // Helper function to determine if delivery charges should apply
+  bool _shouldApplyDeliveryCharge(String? orderType, String? paymentType) {
+    if (orderType == null) return false;
+
+    // Check if orderType is delivery
+    if (orderType.toLowerCase() == 'delivery') {
+      return true;
+    }
+
+    // Check if paymentType indicates delivery (COD, Cash on delivery, etc.)
+    if (paymentType != null) {
+      final paymentTypeLower = paymentType.toLowerCase();
+      if (paymentTypeLower.contains('cod') ||
+          paymentTypeLower.contains('cash on delivery') ||
+          paymentTypeLower.contains('delivery')) {
+        return true;
+      }
+    }
+
+    return false;
   }
 }
