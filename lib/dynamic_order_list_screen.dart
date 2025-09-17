@@ -15,6 +15,7 @@ import 'package:epos/services/custom_popup_service.dart';
 import 'package:epos/services/connectivity_service.dart';
 import 'models/cart_item.dart';
 import 'models/food_item.dart';
+import 'package:intl/intl.dart';
 
 extension HexColor on Color {
   static Color fromHex(String hexString) {
@@ -1975,6 +1976,8 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
                                               fontWeight: FontWeight.normal,
                                             ),
                                           ),
+
+                                          // Display order date and time from created_at
                                           if ((liveSelectedOrder.orderType
                                                           .toLowerCase() ==
                                                       "delivery" ||
@@ -1992,6 +1995,19 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
                                                 fontSize: 18,
                                               ),
                                             ),
+
+                                          Text(
+                                            DateFormat(
+                                              'dd/MM/yyyy   HH:mm',
+                                            ).format(
+                                              liveSelectedOrder.createdAt,
+                                            ),
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              color: Colors.grey[600],
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
 
                                           // Display order-level extra notes
                                           if (liveSelectedOrder

@@ -13,6 +13,7 @@ import 'dart:ui';
 import 'package:epos/dynamic_order_list_screen.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:epos/services/thermal_printer_service.dart';
+import 'package:epos/services/xprinter_service.dart';
 // import 'package:epos/widgets/receipt_preview_dialog.dart';
 import 'package:epos/customer_details_widget.dart';
 import 'package:epos/payment_details_widget.dart';
@@ -339,6 +340,33 @@ class _Page4State extends State<Page4> {
     }
   }
 
+  /// Opens the cash drawer for cash and card payments
+  Future<void> _openCashDrawer() async {
+    try {
+      print('💰 Opening cash drawer for payment...');
+
+      // Try Xprinter service first (USB)
+      final xprinterService = XprinterService();
+      if (xprinterService.isConnected) {
+        final success = await xprinterService.openCashBox();
+        if (success) {
+          print('✅ Cash drawer opened successfully via Xprinter');
+          return;
+        } else {
+          print('❌ Failed to open cash drawer via Xprinter');
+        }
+      }
+
+      // Fallback to thermal printer service
+      final thermalPrinterService = ThermalPrinterService();
+      await thermalPrinterService.openCashDrawer();
+      print('✅ Cash drawer opened via thermal printer service');
+    } catch (e) {
+      print('❌ Error opening cash drawer: $e');
+      // Don't show error to user - cash drawer opening is optional
+    }
+  }
+
   void _cancelEditingCustomerDetails() {
     setState(() {
       _isEditingCustomerDetails = false;
@@ -458,6 +486,8 @@ class _Page4State extends State<Page4> {
                 Navigator.of(context).pop();
                 setState(() {
                   _cartItems.clear(); // Clear cart when changing order type
+                  _editingCartIndex =
+                      null; // Reset editing index when cart is cleared
                 });
                 _changeOrderType(newType);
               },
@@ -1745,7 +1775,9 @@ class _Page4State extends State<Page4> {
                               );
                             },
                             initialCartItem:
-                                _editingCartIndex != null
+                                _editingCartIndex != null &&
+                                        _editingCartIndex! >= 0 &&
+                                        _editingCartIndex! < _cartItems.length
                                     ? _cartItems[_editingCartIndex!]
                                     : null,
                             isEditing: _editingCartIndex != null,
@@ -1926,10 +1958,11 @@ class _Page4State extends State<Page4> {
 
       // The cart items now come in the NEW format: "Shawarma 1 (Salad: Cucumber, Lettuce & Sauces: Ketchup, BBQ)"
       // or "Shawarma 1 (No Salad & No Sauce)"
-      // Just return them as-is since they're already properly formatted
+      // Format them for receipt with proper line breaks for better readability
       if (shawarma.startsWith('Shawarma ') && shawarma.contains('(')) {
-        // Already in the correct format, just add semicolon for consistency
-        formattedItems.add('$shawarma;');
+        // Format for receipt with line breaks
+        String formattedShawarma = _formatShawarmaForReceipt(shawarma);
+        formattedItems.add(formattedShawarma);
       } else {
         // Fallback for legacy format - extract salad and sauce info
         List<String> itemDetails = [];
@@ -1949,12 +1982,128 @@ class _Page4State extends State<Page4> {
           itemDetails.add('No Sauce');
         }
 
-        formattedItems.add('Shawarma ${i + 1} (${itemDetails.join(', ')});');
+        // Apply same receipt formatting logic for legacy format
+        String legacyFormatted =
+            'Shawarma ${i + 1} (${itemDetails.join(' & ')})';
+        formattedItems.add(_formatShawarmaForReceipt(legacyFormatted));
       }
     }
 
     return formattedItems;
   }
+
+  /// Formats a Shawarma item for receipt with proper line breaks for salads and sauces
+  String _formatShawarmaForReceipt(String shawarma) {
+    // Example input: "Shawarma 1 (Salad: Onions, Tomato & Sauces: Chilli Sauce, Sweet Chilli)"
+    // Example output: "Shawarma 1\n(Salad: Onions, Tomato &\nSauces: Chilli Sauce, Sweet Chilli);"
+
+    if (!shawarma.contains('(') || !shawarma.contains(')')) {
+      return '$shawarma;'; // Return as-is if no parentheses
+    }
+
+    // Extract the shawarma number and the details in parentheses
+    int openParenIndex = shawarma.indexOf('(');
+    String shawarmaName = shawarma.substring(0, openParenIndex).trim();
+    String details =
+        shawarma
+            .substring(openParenIndex + 1, shawarma.lastIndexOf(')'))
+            .trim();
+
+    // Check if it's "No Salad & No Sauce" - keep on same line
+    if (details.contains('No Salad & No Sauce')) {
+      return '$shawarma;';
+    }
+
+    // Check if it contains salads or sauces
+    bool hasSalad = details.contains('Salad:');
+    bool hasSauce = details.contains('Sauces:');
+
+    if (!hasSalad && !hasSauce) {
+      return '$shawarma;'; // No salads or sauces, keep as-is
+    }
+
+    // Start formatting with line breaks for receipt
+    if (hasSalad || hasSauce) {
+      // Split the details by '&' to separate salad and sauce sections
+      List<String> sections = details.split('&').map((s) => s.trim()).toList();
+
+      String formattedDetails = '(';
+      for (int i = 0; i < sections.length; i++) {
+        String section = sections[i].trim();
+
+        if (i == 0) {
+          // First section (usually salad)
+          formattedDetails += section;
+        } else {
+          // Subsequent sections (usually sauces) - add newline before
+          formattedDetails += '\n$section';
+        }
+
+        if (i < sections.length - 1) {
+          formattedDetails += ' &';
+        }
+      }
+      formattedDetails += ');';
+
+      // Add line break before the details if they contain salad or sauce info
+      return '$shawarmaName\n$formattedDetails';
+    }
+
+    return '$shawarma;';
+  }
+
+  /// Formats Family Meal and Combo Meal items with line breaks for Burger/Shawarma components
+  List<String> _formatFamilyComboMealOptions(List<String> selectedOptions) {
+    List<String> formattedOptions = [];
+
+    for (String option in selectedOptions) {
+      // Check if this is a Burger or Shawarma component with Salad/Sauces
+      if ((option.contains('Burger') || option.contains('Shawarma')) &&
+          option.contains('(') &&
+          option.contains(')') &&
+          (option.contains('Salad:') || option.contains('Sauces:'))) {
+        // Apply line break formatting using the same logic as Shawarma receipts
+        String formattedOption = _formatShawarmaForReceipt(option);
+        formattedOptions.add(formattedOption);
+      } else {
+        // For non-Burger/Shawarma items (Pizza, Drinks, etc.), keep as-is
+        formattedOptions.add(option);
+      }
+    }
+
+    return formattedOptions;
+  }
+
+  /// Formats cart items for receipt preview by applying deal formatting
+  // List<CartItem> _formatCartItemsForReceipt(List<CartItem> cartItems) {
+  //   return cartItems.map((item) {
+  //     // Create a copy of the item with formatted options for deals
+  //     if (item.foodItem.category == 'Deals' &&
+  //         item.selectedOptions != null &&
+  //         item.selectedOptions!.isNotEmpty) {
+  //       List<String> formattedOptions;
+  //       if (item.foodItem.name.toLowerCase() == 'family meal' ||
+  //           item.foodItem.name.toLowerCase() == 'combo meal') {
+  //         formattedOptions = _formatFamilyComboMealOptions(
+  //           item.selectedOptions!,
+  //         );
+  //       } else {
+  //         formattedOptions = _formatDealOptions(item.selectedOptions!);
+  //       }
+
+  //       return CartItem(
+  //         foodItem: item.foodItem,
+  //         quantity: item.quantity,
+  //         selectedOptions: formattedOptions,
+  //         pricePerUnit: item.pricePerUnit,
+  //         comment: item.comment,
+  //       );
+  //     }
+
+  //     // Return original item if not a deal
+  //     return item;
+  //   }).toList();
+  // }
 
   List<String> _formatPizzaGroup(List<String> pizzas) {
     List<String> formattedItems = [];
@@ -1969,8 +2118,8 @@ class _Page4State extends State<Page4> {
       if (sauces.isNotEmpty) {
         sauceInfo =
             sauces.length == 1
-                ? 'Sauce: ${sauces[0]}'
-                : 'Sauces: ${sauces.join(', ')}';
+                ? 'Sauce Dip: ${sauces[0]}'
+                : 'Sauce Dips: ${sauces.join(', ')}';
       } else {
         sauceInfo = 'No Sauce';
       }
@@ -1986,27 +2135,41 @@ class _Page4State extends State<Page4> {
 
     for (int i = 0; i < burgers.length; i++) {
       String burger = burgers[i];
-      String formattedItem = _extractItemName(burger);
 
-      // Extract salad and sauce info for Burger
-      List<String> itemDetails = [];
-
-      // Check for salad
-      if (burger.toLowerCase().contains('salad')) {
-        itemDetails.add('Salad');
+      // Check if the burger already has the new format with parentheses and salad/sauce info
+      if (burger.contains('(') &&
+          burger.contains(')') &&
+          (burger.contains('Salad:') || burger.contains('Sauces:'))) {
+        // Format for receipt with line breaks using same logic as Shawarma
+        String formattedBurger = _formatShawarmaForReceipt(burger);
+        formattedItems.add(formattedBurger);
       } else {
-        itemDetails.add('No Salad');
-      }
+        // Legacy format - extract item name and build format
+        String formattedItem = _extractItemName(burger);
 
-      // Check for sauces
-      List<String> sauces = _extractSauces(burger);
-      if (sauces.isNotEmpty) {
-        itemDetails.add('Sauce: ${sauces.join(', ')}');
-      } else {
-        itemDetails.add('No Sauce');
-      }
+        // Extract salad and sauce info for Burger
+        List<String> itemDetails = [];
 
-      formattedItems.add('${formattedItem} (${itemDetails.join(', ')});');
+        // Check for salad
+        if (burger.toLowerCase().contains('salad')) {
+          itemDetails.add('Salad');
+        } else {
+          itemDetails.add('No Salad');
+        }
+
+        // Check for sauces
+        List<String> sauces = _extractSauces(burger);
+        if (sauces.isNotEmpty) {
+          itemDetails.add('Sauces: ${sauces.join(', ')}');
+        } else {
+          itemDetails.add('No Sauce');
+        }
+
+        // Apply same receipt formatting logic for legacy format
+        String legacyFormatted =
+            '${formattedItem} (${itemDetails.join(' & ')})';
+        formattedItems.add(_formatShawarmaForReceipt(legacyFormatted));
+      }
     }
 
     return formattedItems;
@@ -2990,6 +3153,7 @@ class _Page4State extends State<Page4> {
                     bool isMeal = false;
                     List<String> toppings = [];
                     List<String> sauceDips = [];
+                    List<String> saladOptions = [];
                     String? selectedSeasoning;
                     bool hasOptions = false;
 
@@ -3064,16 +3228,35 @@ class _Page4State extends State<Page4> {
                               hasOptions = true;
                             }
                           }
-                        } else if (lowerOption.contains('sauce dips:')) {
-                          String dipsValue = option.split(':').last.trim();
-                          if (dipsValue.isNotEmpty) {
-                            List<String> dipsList =
-                                dipsValue
-                                    .split(',')
-                                    .map((t) => t.trim())
-                                    .where((t) => t.isNotEmpty)
-                                    .toList();
-                            sauceDips.addAll(dipsList);
+                        } else if (lowerOption.contains('sauce:') ||
+                            lowerOption.contains('sauce dip:')) {
+                          // Skip individual sauce parsing for deals - they have their own formatting
+                          if (item.foodItem.category != 'Deals') {
+                            String dipsValue = option.split(':').last.trim();
+                            if (dipsValue.isNotEmpty) {
+                              List<String> dipsList =
+                                  dipsValue
+                                      .split(',')
+                                      .map((t) => t.trim())
+                                      .where((t) => t.isNotEmpty)
+                                      .toList();
+                              sauceDips.addAll(dipsList);
+                            }
+                          }
+                        } else if (lowerOption.contains('salad:')) {
+                          // Skip individual salad parsing for deals - they have their own formatting
+                          if (item.foodItem.category != 'Deals') {
+                            String saladValue = option.split(':').last.trim();
+                            if (saladValue.isNotEmpty) {
+                              List<String> saladList =
+                                  saladValue
+                                      .split(',')
+                                      .map((s) => s.trim())
+                                      .where((s) => s.isNotEmpty)
+                                      .toList();
+                              saladOptions.addAll(saladList);
+                              hasOptions = true;
+                            }
                           }
                         } else if (lowerOption.contains('seasoning:') ||
                             lowerOption.contains('chips seasoning:')) {
@@ -3093,9 +3276,12 @@ class _Page4State extends State<Page4> {
                     // Handle deal-specific options display
                     List<String> dealOptions = [];
                     if (item.foodItem.category == 'Deals' && hasOptions) {
-                      // Skip reformatting for Family Meal - it already has perfect format
-                      if (item.foodItem.name.toLowerCase() == 'family meal') {
-                        dealOptions = item.selectedOptions!;
+                      // Apply line break formatting for Family Meal and Combo Meal
+                      if (item.foodItem.name.toLowerCase() == 'family meal' ||
+                          item.foodItem.name.toLowerCase() == 'combo meal') {
+                        dealOptions = _formatFamilyComboMealOptions(
+                          item.selectedOptions!,
+                        );
                       } else {
                         dealOptions = _formatDealOptions(item.selectedOptions!);
                       }
@@ -3206,7 +3392,20 @@ class _Page4State extends State<Page4> {
                                                       ),
                                                     if (sauceDips.isNotEmpty)
                                                       Text(
-                                                        'Sauce Dips: ${sauceDips.join(', ')}',
+                                                        '${(item.foodItem.category == 'Pizza' || item.foodItem.category == 'GarlicBread') ? 'Sauce Dip' : 'Sauce'}: ${sauceDips.join(', ')}',
+                                                        style: const TextStyle(
+                                                          fontSize: 15,
+                                                          fontFamily: 'Poppins',
+                                                          color: Colors.black,
+                                                        ),
+                                                        maxLines: 2,
+                                                        overflow:
+                                                            TextOverflow
+                                                                .ellipsis,
+                                                      ),
+                                                    if (saladOptions.isNotEmpty)
+                                                      Text(
+                                                        'Salad: ${saladOptions.join(', ')}',
                                                         style: const TextStyle(
                                                           fontSize: 15,
                                                           fontFamily: 'Poppins',
@@ -3231,26 +3430,41 @@ class _Page4State extends State<Page4> {
                                                             TextOverflow
                                                                 .ellipsis,
                                                       ),
-                                                    // Display deal-specific options
+                                                    // Display deal-specific options with proper line breaks
                                                     if (dealOptions.isNotEmpty)
                                                       ...dealOptions
                                                           .map(
                                                             (
                                                               dealOption,
-                                                            ) => Text(
-                                                              dealOption,
-                                                              style: const TextStyle(
-                                                                fontSize: 15,
-                                                                fontFamily:
-                                                                    'Poppins',
-                                                                color:
-                                                                    Colors
-                                                                        .black,
-                                                              ),
-                                                              maxLines: 2,
-                                                              overflow:
-                                                                  TextOverflow
-                                                                      .ellipsis,
+                                                            ) => Column(
+                                                              crossAxisAlignment:
+                                                                  CrossAxisAlignment
+                                                                      .start,
+                                                              children:
+                                                                  dealOption
+                                                                      .split(
+                                                                        '\n',
+                                                                      )
+                                                                      .map(
+                                                                        (
+                                                                          line,
+                                                                        ) => Text(
+                                                                          line,
+                                                                          style: const TextStyle(
+                                                                            fontSize:
+                                                                                15,
+                                                                            fontFamily:
+                                                                                'Poppins',
+                                                                            color:
+                                                                                Colors.black,
+                                                                          ),
+                                                                          maxLines:
+                                                                              1,
+                                                                          overflow:
+                                                                              TextOverflow.ellipsis,
+                                                                        ),
+                                                                      )
+                                                                      .toList(),
                                                             ),
                                                           )
                                                           .toList(),
@@ -3303,6 +3517,24 @@ class _Page4State extends State<Page4> {
                                               onTap: () {
                                                 setState(() {
                                                   _cartItems.removeAt(index);
+
+                                                  // Reset editing index if it becomes invalid
+                                                  if (_editingCartIndex !=
+                                                          null &&
+                                                      (_editingCartIndex! >=
+                                                              _cartItems
+                                                                  .length ||
+                                                          _editingCartIndex! ==
+                                                              index)) {
+                                                    _editingCartIndex = null;
+                                                  } else if (_editingCartIndex !=
+                                                          null &&
+                                                      _editingCartIndex! >
+                                                          index) {
+                                                    // Adjust editing index if item was removed before it
+                                                    _editingCartIndex =
+                                                        _editingCartIndex! - 1;
+                                                  }
                                                 });
 
                                                 CustomPopupService.show(
@@ -3695,10 +3927,14 @@ class _Page4State extends State<Page4> {
                     child: Opacity(
                       opacity: _isProcessingUnpaid ? 0.3 : 1.0,
                       child: GestureDetector(
-                        onTap: () {
+                        onTap: () async {
                           setState(() {
                             _selectedPaymentType = 'cash';
                           });
+
+                          // Open cash drawer for cash payment
+                          await _openCashDrawer();
+
                           _proceedToNextStep();
                         },
                         child: Container(
@@ -3743,10 +3979,14 @@ class _Page4State extends State<Page4> {
                     child: Opacity(
                       opacity: _isProcessingUnpaid ? 0.3 : 1.0,
                       child: GestureDetector(
-                        onTap: () {
+                        onTap: () async {
                           setState(() {
                             _selectedPaymentType = 'card';
                           });
+
+                          // Open cash drawer for card payment
+                          await _openCashDrawer();
+
                           _proceedToNextStep();
                         },
                         child: Container(
@@ -4039,12 +4279,17 @@ class _Page4State extends State<Page4> {
       // Always use UK time for receipts and dialogs
       DateTime orderCreationTime = UKTimeService.now();
 
+      // // Format cart items for receipt preview (same as printing)
+      // List<CartItem> formattedCartItems = _formatCartItemsForReceipt(
+      //   _cartItems,
+      // );
+
       // Show receipt preview dialog before printing
       // await ReceiptPreviewDialog.show(
       //   context,
       //   transactionId: id1,
       //   orderType: _actualOrderType,
-      //   cartItems: _cartItems,
+      //   cartItems: formattedCartItems,
       //   subtotal: originalSubtotal,
       //   totalCharge: finalTotalCharge,
       //   extraNotes: extraNotes,
@@ -4453,6 +4698,7 @@ class _Page4State extends State<Page4> {
   void _clearOrderState() {
     setState(() {
       _cartItems.clear();
+      _editingCartIndex = null; // Reset editing index when cart is cleared
       _showPayment = false;
       _customerDetails = null;
       _hasProcessedFirstStep = false;

@@ -472,8 +472,9 @@ class ThermalPrinterService {
         (!Platform.isAndroid && !Platform.isWindows && !Platform.isLinux)) {
       throw Exception('USB printing not supported on this platform');
     }
+
     if (ENABLE_MOCK_MODE) {
-      await Future.delayed(Duration(milliseconds: 800)); // Faster simulation
+      await Future.delayed(Duration(milliseconds: 800));
       debugPrint('🧪 MOCK: USB printing simulated (ENHANCED)');
       debugPrint('📄 Receipt data length: ${receiptData.length} bytes');
       return SIMULATE_PRINTER_SUCCESS;
@@ -482,19 +483,46 @@ class ThermalPrinterService {
     // Try Xprinter SDK first if enabled and connected
     if (_useXprinterSDK && Platform.isAndroid && _xprinterService.isConnected) {
       try {
-        print('🎯 Using Xprinter SDK for USB printing...');
+        print(
+          '🎯 Using Xprinter SDK for USB printing with manual specifications...',
+        );
         String receiptString = String.fromCharCodes(receiptData);
 
-        // Fix pound symbol encoding for XPrinter (use CP437 character code 0x9C)
-        receiptString = receiptString.replaceAll(
-          '£',
-          String.fromCharCode(0x9C),
-        );
+        // Apply comprehensive encoding and formatting fixes based on manual
+        String fixedReceiptString = _applyXprinterEncodingFixes(receiptString);
 
-        bool success = await _xprinterService.printReceipt(receiptString);
+        // Add manual-based initialization commands before printing
+        String xprinterInitCommands = '';
+        xprinterInitCommands +=
+            String.fromCharCode(0x1B) +
+            String.fromCharCode(0x40); // ESC @ (Initialize)
+        xprinterInitCommands +=
+            String.fromCharCode(0x1B) +
+            String.fromCharCode(0x74) +
+            String.fromCharCode(
+              0x00,
+            ); // ESC t 0 (Select CP437/Page 0 as per manual)
+        xprinterInitCommands +=
+            String.fromCharCode(0x1C) +
+            String.fromCharCode(0x2E); // FS . (Cancel Chinese character mode)
+        xprinterInitCommands +=
+            String.fromCharCode(0x1B) +
+            String.fromCharCode(0x52) +
+            String.fromCharCode(0x00); // ESC R 0 (International character set)
+        xprinterInitCommands +=
+            String.fromCharCode(0x1B) +
+            String.fromCharCode(0x61) +
+            String.fromCharCode(0x00); // ESC a 0 (Left align)
+
+        // Combine initialization with receipt content
+        String finalReceiptString = xprinterInitCommands + fixedReceiptString;
+
+        bool success = await _xprinterService.printReceipt(finalReceiptString);
 
         if (success) {
-          print('✅ Xprinter SDK USB printing successful');
+          print(
+            '✅ Xprinter SDK USB printing successful with manual-based encoding and formatting fixes',
+          );
           return true;
         } else {
           print(
@@ -508,6 +536,7 @@ class ThermalPrinterService {
       }
     }
 
+    // Legacy USB printing method with enhanced Xprinter support
     try {
       // Enhanced connection verification
       if (_persistentUsbPort == null) {
@@ -545,32 +574,79 @@ class ThermalPrinterService {
         }
       }
 
-      print('🚀 USB: Starting super-fast print job...');
-
-      // Split large data into chunks for stability (optimized for device type)
+      // Enhanced initialization for Xprinter devices based on manual
       bool isXprinterDevice =
           _cachedUsbDevices.isNotEmpty && _isXprinter(_cachedUsbDevices.first);
+
+      if (isXprinterDevice) {
+        print(
+          '🎯 Applying Xprinter-specific initialization based on manual specifications...',
+        );
+        // Send Xprinter-specific initialization commands per manual specs
+        List<int> xprinterInit = [
+          0x1B, 0x40, // ESC @ (Initialize printer)
+          0x1B,
+          0x74,
+          0x00, // ESC t 0 (Select CP437/Page 0 as per manual - this is critical for £ symbol)
+          0x1C, 0x2E, // FS . (Cancel Chinese character mode as shown in manual)
+          0x1B, 0x52, 0x00, // ESC R 0 (International character set from manual)
+          0x1B, 0x61, 0x00, // ESC a 0 (Left align)
+          0x1B, 0x21, 0x00, // ESC ! 0 (Reset character formatting)
+        ];
+
+        await _persistentUsbPort!.write(Uint8List.fromList(xprinterInit));
+        await Future.delayed(
+          Duration(milliseconds: 300),
+        ); // Allow time for initialization
+        print('✅ Xprinter manual-based initialization completed');
+      }
+
+      print('🚀 USB: Starting super-fast print job...');
+
+      // Apply encoding fixes to receipt data if it's an Xprinter device
+      List<int> finalReceiptData = receiptData;
+      if (isXprinterDevice) {
+        print(
+          '🔧 Applying Xprinter manual-based encoding fixes to receipt data...',
+        );
+        String receiptString = String.fromCharCodes(receiptData);
+        String fixedString = _applyXprinterEncodingFixes(receiptString);
+        finalReceiptData = fixedString.codeUnits;
+        print('✅ Receipt data encoding fixes applied');
+      }
+
+      // Split large data into chunks for stability (optimized for device type)
       int chunkSize =
-          isXprinterDevice ? 1024 : 512; // Larger chunks for Xprinter
-      for (int i = 0; i < receiptData.length; i += chunkSize) {
+          isXprinterDevice
+              ? 1024
+              : 512; // Larger chunks for Xprinter as per manual specs
+      print(
+        '📦 Splitting receipt into chunks of $chunkSize bytes for ${isXprinterDevice ? "Xprinter" : "generic"} device',
+      );
+
+      for (int i = 0; i < finalReceiptData.length; i += chunkSize) {
         int end =
-            (i + chunkSize < receiptData.length)
+            (i + chunkSize < finalReceiptData.length)
                 ? i + chunkSize
-                : receiptData.length;
-        List<int> chunk = receiptData.sublist(i, end);
+                : finalReceiptData.length;
+        List<int> chunk = finalReceiptData.sublist(i, end);
 
         await _persistentUsbPort!.write(Uint8List.fromList(chunk));
 
         // Minimal delay between chunks to prevent buffer overflow
-        if (i + chunkSize < receiptData.length) {
-          await Future.delayed(Duration(milliseconds: 10));
+        if (i + chunkSize < finalReceiptData.length) {
+          await Future.delayed(
+            Duration(milliseconds: isXprinterDevice ? 5 : 10),
+          ); // Faster for Xprinter
         }
       }
 
       // Final small delay to ensure completion
       await Future.delayed(Duration(milliseconds: 100));
 
-      print('✅ USB super-fast print completed successfully');
+      print(
+        '✅ USB super-fast print completed successfully with Xprinter manual optimizations',
+      );
       return true;
     } catch (e) {
       String errorMsg = 'USB printing failed: $e';
@@ -1606,7 +1682,6 @@ class ThermalPrinterService {
     throw Exception(errorMsg);
   }
 
-  /// Send drawer command via USB
   Future<bool> _sendDrawerCommandUSB(List<int> command) async {
     try {
       if (_persistentUsbPort == null) {
@@ -1618,7 +1693,30 @@ class ThermalPrinterService {
         '💰 USB: Sending cash drawer command: ${command.map((e) => '0x${e.toRadixString(16).toUpperCase().padLeft(2, '0')}').join(' ')}',
       );
 
-      // Send the drawer command
+      // For Xprinter SDK, try to use SDK method if available
+      if (_useXprinterSDK &&
+          Platform.isAndroid &&
+          _xprinterService.isConnected) {
+        try {
+          print('🎯 Attempting cash drawer via Xprinter SDK...');
+          bool success = await _xprinterService.openCashBox();
+
+          if (success) {
+            print('✅ Xprinter SDK cash drawer opened successfully');
+            return true;
+          } else {
+            print(
+              '⚠️ Xprinter SDK cash drawer failed, using direct USB command...',
+            );
+          }
+        } catch (e) {
+          print(
+            '⚠️ Xprinter SDK cash drawer error, using direct USB command: $e',
+          );
+        }
+      }
+
+      // Send the drawer command directly via USB
       await _persistentUsbPort!.write(Uint8List.fromList(command));
 
       // Wait for command execution and verify
@@ -2204,9 +2302,18 @@ class ThermalPrinterService {
       }
       double itemTotal = itemPricePerUnit * item.quantity;
 
-      receipt.writeln(
-        '${item.quantity}x **${item.foodItem.name}**',
-      ); // Bold item name only
+      // Format item line with name and price on same line
+      String itemName = '${item.quantity}x **${item.foodItem.name}**';
+      String itemPrice = '£${itemTotal.toStringAsFixed(2)}';
+
+      // Calculate padding to align price to the right (48 char width)
+      int availableWidth = 48;
+      int nameLength = itemName.length; // Use actual string length
+      int priceLength = itemPrice.length;
+      int padding = availableWidth - nameLength - priceLength;
+      if (padding < 1) padding = 1; // Minimum 1 space
+
+      receipt.writeln('$itemName${' ' * padding}$itemPrice');
 
       if (item.selectedOptions != null && item.selectedOptions!.isNotEmpty) {
         for (String option in item.selectedOptions!) {
@@ -2219,8 +2326,6 @@ class ThermalPrinterService {
       if (!_shouldExcludeField(item.comment)) {
         receipt.writeln('  Note: ${item.comment}');
       }
-
-      receipt.writeln('  £${itemTotal.toStringAsFixed(2)}');
       receipt.writeln();
     }
 
@@ -2252,34 +2357,13 @@ class ThermalPrinterService {
       receipt.writeln('**Payment Method: $paymentType**'); // Bold payment type
     }
 
-    // Determine payment status based on order source and payment method
-    String paymentStatus = 'UNPAID';
+    // Determine payment status - use paidStatus for most orders, but override for COD
+    String paymentStatus = (paidStatus == true) ? 'PAID' : 'UNPAID';
 
-    // For website orders: Use payment type logic instead of paidStatus
-    // Website orders are identified by order_source: Website and payment_type: Cash on Delivery
-    bool isWebsiteOrder =
-        orderType.toLowerCase().contains('website') ||
-        orderType.toLowerCase().contains('online') ||
-        (paymentType != null &&
-            paymentType.toLowerCase().contains('cash on delivery'));
-
-    if (isWebsiteOrder && paymentType != null) {
-      final paymentTypeLower = paymentType.toLowerCase();
-
-      // Website orders: Card/Online = PAID, Cash on Delivery = UNPAID
-      if (paymentTypeLower.contains('card') ||
-          paymentTypeLower.contains('online') ||
-          paymentTypeLower.contains('paypal')) {
-        paymentStatus = 'PAID';
-      } else if (paymentTypeLower.contains('cash on delivery') ||
-          paymentTypeLower.contains('cod')) {
-        paymentStatus = 'UNPAID';
-      } else {
-        paymentStatus = 'PAID'; // Default for other payment methods
-      }
-    } else {
-      // For EPOS orders: Use the actual paid status from payment details
-      paymentStatus = (paidStatus == true) ? 'PAID' : 'UNPAID';
+    // Override: Cash on Delivery orders are always UNPAID regardless of paidStatus
+    if (paymentType != null &&
+        paymentType.toLowerCase().contains('cash on delivery')) {
+      paymentStatus = 'UNPAID';
     }
 
     // Show payment details based on payment type and status
@@ -2458,14 +2542,23 @@ class ThermalPrinterService {
       }
       double itemTotal = itemPricePerUnit * item.quantity;
 
-      // Bold item name ONLY
+      // Item name and price on same line - using established 42-char format
+      String quantityAndName = '${item.quantity}x ${item.foodItem.name}';
+      String priceText = '£${itemTotal.toStringAsFixed(2)}';
+
+      // Use same logic as _fixXprinterLineFormatting for consistency
+      int totalWidth = 42; // Based on manual's 72mm paper width
+      int nameLength = quantityAndName.length;
+      int priceLength = priceText.length;
+      int paddingNeeded = totalWidth - nameLength - priceLength;
+
+      if (paddingNeeded < 1) paddingNeeded = 1; // Minimum 1 space
+
+      String formattedLine = '$quantityAndName${' ' * paddingNeeded}$priceText';
+
       bytes += generator.text(
-        '${item.quantity}x ${item.foodItem.name}',
-        styles: const PosStyles(
-          height: PosTextSize.size1,
-          width: PosTextSize.size1,
-          bold: true,
-        ),
+        formattedLine,
+        styles: const PosStyles(bold: true),
       );
 
       if (item.selectedOptions != null && item.selectedOptions!.isNotEmpty) {
@@ -2479,15 +2572,6 @@ class ThermalPrinterService {
       if (!_shouldExcludeField(item.comment)) {
         bytes += generator.text('  Note: ${item.comment}');
       }
-
-      bytes += generator.text(
-        '  £${itemTotal.toStringAsFixed(2)}',
-        styles: const PosStyles(
-          align: PosAlign.right,
-          height: PosTextSize.size1,
-          width: PosTextSize.size1,
-        ),
-      );
       bytes += generator.emptyLines(1);
     }
 
@@ -2553,32 +2637,13 @@ class ThermalPrinterService {
       );
     }
 
-    // Determine payment status based on payment method
-    String paymentStatus = 'UNPAID';
+    // Determine payment status - use paidStatus for most orders, but override for COD
+    String paymentStatus = (paidStatus == true) ? 'PAID' : 'UNPAID';
 
-    if (paymentType != null) {
-      final paymentTypeLower = paymentType.toLowerCase();
-
-      // For website orders: Card = PAID, COD/Cash = UNPAID
-      // For EPOS orders: Use existing logic
-      if (paymentTypeLower.contains('card') ||
-          paymentTypeLower.contains('online') ||
-          paymentTypeLower.contains('paypal')) {
-        paymentStatus = 'PAID';
-      } else if (paymentTypeLower == 'cash' ||
-          paymentTypeLower.contains('cod')) {
-        // Cash/COD orders are UNPAID unless it's EPOS cash with change due
-        if (paymentTypeLower == 'cash' && changeDue > 0) {
-          // EPOS cash order with change due - it's been paid
-          paymentStatus = 'PAID';
-        } else {
-          // Website COD or EPOS cash without change - unpaid
-          paymentStatus = 'UNPAID';
-        }
-      } else {
-        // Default to PAID for other payment methods
-        paymentStatus = 'PAID';
-      }
+    // Override: Cash on Delivery orders are always UNPAID regardless of paidStatus
+    if (paymentType != null &&
+        paymentType.toLowerCase().contains('cash on delivery')) {
+      paymentStatus = 'UNPAID';
     }
 
     // Show payment details for paid orders
@@ -2805,6 +2870,34 @@ class ThermalPrinterService {
         return true;
       } else {
         throw Exception('Mock printer simulation failed');
+      }
+    }
+
+    // Try Xprinter SDK first if enabled and connected
+    if (_useXprinterSDK && Platform.isAndroid && _xprinterService.isConnected) {
+      try {
+        print('🎯 Using Xprinter SDK for USB sales report printing...');
+        String reportString = String.fromCharCodes(reportData);
+
+        // Apply comprehensive encoding fixes for Xprinter
+        String fixedReportString = _applyXprinterEncodingFixes(reportString);
+
+        bool success = await _xprinterService.printReceipt(fixedReportString);
+
+        if (success) {
+          print(
+            '✅ Xprinter SDK USB sales report printing successful with encoding fixes',
+          );
+          return true;
+        } else {
+          print(
+            '⚠️ Xprinter SDK sales report printing failed, falling back to legacy method',
+          );
+        }
+      } catch (e) {
+        print(
+          '⚠️ Xprinter SDK sales report printing error, falling back to legacy method: $e',
+        );
       }
     }
 
@@ -3452,5 +3545,179 @@ class ThermalPrinterService {
         ) +
         1;
     return ((dayOfYear - date.weekday + 10) / 7).floor();
+  }
+
+  String _applyXprinterEncodingFixes(String content) {
+    print(
+      '🔧 Applying Xprinter-specific character encoding fixes based on manual...',
+    );
+
+    String fixedContent = content;
+
+    // Based on Xprinter manual - using CP437 (Code Page 0) as default
+    // Manual shows support for multiple code pages with CP437 as standard
+    final Map<String, String> encodingFixes = {
+      // Currency symbols - CRITICAL for your pound sign issue
+      // From manual: CP437 character set mappings
+      '£': String.fromCharCode(
+        0x9C,
+      ), // Code 156 in CP437 - Pound sign (THIS IS THE KEY FIX)
+      '€': String.fromCharCode(0xEE), // Code 238 in CP437 - Euro sign
+      '¥': String.fromCharCode(0x9D), // Code 157 in CP437 - Yen sign
+      '¢': String.fromCharCode(0x9B), // Code 155 in CP437 - Cent sign
+      '\$': String.fromCharCode(0x24), // Code 36 - Dollar sign
+      // Manual shows extensive character support - adding problematic ones
+      '°': String.fromCharCode(0xF8), // Code 248 - Degree symbol
+      '·': String.fromCharCode(0xFA), // Code 250 - Middle dot
+      '×': String.fromCharCode(0x78), // Code 120 - 'x' for multiplication
+      '÷': String.fromCharCode(0xF6), // Code 246 - Division sign
+      // Accented characters from manual's character set
+      'á': String.fromCharCode(0xA0), // Code 160
+      'é': String.fromCharCode(0x82), // Code 130
+      'í': String.fromCharCode(0xA1), // Code 161
+      'ó': String.fromCharCode(0xA2), // Code 162
+      'ú': String.fromCharCode(0xA3), // Code 163
+      'ñ': String.fromCharCode(0xA4), // Code 164
+      // Quote marks - ensure standard ASCII
+      '"': String.fromCharCode(
+        0x22,
+      ), // Left double quotation mark (U+201C) -> standard quote
+      ''': String.fromCharCode(0x27), // Left single quotation mark (U+2018) -> apostrophe
+''': String.fromCharCode(
+        0x27,
+      ), // Right single quotation mark (U+2019) -> apostrophe
+    };
+
+    // Apply all encoding fixes
+    encodingFixes.forEach((unicode, encoded) {
+      if (fixedContent.contains(unicode)) {
+        print(
+          '   Fixing character: $unicode -> CP437 code ${encoded.codeUnits[0]}',
+        );
+        fixedContent = fixedContent.replaceAll(unicode, encoded);
+      }
+    });
+
+    // Apply line formatting fixes based on manual's 72mm paper width (42 characters)
+    fixedContent = _fixXprinterLineFormatting(fixedContent);
+
+    print('✅ Xprinter manual-based encoding fixes applied');
+    return fixedContent;
+  }
+
+  String _fixXprinterLineFormatting(String content) {
+    print(
+      '🔧 Fixing Xprinter line formatting for 72mm paper width (42 characters)...',
+    );
+
+    List<String> lines = content.split('\n');
+    List<String> fixedLines = [];
+
+    for (String line in lines) {
+      // Fix item lines with quantity, name, and price
+      if (line.contains('x ') &&
+          line.contains('£') &&
+          !line.contains('Order #:')) {
+        // Extract components: "1x SHAWARMA BURGER                     £25.49"
+        RegExp itemPattern = RegExp(r'(\d+x\s+)(.+?)\s*(£[\d.]+)$');
+        Match? match = itemPattern.firstMatch(line.trim());
+
+        if (match != null) {
+          String quantity = match.group(1)!; // "1x "
+          String itemName = match.group(2)!.trim(); // "SHAWARMA BURGER"
+          String price = match.group(3)!; // "£25.49"
+
+          // Create properly formatted line for 42-character width (72mm paper as per manual)
+          // Format: "1x ITEM_NAME                £PRICE"
+          String quantityAndName = '$quantity$itemName';
+          int totalWidth = 42; // Based on manual's 72mm paper width
+          int nameLength = quantityAndName.length;
+          int priceLength = price.length;
+          int paddingNeeded = totalWidth - nameLength - priceLength;
+
+          if (paddingNeeded < 1) paddingNeeded = 1; // Minimum 1 space
+
+          String formattedLine = '$quantityAndName${' ' * paddingNeeded}$price';
+          fixedLines.add(formattedLine);
+          print('   Fixed item line: "$line" -> "$formattedLine"');
+        } else {
+          fixedLines.add(line);
+        }
+      }
+      // Fix total lines alignment
+      else if (line.contains('TOTAL:') && line.contains('£')) {
+        RegExp totalPattern = RegExp(r'(TOTAL:\s*)(£[\d.]+)');
+        Match? match = totalPattern.firstMatch(line.trim());
+
+        if (match != null) {
+          String totalLabel = 'TOTAL:';
+          String amount = match.group(2)!;
+
+          int totalWidth = 42;
+          int labelLength = totalLabel.length;
+          int amountLength = amount.length;
+          int paddingNeeded = totalWidth - labelLength - amountLength;
+
+          if (paddingNeeded < 1) paddingNeeded = 1;
+
+          String formattedLine = '$totalLabel${' ' * paddingNeeded}$amount';
+          fixedLines.add(formattedLine);
+          print('   Fixed total line: "$line" -> "$formattedLine"');
+        } else {
+          fixedLines.add(line);
+        }
+      }
+      // Fix subtotal lines
+      else if (line.contains('Subtotal:') && line.contains('£')) {
+        RegExp subtotalPattern = RegExp(r'(Subtotal:\s*)(£[\d.]+)');
+        Match? match = subtotalPattern.firstMatch(line.trim());
+
+        if (match != null) {
+          String label = 'Subtotal:';
+          String amount = match.group(2)!;
+
+          int totalWidth = 42;
+          int labelLength = label.length;
+          int amountLength = amount.length;
+          int paddingNeeded = totalWidth - labelLength - amountLength;
+
+          if (paddingNeeded < 1) paddingNeeded = 1;
+
+          String formattedLine = '$label${' ' * paddingNeeded}$amount';
+          fixedLines.add(formattedLine);
+        } else {
+          fixedLines.add(line);
+        }
+      }
+      // Fix delivery charges lines
+      else if (line.contains('Delivery Charges:') && line.contains('£')) {
+        RegExp deliveryPattern = RegExp(r'(Delivery Charges:\s*)(£[\d.]+)');
+        Match? match = deliveryPattern.firstMatch(line.trim());
+
+        if (match != null) {
+          String label = 'Delivery Charges:';
+          String amount = match.group(2)!;
+
+          int totalWidth = 42;
+          int labelLength = label.length;
+          int amountLength = amount.length;
+          int paddingNeeded = totalWidth - labelLength - amountLength;
+
+          if (paddingNeeded < 1) paddingNeeded = 1;
+
+          String formattedLine = '$label${' ' * paddingNeeded}$amount';
+          fixedLines.add(formattedLine);
+        } else {
+          fixedLines.add(line);
+        }
+      } else {
+        // Keep other lines as-is
+        fixedLines.add(line);
+      }
+    }
+
+    String result = fixedLines.join('\n');
+    print('✅ Line formatting fixes applied for 72mm paper width');
+    return result;
   }
 }

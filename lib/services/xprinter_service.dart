@@ -113,13 +113,18 @@ class XprinterService {
         print('🖨️ XprinterService: Printing receipt...');
       }
 
+      // Apply encoding fixes to properly display pound sign and other special characters
+      String encodedReceiptData = _applyXprinterEncodingFixes(receiptData);
+
       final bool printed = await _channel.invokeMethod('printReceipt', {
-        'receiptData': receiptData,
+        'receiptData': encodedReceiptData,
       });
 
       if (kDebugMode) {
         if (printed) {
-          print('✅ XprinterService: Receipt printed successfully');
+          print(
+            '✅ XprinterService: Receipt printed successfully with encoding fixes',
+          );
         } else {
           print('❌ XprinterService: Failed to print receipt');
         }
@@ -190,4 +195,55 @@ class XprinterService {
   // Getters
   bool get isConnected => _isConnected;
   String? get connectedDevice => _connectedDevice;
+
+  /// Apply Xprinter-specific character encoding fixes for proper display
+  /// This ensures pound signs and other special characters display correctly
+  String _applyXprinterEncodingFixes(String content) {
+    if (kDebugMode) {
+      print('🔧 XprinterService: Applying character encoding fixes...');
+    }
+
+    String fixedContent = content;
+
+    // Based on Xprinter manual - using CP437 (Code Page 0) as default
+    // Critical encoding fixes for special characters
+    final Map<String, String> encodingFixes = {
+      // Currency symbols - CRITICAL for pound sign issue
+      '£': String.fromCharCode(
+        0x9C,
+      ), // Code 156 in CP437 - Pound sign (KEY FIX)
+      '€': String.fromCharCode(0xEE), // Code 238 in CP437 - Euro sign
+      // Common special characters that may cause issues
+      '\u2018': String.fromCharCode(
+        0x27,
+      ), // Left single quotation mark (U+2018) -> apostrophe
+      '\u2019': String.fromCharCode(
+        0x27,
+      ), // Right single quotation mark (U+2019) -> apostrophe
+      '\u201C': String.fromCharCode(
+        0x22,
+      ), // Left double quotation mark (U+201C) -> regular quote
+      '\u201D': String.fromCharCode(
+        0x22,
+      ), // Right double quotation mark (U+201D) -> regular quote
+      '\u2013': String.fromCharCode(0x2D), // En dash (U+2013) -> hyphen
+      '\u2014': String.fromCharCode(0x2D), // Em dash (U+2014) -> hyphen
+    };
+
+    // Apply all encoding fixes
+    encodingFixes.forEach((unicode, encoded) {
+      if (fixedContent.contains(unicode)) {
+        if (kDebugMode) {
+          print('   Fixing character: $unicode -> CP437 equivalent');
+        }
+        fixedContent = fixedContent.replaceAll(unicode, encoded);
+      }
+    });
+
+    if (kDebugMode) {
+      print('✅ XprinterService: Character encoding fixes applied');
+    }
+
+    return fixedContent;
+  }
 }

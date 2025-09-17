@@ -267,34 +267,13 @@ class ReceiptPreviewDialog extends StatelessWidget {
       receipt.writeln('**Payment Method: $paymentType**'); // Bold payment type
     }
 
-    // Determine payment status based on order source and payment method
-    String paymentStatus = 'UNPAID';
+    // Determine payment status - use paidStatus for most orders, but override for COD
+    String paymentStatus = (paidStatus == true) ? 'PAID' : 'UNPAID';
 
-    // For website orders: Use payment type logic instead of paidStatus
-    // Website orders are identified by order_source: Website and payment_type: Cash on Delivery
-    bool isWebsiteOrder =
-        orderType.toLowerCase().contains('website') ||
-        orderType.toLowerCase().contains('online') ||
-        (paymentType != null &&
-            paymentType!.toLowerCase().contains('cash on delivery'));
-
-    if (isWebsiteOrder && paymentType != null) {
-      final paymentTypeLower = paymentType!.toLowerCase();
-
-      // Website orders: Card/Online = PAID, Cash on Delivery = UNPAID
-      if (paymentTypeLower.contains('card') ||
-          paymentTypeLower.contains('online') ||
-          paymentTypeLower.contains('paypal')) {
-        paymentStatus = 'PAID';
-      } else if (paymentTypeLower.contains('cash on delivery') ||
-          paymentTypeLower.contains('cod')) {
-        paymentStatus = 'UNPAID';
-      } else {
-        paymentStatus = 'PAID'; // Default for other payment methods
-      }
-    } else {
-      // For EPOS orders: Use the actual paid status from payment details
-      paymentStatus = (paidStatus == true) ? 'PAID' : 'UNPAID';
+    // Override: Cash on Delivery orders are always UNPAID regardless of paidStatus
+    if (paymentType != null &&
+        paymentType!.toLowerCase().contains('cash on delivery')) {
+      paymentStatus = 'UNPAID';
     }
 
     // Show payment details based on payment type and status

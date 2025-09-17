@@ -50,7 +50,7 @@ The app uses Flutter Provider for state management with a complex dependency gra
 - **PaidOutProvider** - Paid out transactions management
 - **ItemAvailabilityProvider** - Menu item availability tracking
 - **OfflineProvider** - Offline functionality coordination
-- **DriverOrderProvider** - Driver delivery order management with live polling
+- **DriverOrderProvider** - Driver delivery order management with live polling and enhanced frequency updates (every 30 seconds for data, every 60 seconds for UI updates)
 
 **Provider Setup Rules:**
 - All providers are set to `lazy: false` to prevent state loss
@@ -66,10 +66,10 @@ The app uses Flutter Provider for state management with a complex dependency gra
 - **UKTimeService** (`lib/services/uk_time_service.dart`) - Time zone handling for orders
 - **CartPersistenceService** (`lib/services/cart_persistence_service.dart`) - Cart state persistence across sessions
 - **CustomPopupService** (`lib/services/custom_popup_service.dart`) - Custom modal and popup management
-- **DriverApiService** (`lib/services/driver_api_service.dart`) - Driver-specific API operations
+- **DriverApiService** (`lib/services/driver_api_service.dart`) - Driver management API operations (create, deactivate, get orders with driver details)
 - **NotificationAudioService** (`lib/services/notification_audio_service.dart`) - Audio notification management
 - **OfflineOrderManager** (`lib/services/offline_order_manager.dart`) - Advanced offline order handling
-- **XprinterService** (`lib/services/xprinter_service.dart`) - Native Xprinter SDK integration for direct USB printing
+- **XprinterService** (`lib/services/xprinter_service.dart`) - Native Xprinter SDK integration using MethodChannel for direct USB communication, device discovery, connection management, and cash drawer control
 
 ### Multi-Brand Support
 Brand configuration is handled in `lib/config/brand_info.dart`:
@@ -179,6 +179,7 @@ Brand configuration is handled in `lib/config/brand_info.dart`:
 **Development Tools:**
 - **flutter_lints** (^5.0.0) - Static analysis and code quality
 - **hive_generator** (^2.0.1) + **build_runner** (^2.4.13) - Code generation for Hive models
+- **flutter_launcher_icons** (^0.13.1) - App icon generation and configuration
 
 **Dependency Overrides:**
 - **image** (^4.5.4) - Image processing utilities
@@ -203,6 +204,7 @@ Brand configuration is handled in `lib/config/brand_info.dart`:
 - `lib/services/order_api_service.dart` - WebSocket order management
 - `lib/services/thermal_printer_service.dart` - Receipt printing management
 - `lib/services/xprinter_service.dart` - Native Xprinter SDK integration
+- `lib/services/driver_api_service.dart` - Driver management and order operations
 - `lib/services/offline_storage_service.dart` - Hive database management
 - `lib/services/notification_audio_service.dart` - Audio notification system
 

@@ -70,6 +70,8 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
   String? _selectedChipSeasoning;
 
   String _saladChoice = 'Yes'; // 'Yes' or 'No'
+  Set<String> _selectedSaladOptions =
+      {}; // Selected salad options when Yes is chosen
   bool _noSauce = false;
   bool _noCream = false;
 
@@ -259,7 +261,7 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
             _selectedBase = option.split(':').last.trim();
           } else if (lowerOption.startsWith('crust:')) {
             _selectedCrust = option.split(':').last.trim();
-          } else if (lowerOption.startsWith('sauce dips:')) {
+          } else if (lowerOption.startsWith('sauce:')) {
             _selectedSauces.addAll(
               option.split(':').last.trim().split(',').map((s) => s.trim()),
             );
@@ -286,6 +288,12 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
             _selectedChipSeasoning = option.split(':').last.trim();
           } else if (lowerOption == 'no salad') {
             _saladChoice = 'No';
+          } else if (lowerOption.startsWith('salad:')) {
+            _saladChoice = 'Yes';
+            String saladOptionsStr = option.split(':').last.trim();
+            _selectedSaladOptions.addAll(
+              saladOptionsStr.split(',').map((s) => s.trim()),
+            );
           } else if (lowerOption == 'no sauce') {
             _noSauce = true;
           } else if (lowerOption == 'no cream') {
@@ -1038,23 +1046,8 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
       );
 
       if (itemType == 'Pizza') {
-        // Parse pizza sauce: "Sauce: Mayo, Ketchup" or "No Sauce"
-        if (details.startsWith('Sauce: ')) {
-          _dealSelections['$sectionName - Pizza Sauce'] = 'Yes';
-          String sauceList = details.substring(7); // Remove "Sauce: "
-          List<String> sauces =
-              sauceList.split(',').map((s) => s.trim()).toList();
-          _dealMultiSelections['$sectionName - Pizza Sauce Options'] =
-              Set<String>.from(sauces);
-          print(
-            '🔍 FAMILY MEAL PIZZA SAUCES: $sectionName - Pizza Sauce Options = $sauces',
-          );
-        } else if (details == 'No Sauce') {
-          _dealSelections['$sectionName - Pizza Sauce'] = 'No';
-          print(
-            '🔍 FAMILY MEAL PIZZA NO SAUCE: $sectionName - Pizza Sauce = No',
-          );
-        }
+        // Family Meal Pizza - skip sauce parsing
+        print('🔍 FAMILY MEAL PIZZA: No sauce parsing needed');
       } else if (itemType == 'Shawarma' || itemType == 'Burger') {
         // Parse format: "Salad: Cucumber, Lettuce, Sauce: Mayo, BBQ" or "No Salad, No Sauce"
         // Need to handle comma-separated format correctly
@@ -1624,7 +1617,13 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
             widget.foodItem.category == 'Shawarma' ||
             widget.foodItem.category == 'Wraps' ||
             widget.foodItem.category == 'Sides')) {
-      selectedOptions.add('Sauce Dips: ${_selectedSauces.join(', ')}');
+      // Use "Sauce Dip:" for Pizza and Garlic Bread, "Sauce:" for others
+      String sauceLabel =
+          (widget.foodItem.category == 'Pizza' ||
+                  widget.foodItem.category == 'GarlicBread')
+              ? 'Sauce Dip'
+              : 'Sauce';
+      selectedOptions.add('$sauceLabel: ${_selectedSauces.join(', ')}');
     }
 
     if (_makeItAMeal) {
@@ -1658,8 +1657,14 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
       selectedOptions.add(seasoningLabel);
     }
 
-    if (['Shawarma', 'Wraps', 'Burgers'].contains(widget.foodItem.category)) {
-      if (_saladChoice == 'No') selectedOptions.add('No Salad');
+    // Only apply salad/sauce logic to regular items, NOT deals
+    if (['Shawarma', 'Wraps', 'Burgers'].contains(widget.foodItem.category) &&
+        widget.foodItem.category != 'Deals') {
+      if (_saladChoice == 'No') {
+        selectedOptions.add('No Salad');
+      } else if (_saladChoice == 'Yes' && _selectedSaladOptions.isNotEmpty) {
+        selectedOptions.add('Salad: ${_selectedSaladOptions.join(', ')}');
+      }
       if (_noSauce && _selectedSauces.isEmpty) selectedOptions.add('No Sauce');
     }
 
@@ -1838,24 +1843,8 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
             String itemName = selectedOption;
 
             if (sectionName.contains('Pizza')) {
-              // Pizza (16"): flavour name (No Sauce) or (Sauce: sauce names)
-              String sauceYesNo =
-                  _dealSelections['$sectionName - Pizza Sauce'] ?? 'No';
-              if (sauceYesNo == 'Yes') {
-                List<String> sauces =
-                    (_dealMultiSelections['$sectionName - Pizza Sauce Options'] ??
-                            <String>{})
-                        .toList();
-                if (sauces.isNotEmpty) {
-                  formattedItems.add(
-                    'Pizza (16"): $itemName (Sauce: ${sauces.join(', ')})',
-                  );
-                } else {
-                  formattedItems.add('Pizza (16"): $itemName (No Sauce)');
-                }
-              } else {
-                formattedItems.add('Pizza (16"): $itemName (No Sauce)');
-              }
+              // Family Meal Pizza - no sauce information
+              formattedItems.add('Pizza (16"): $itemName');
             } else if (sectionName.contains('Shawarma')) {
               // Shawarma: flavour name (No Salad, No Sauce) or (Salad: names, Sauce: names)
               String saladYesNo =
@@ -1966,24 +1955,8 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
             String itemName = selectedOption;
 
             if (sectionName.contains('Pizza')) {
-              // Pizza (12"): flavour name (No Sauce) or (Sauce: sauce names)
-              String sauceYesNo =
-                  _dealSelections['$sectionName - Pizza Sauce'] ?? 'No';
-              if (sauceYesNo == 'Yes') {
-                List<String> sauces =
-                    (_dealMultiSelections['$sectionName - Pizza Sauce Options'] ??
-                            <String>{})
-                        .toList();
-                if (sauces.isNotEmpty) {
-                  formattedItems.add(
-                    'Pizza (12"): $itemName (Sauce: ${sauces.join(', ')})',
-                  );
-                } else {
-                  formattedItems.add('Pizza (12"): $itemName (No Sauce)');
-                }
-              } else {
-                formattedItems.add('Pizza (12"): $itemName (No Sauce)');
-              }
+              // Combo Meal Pizza - no sauce information
+              formattedItems.add('Pizza (12"): $itemName');
             } else if (sectionName.contains('Shawarma')) {
               // Shawarma: flavour name (No Salad, No Sauce) or (Salad: names, Sauce: names)
               String saladYesNo =
@@ -2143,13 +2116,19 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
       // Insert grouped options at the beginning for cart display
       selectedOptions.insertAll(0, groupedDisplayOptions);
 
-      // Add multi-select deal selections to options (sauces) - exclude Shawarma Deal, Family Meal, Combo Meal, and Pizza Offers as they're handled above
+      // Add multi-select deal selections to options - exclude all major deals as they're handled above
       if (widget.foodItem.name.toLowerCase() != 'shawarma deal' &&
           widget.foodItem.name.toLowerCase() != 'family meal' &&
           widget.foodItem.name.toLowerCase() != 'combo meal' &&
           widget.foodItem.name.toLowerCase() != 'pizza offers') {
         _dealMultiSelections.forEach((sectionName, selectedOptionsSet) {
           if (selectedOptionsSet.isNotEmpty) {
+            // Skip salad and sauce options to prevent corrupted duplicate lines
+            if (sectionName.contains('Salad Options') ||
+                sectionName.contains('Sauce Options') ||
+                sectionName.contains('Pizza Sauce Options')) {
+              return; // Skip these to prevent corrupted mixed lines
+            }
             selectedOptions.add(
               '$sectionName: ${selectedOptionsSet.join(', ')}',
             );
@@ -2213,6 +2192,15 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
 
   // --- NEW Helper Method for Salad option with Yes/No choices ---
   Widget _buildSaladOption() {
+    // Define salad options (same as used in deals category)
+    List<String> saladOptions = [
+      'Cucumber',
+      'Lettuce',
+      'Onions',
+      'Tomato',
+      'Red Cabbage',
+    ];
+
     return Column(
       children: [
         Container(
@@ -2269,6 +2257,8 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
                 onPressed: () {
                   setState(() {
                     _saladChoice = 'No';
+                    // Clear selected salad options when No is selected
+                    _selectedSaladOptions.clear();
                   });
                 },
                 style: ElevatedButton.styleFrom(
@@ -2294,6 +2284,42 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
             ),
           ],
         ),
+
+        // Show salad options when Yes is selected
+        if (_saladChoice == 'Yes') ...[
+          const SizedBox(height: 15),
+          const Text(
+            'Salad Options:',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 18,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.center,
+            children:
+                saladOptions.map((salad) {
+                  final bool isSelected = _selectedSaladOptions.contains(salad);
+                  return _buildOptionButton(
+                    title: salad,
+                    isActive: isSelected,
+                    onTap: () {
+                      setState(() {
+                        if (isSelected) {
+                          _selectedSaladOptions.remove(salad);
+                        } else {
+                          _selectedSaladOptions.add(salad);
+                        }
+                      });
+                    },
+                  );
+                }).toList(),
+          ),
+        ],
       ],
     );
   }
@@ -2843,24 +2869,10 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
             print('🔍 FAMILY MEAL VALIDATION: Checking $sectionName');
 
             // Check for mandatory Yes/No choices based on section type
+            // Family Meal Pizza doesn't have sauce options
             if (sectionName.contains('Pizza')) {
-              String sauceKey = '$sectionName - Pizza Sauce';
-              print(
-                '🔍 PIZZA SAUCE CHECK: $sauceKey = ${_dealSelections[sauceKey]}',
-              );
-
-              // If Yes selected, check if sauce options are selected
-              if (_dealSelections[sauceKey] == 'Yes') {
-                String sauceOptionsKey = '$sectionName - Pizza Sauce Options';
-                if (_dealMultiSelections[sauceOptionsKey] == null ||
-                    _dealMultiSelections[sauceOptionsKey]!.isEmpty) {
-                  print(
-                    '🔍 VALIDATION FAILED: Pizza sauce options not selected for $sectionName',
-                  );
-                  canConfirmSelection = false;
-                  break;
-                }
-              }
+              // Skip pizza sauce validation for Family Meal - no sauce options
+              print('🔍 FAMILY MEAL PIZZA: No sauce validation needed');
             } else if (sectionName.contains('Shawarma') ||
                 sectionName.contains('Burger')) {
               // Validate Salad Yes/No choice
@@ -2929,11 +2941,8 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
             // All 4 items selected - auto-initialize Yes/No choices and validate
             for (String sectionName in requiredSections) {
               if (sectionName.contains('Pizza')) {
-                String sauceKey = '$sectionName - Pizza Sauce';
-                if (_dealSelections[sauceKey] == null) {
-                  _dealSelections[sauceKey] = 'No';
-                  print('🔍 AUTO-INITIALIZED: $sauceKey = No');
-                }
+                // Combo Meal Pizza doesn't have sauce options - skip initialization
+                print('🔍 COMBO MEAL PIZZA: No sauce initialization needed');
               } else if (sectionName.contains('Shawarma') ||
                   sectionName.contains('Burger')) {
                 String saladKey = '$sectionName - Salad';
@@ -2958,23 +2967,8 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
 
             // Check for mandatory Yes/No choices based on section type
             if (sectionName.contains('Pizza')) {
-              String sauceKey = '$sectionName - Pizza Sauce';
-              print(
-                '🔍 PIZZA SAUCE CHECK: $sauceKey = ${_dealSelections[sauceKey]}',
-              );
-
-              // If Yes selected, check if sauce options are selected
-              if (_dealSelections[sauceKey] == 'Yes') {
-                String sauceOptionsKey = '$sectionName - Pizza Sauce Options';
-                if (_dealMultiSelections[sauceOptionsKey] == null ||
-                    _dealMultiSelections[sauceOptionsKey]!.isEmpty) {
-                  print(
-                    '🔍 VALIDATION FAILED: Pizza sauce options not selected for $sectionName',
-                  );
-                  canConfirmSelection = false;
-                  break;
-                }
-              }
+              // Skip pizza sauce validation for Combo Meal - no sauce options
+              print('🔍 COMBO MEAL PIZZA: No sauce validation needed');
             } else if (sectionName.contains('Shawarma') ||
                 sectionName.contains('Burger')) {
               // Validate Salad Yes/No choice
@@ -4152,6 +4146,8 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
       'Chilli Sauce',
       'Sweet Chilli',
       'Garlic Sauce',
+      'BBQ',
+      'Mint Sauce',
     ];
 
     // Get current selections for Salad and Sauce Yes/No
@@ -4373,6 +4369,8 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
       'Chilli Sauce',
       'Sweet Chilli',
       'Garlic Sauce',
+      'BBQ',
+      'Mint Sauce',
     ];
 
     // Define salad options (same as Shawarma Deal)
@@ -4386,67 +4384,89 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
 
     // Build content based on tab type
     if (tabName.contains('Pizza')) {
-      // Get current sauce selection
-      bool hasSauce = _dealSelections['$validationKey - Pizza Sauce'] == 'Yes';
-
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Pizza selection
-          const Text(
-            'Select Pizza:',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 15),
-          _buildToppingsStyleGrid(mainOptions, validationKey),
-          const SizedBox(height: 25),
-
-          // Pizza Sauce section
-          const Text(
-            'Pizza Sauce:',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 15),
-
-          // Sauce Yes/No buttons
-          Row(
-            children: [
-              Expanded(
-                child: _buildYesNoButton(
-                  '$validationKey - Pizza Sauce',
-                  'Yes',
-                  hasSauce,
-                ),
+      // Both Family Meal and Combo Meal Pizza - no sauce options
+      if (widget.foodItem.name.toLowerCase() == 'family meal' ||
+          widget.foodItem.name.toLowerCase() == 'combo meal') {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Pizza selection only
+            const Text(
+              'Select Pizza:',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _buildYesNoButton(
-                  '$validationKey - Pizza Sauce',
-                  'No',
-                  !hasSauce,
+            ),
+            const SizedBox(height: 15),
+            _buildToppingsStyleGrid(mainOptions, validationKey),
+          ],
+        );
+      } else {
+        // Other deals - keep sauce functionality
+        bool hasSauce =
+            _dealSelections['$validationKey - Pizza Sauce'] == 'Yes';
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Pizza selection
+            const Text(
+              'Select Pizza:',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 15),
+            _buildToppingsStyleGrid(mainOptions, validationKey),
+            const SizedBox(height: 25),
+
+            // Pizza Sauce section
+            const Text(
+              'Pizza Sauce:',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 15),
+
+            // Sauce Yes/No buttons
+            Row(
+              children: [
+                Expanded(
+                  child: _buildYesNoButton(
+                    '$validationKey - Pizza Sauce',
+                    'Yes',
+                    hasSauce,
+                  ),
                 ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _buildYesNoButton(
+                    '$validationKey - Pizza Sauce',
+                    'No',
+                    !hasSauce,
+                  ),
+                ),
+              ],
+            ),
+
+            // Show sauce options if Yes is selected
+            if (hasSauce) ...[
+              const SizedBox(height: 15),
+              _buildToppingsStyleGrid(
+                sauceOptions,
+                '$validationKey - Pizza Sauce Options',
               ),
             ],
-          ),
-
-          // Show sauce options if Yes is selected
-          if (hasSauce) ...[
-            const SizedBox(height: 15),
-            _buildToppingsStyleGrid(
-              sauceOptions,
-              '$validationKey - Pizza Sauce Options',
-            ),
           ],
-        ],
-      );
+        );
+      }
     } else if (tabName.contains('Shawarma')) {
       // Get current salad and sauce selections
       bool hasSalad = _dealSelections['$validationKey - Salad'] == 'Yes';
@@ -4837,8 +4857,19 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
 
     switch (dealName.toLowerCase()) {
       case 'family meal':
+        // For Family Meal, include Garlic Bread items in Pizza tab
+        final familyMealPizzaOptions = [...pizzaOptions];
+        final garlicBreadOptions =
+            widget.allFoodItems
+                .where((item) => item.category == 'GarlicBread')
+                .map((item) => item.name)
+                .where((name) => name.isNotEmpty)
+                .toList();
+        familyMealPizzaOptions.addAll(garlicBreadOptions);
+        familyMealPizzaOptions.sort(); // Sort alphabetically
+
         return {
-          'Pizza (16")': pizzaOptions,
+          'Pizza (16")': familyMealPizzaOptions,
           'Shawarma': shawarmaOptions,
           'Burger': burgerOptions,
           'Calzone': calzoneOptions,
@@ -4851,8 +4882,19 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
           ],
         };
       case 'combo meal':
+        // For Combo Meal, include Garlic Bread items in Pizza tab
+        final comboMealPizzaOptions = [...pizzaOptions];
+        final garlicBreadOptions =
+            widget.allFoodItems
+                .where((item) => item.category == 'GarlicBread')
+                .map((item) => item.name)
+                .where((name) => name.isNotEmpty)
+                .toList();
+        comboMealPizzaOptions.addAll(garlicBreadOptions);
+        comboMealPizzaOptions.sort(); // Sort alphabetically
+
         return {
-          'Pizza (12")': pizzaOptions,
+          'Pizza (12")': comboMealPizzaOptions,
           'Shawarma': shawarmaOptions,
           'Burger': burgerOptions,
           'Drinks': [
@@ -4864,10 +4906,21 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
           ],
         };
       case 'pizza offers':
+        // For Pizza Offers, include Garlic Bread items in all Pizza tabs
+        final pizzaOffersPizzaOptions = [...pizzaOptions];
+        final garlicBreadOptions =
+            widget.allFoodItems
+                .where((item) => item.category == 'GarlicBread')
+                .map((item) => item.name)
+                .where((name) => name.isNotEmpty)
+                .toList();
+        pizzaOffersPizzaOptions.addAll(garlicBreadOptions);
+        pizzaOffersPizzaOptions.sort(); // Sort alphabetically
+
         return {
-          'Pizza 1': pizzaOptions,
-          'Pizza 2': pizzaOptions,
-          'Pizza 3': pizzaOptions,
+          'Pizza 1': pizzaOffersPizzaOptions,
+          'Pizza 2': pizzaOffersPizzaOptions,
+          'Pizza 3': pizzaOffersPizzaOptions,
           'Drink (1.5L)': ['Coca Cola', 'Pepsi', '7Up', 'Fanta', 'Sprite'],
         };
       case 'shawarma deal':
