@@ -360,6 +360,8 @@ class ThermalPrinterService {
       paidStatus: paidStatus,
       orderId: orderId,
       deliveryCharge: deliveryCharge,
+      isXprinterUSB:
+          _useXprinterSDK && Platform.isAndroid && _xprinterService.isConnected,
     );
 
     Future<String> receiptContentFuture = Future.value(
@@ -382,6 +384,10 @@ class ThermalPrinterService {
         orderId: orderId,
         deliveryCharge: deliveryCharge,
         orderDateTime: orderDateTime,
+        isXprinterUSB:
+            _useXprinterSDK &&
+            Platform.isAndroid &&
+            _xprinterService.isConnected,
       ),
     );
 
@@ -483,45 +489,19 @@ class ThermalPrinterService {
     // Try Xprinter SDK first if enabled and connected
     if (_useXprinterSDK && Platform.isAndroid && _xprinterService.isConnected) {
       try {
-        print(
-          '🎯 Using Xprinter SDK for USB printing with manual specifications...',
-        );
+        print('🎯 Using Xprinter SDK for USB printing...');
+
+        // CRITICAL FIX: Send raw string without double encoding
+        // The Java layer now handles all encoding fixes properly
         String receiptString = String.fromCharCodes(receiptData);
 
-        // Apply comprehensive encoding and formatting fixes based on manual
-        String fixedReceiptString = _applyXprinterEncodingFixes(receiptString);
-
-        // Add manual-based initialization commands before printing
-        String xprinterInitCommands = '';
-        xprinterInitCommands +=
-            String.fromCharCode(0x1B) +
-            String.fromCharCode(0x40); // ESC @ (Initialize)
-        xprinterInitCommands +=
-            String.fromCharCode(0x1B) +
-            String.fromCharCode(0x74) +
-            String.fromCharCode(
-              0x00,
-            ); // ESC t 0 (Select CP437/Page 0 as per manual)
-        xprinterInitCommands +=
-            String.fromCharCode(0x1C) +
-            String.fromCharCode(0x2E); // FS . (Cancel Chinese character mode)
-        xprinterInitCommands +=
-            String.fromCharCode(0x1B) +
-            String.fromCharCode(0x52) +
-            String.fromCharCode(0x00); // ESC R 0 (International character set)
-        xprinterInitCommands +=
-            String.fromCharCode(0x1B) +
-            String.fromCharCode(0x61) +
-            String.fromCharCode(0x00); // ESC a 0 (Left align)
-
-        // Combine initialization with receipt content
-        String finalReceiptString = xprinterInitCommands + fixedReceiptString;
-
-        bool success = await _xprinterService.printReceipt(finalReceiptString);
+        // Do NOT apply encoding fixes here - they're now handled in Java
+        // This prevents double encoding which corrupts the pound sign
+        bool success = await _xprinterService.printReceipt(receiptString);
 
         if (success) {
           print(
-            '✅ Xprinter SDK USB printing successful with manual-based encoding and formatting fixes',
+            '✅ Xprinter SDK USB printing successful - pound signs should display correctly',
           );
           return true;
         } else {
@@ -536,7 +516,7 @@ class ThermalPrinterService {
       }
     }
 
-    // Legacy USB printing method with enhanced Xprinter support
+    // Legacy USB printing method continues as before...
     try {
       // Enhanced connection verification
       if (_persistentUsbPort == null) {
@@ -907,6 +887,10 @@ class ThermalPrinterService {
         orderId: orderId,
         deliveryCharge: deliveryCharge,
         orderDateTime: orderDateTime,
+        isXprinterUSB:
+            _useXprinterSDK &&
+            Platform.isAndroid &&
+            _xprinterService.isConnected,
       );
 
       // Test ESC/POS receipt generation
@@ -928,6 +912,10 @@ class ThermalPrinterService {
         paidStatus: paidStatus,
         orderId: orderId,
         deliveryCharge: deliveryCharge,
+        isXprinterUSB:
+            _useXprinterSDK &&
+            Platform.isAndroid &&
+            _xprinterService.isConnected,
       );
 
       print('✅ Receipt generation validation successful');
@@ -1456,6 +1444,8 @@ class ThermalPrinterService {
       paidStatus: paidStatus,
       orderId: orderId,
       deliveryCharge: deliveryCharge,
+      isXprinterUSB:
+          _useXprinterSDK && Platform.isAndroid && _xprinterService.isConnected,
     );
 
     String receiptContent = _generateReceiptContent(
@@ -1477,6 +1467,8 @@ class ThermalPrinterService {
       orderId: orderId,
       deliveryCharge: deliveryCharge,
       orderDateTime: orderDateTime,
+      isXprinterUSB:
+          _useXprinterSDK && Platform.isAndroid && _xprinterService.isConnected,
     );
 
     return await _printWithPreGeneratedData(
@@ -1807,8 +1799,8 @@ class ThermalPrinterService {
       return true;
     }
 
-    // Check if any printers are available
-    Map<String, bool> connections = await testAllConnections();
+    // Check if any printers are available (without sending commands to prevent auto-printing)
+    Map<String, bool> connections = await checkConnectionStatusOnly();
     return connections['usb'] == true || connections['bluetooth'] == true;
   }
 
@@ -2244,6 +2236,7 @@ class ThermalPrinterService {
     int? orderId,
     double? deliveryCharge,
     DateTime? orderDateTime,
+    bool isXprinterUSB = false,
   }) {
     StringBuffer receipt = StringBuffer();
 
@@ -2304,7 +2297,7 @@ class ThermalPrinterService {
 
       // Format item line with name and price on same line
       String itemName = '${item.quantity}x **${item.foodItem.name}**';
-      String itemPrice = '£${itemTotal.toStringAsFixed(2)}';
+      String itemPrice = '${itemTotal.toStringAsFixed(2)}';
 
       // Calculate padding to align price to the right (48 char width)
       int availableWidth = 48;
@@ -2318,7 +2311,16 @@ class ThermalPrinterService {
       if (item.selectedOptions != null && item.selectedOptions!.isNotEmpty) {
         for (String option in item.selectedOptions!) {
           if (!_shouldExcludeField(option)) {
-            receipt.writeln('  + $option');
+            // Check if option contains line breaks (deals formatting)
+            if (option.contains('\n')) {
+              // Split by line breaks and print each line
+              List<String> lines = option.split('\n');
+              for (String line in lines) {
+                receipt.writeln('  + ${line.trim()}');
+              }
+            } else {
+              receipt.writeln('  + $option');
+            }
           }
         }
       }
@@ -2335,18 +2337,18 @@ class ThermalPrinterService {
     if (orderType.toLowerCase() == 'delivery' &&
         deliveryCharge != null &&
         deliveryCharge > 0) {
-      receipt.writeln(
-        'Delivery Charges:             £${deliveryCharge.toStringAsFixed(2)}',
-      );
+      String deliveryText =
+          'Delivery Charges:             ${deliveryCharge.toStringAsFixed(2)}';
+      receipt.writeln(deliveryText);
     }
 
-    receipt.writeln(
-      'Subtotal:                     £${subtotal.toStringAsFixed(2)}',
-    );
+    String subtotalText =
+        'Subtotal:                     ${subtotal.toStringAsFixed(2)}';
+    receipt.writeln(subtotalText);
     receipt.writeln('================================================');
-    receipt.writeln(
-      '**TOTAL:                      £${totalCharge.toStringAsFixed(2)}**', // Bold total
-    );
+    String totalText =
+        '**TOTAL:                      GBP ${totalCharge.toStringAsFixed(2)}**';
+    receipt.writeln(totalText);
     receipt.writeln('================================================');
 
     // Payment Status Section
@@ -2371,10 +2373,16 @@ class ThermalPrinterService {
       if (paymentType != null &&
           paymentType.toLowerCase() == 'cash' &&
           changeDue > 0) {
-        receipt.writeln(
-          'Amount Received:  £${(totalCharge + changeDue).toStringAsFixed(2)}',
-        );
-        receipt.writeln('Change Due:       £${changeDue.toStringAsFixed(2)}');
+        String amountReceivedText =
+            isXprinterUSB
+                ? 'Amount Received:  GBP ${(totalCharge + changeDue).toStringAsFixed(2)}'
+                : 'Amount Received:  GBP${(totalCharge + changeDue).toStringAsFixed(2)}';
+        String changeDueText =
+            isXprinterUSB
+                ? 'Change Due:       GBP ${changeDue.toStringAsFixed(2)}'
+                : 'Change Due:       GBP${changeDue.toStringAsFixed(2)}';
+        receipt.writeln(amountReceivedText);
+        receipt.writeln(changeDueText);
       }
     }
 
@@ -2408,6 +2416,7 @@ class ThermalPrinterService {
     bool? paidStatus,
     int? orderId,
     double? deliveryCharge,
+    bool isXprinterUSB = false,
   }) async {
     final profile = await CapabilityProfile.load();
     final generator = Generator(PaperSize.mm80, profile); // 80mm paper width
@@ -2544,7 +2553,10 @@ class ThermalPrinterService {
 
       // Item name and price on same line - using established 42-char format
       String quantityAndName = '${item.quantity}x ${item.foodItem.name}';
-      String priceText = '£${itemTotal.toStringAsFixed(2)}';
+      String priceText =
+          isXprinterUSB
+              ? '${itemTotal.toStringAsFixed(2)}'
+              : '${itemTotal.toStringAsFixed(2)}';
 
       // Use same logic as _fixXprinterLineFormatting for consistency
       int totalWidth = 42; // Based on manual's 72mm paper width
@@ -2564,7 +2576,16 @@ class ThermalPrinterService {
       if (item.selectedOptions != null && item.selectedOptions!.isNotEmpty) {
         for (String option in item.selectedOptions!) {
           if (!_shouldExcludeField(option)) {
-            bytes += generator.text('  + $option');
+            // Check if option contains line breaks (deals formatting)
+            if (option.contains('\n')) {
+              // Split by line breaks and print each line
+              List<String> lines = option.split('\n');
+              for (String line in lines) {
+                bytes += generator.text('  + ${line.trim()}');
+              }
+            } else {
+              bytes += generator.text('  + $option');
+            }
           }
         }
       }
@@ -2581,20 +2602,28 @@ class ThermalPrinterService {
     if (orderType.toLowerCase() == 'delivery' &&
         deliveryCharge != null &&
         deliveryCharge > 0) {
+      String deliveryChargeText =
+          isXprinterUSB
+              ? '${deliveryCharge.toStringAsFixed(2)}'
+              : '${deliveryCharge.toStringAsFixed(2)}';
       bytes += generator.row([
         PosColumn(text: 'Delivery Charges:', width: 9),
         PosColumn(
-          text: '£${deliveryCharge.toStringAsFixed(2)}',
+          text: deliveryChargeText,
           width: 3,
           styles: const PosStyles(align: PosAlign.right),
         ),
       ]);
     }
 
+    String subtotalText =
+        isXprinterUSB
+            ? '${subtotal.toStringAsFixed(2)}'
+            : '${subtotal.toStringAsFixed(2)}';
     bytes += generator.row([
       PosColumn(text: 'Subtotal:', width: 9),
       PosColumn(
-        text: '£${subtotal.toStringAsFixed(2)}',
+        text: subtotalText,
         width: 3,
         styles: const PosStyles(align: PosAlign.right),
       ),
@@ -2605,10 +2634,14 @@ class ThermalPrinterService {
     );
 
     // Bold total amount
+    String totalText =
+        isXprinterUSB
+            ? 'GBP ${totalCharge.toStringAsFixed(2)}'
+            : 'GBP${totalCharge.toStringAsFixed(2)}';
     bytes += generator.row([
       PosColumn(text: 'TOTAL:', width: 9, styles: const PosStyles(bold: true)),
       PosColumn(
-        text: '£${totalCharge.toStringAsFixed(2)}',
+        text: totalText,
         width: 3,
         styles: const PosStyles(align: PosAlign.right, bold: true),
       ),
@@ -2651,10 +2684,18 @@ class ThermalPrinterService {
         paymentType != null &&
         paymentType.toLowerCase() == 'cash' &&
         changeDue > 0) {
+      String amountReceivedText =
+          isXprinterUSB
+              ? 'GBP ${(totalCharge + changeDue).toStringAsFixed(2)}'
+              : 'GBP${(totalCharge + changeDue).toStringAsFixed(2)}';
+      String changeDueText =
+          isXprinterUSB
+              ? 'GBP ${changeDue.toStringAsFixed(2)}'
+              : 'GBP${changeDue.toStringAsFixed(2)}';
       bytes += generator.row([
         PosColumn(text: 'Amount Received:', width: 9),
         PosColumn(
-          text: '£${(totalCharge + changeDue).toStringAsFixed(2)}',
+          text: amountReceivedText,
           width: 3,
           styles: const PosStyles(align: PosAlign.right),
         ),
@@ -2662,7 +2703,7 @@ class ThermalPrinterService {
       bytes += generator.row([
         PosColumn(text: 'Change Due:', width: 9),
         PosColumn(
-          text: '£${changeDue.toStringAsFixed(2)}',
+          text: changeDueText,
           width: 3,
           styles: const PosStyles(align: PosAlign.right),
         ),
@@ -3532,9 +3573,9 @@ class ThermalPrinterService {
 
   // Helper method to format currency
   String _formatCurrency(dynamic amount) {
-    if (amount == null) return '£0.00';
+    if (amount == null) return '0.00';
     final value = double.tryParse(amount.toString()) ?? 0.0;
-    return '£${value.toStringAsFixed(2)}';
+    return '${value.toStringAsFixed(2)}';
   }
 
   // Helper method to get week number
@@ -3559,9 +3600,7 @@ class ThermalPrinterService {
     final Map<String, String> encodingFixes = {
       // Currency symbols - CRITICAL for your pound sign issue
       // From manual: CP437 character set mappings
-      '£': String.fromCharCode(
-        0x9C,
-      ), // Code 156 in CP437 - Pound sign (THIS IS THE KEY FIX)
+      '£': '\u009C', // CP437 code 156 for pound sign - direct hex escape
       '€': String.fromCharCode(0xEE), // Code 238 in CP437 - Euro sign
       '¥': String.fromCharCode(0x9D), // Code 157 in CP437 - Yen sign
       '¢': String.fromCharCode(0x9B), // Code 155 in CP437 - Cent sign
@@ -3597,6 +3636,28 @@ class ThermalPrinterService {
         fixedContent = fixedContent.replaceAll(unicode, encoded);
       }
     });
+
+    // Additional pound sign fix for stubborn cases
+    if (fixedContent.contains('£')) {
+      print(
+        '🔥 CRITICAL: Found remaining £ symbols, applying emergency fix...',
+      );
+      // Convert to bytes, replace pound sign bytes, convert back
+      List<int> bytes = fixedContent.codeUnits;
+      for (int i = 0; i < bytes.length; i++) {
+        if (bytes[i] == 0xC2 && i + 1 < bytes.length && bytes[i + 1] == 0xA3) {
+          // UTF-8 encoding of £ (0xC2 0xA3) -> CP437 (0x9C)
+          bytes[i] = 0x9C;
+          bytes.removeAt(i + 1);
+          print('   Emergency fix: UTF-8 £ (0xC2A3) -> CP437 (0x9C)');
+        } else if (bytes[i] == 0xA3) {
+          // Latin-1 encoding of £ (0xA3) -> CP437 (0x9C)
+          bytes[i] = 0x9C;
+          print('   Emergency fix: Latin-1 £ (0xA3) -> CP437 (0x9C)');
+        }
+      }
+      fixedContent = String.fromCharCodes(bytes);
+    }
 
     // Apply line formatting fixes based on manual's 72mm paper width (42 characters)
     fixedContent = _fixXprinterLineFormatting(fixedContent);

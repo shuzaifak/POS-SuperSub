@@ -101,6 +101,8 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
     "Sausages",
     "Mozzarella",
     "Emmental",
+    "Chicken",
+    "Chicken Tikka",
     "Taleggio",
     "Gorgonzola",
     "Shawarma",
@@ -966,7 +968,12 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
         _parseComboMealItem(option, 'Shawarma', 'Shawarma: ');
       } else if (option.startsWith('Burger: ')) {
         _parseComboMealItem(option, 'Burger', 'Burger: ');
+      } else if (option.startsWith('Drink 1: ')) {
+        _parseComboMealItem(option, 'Drink 1', 'Drink 1: ');
+      } else if (option.startsWith('Drink 2: ')) {
+        _parseComboMealItem(option, 'Drink 2', 'Drink 2: ');
       } else if (option.startsWith('Drink: ')) {
+        // Legacy support for old format
         _parseComboMealItem(option, 'Drinks', 'Drink: ');
       } else if (option.contains(':')) {
         // Handle all other options including detailed selections with ' - '
@@ -1142,7 +1149,12 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
       sectionName = 'Shawarma';
     } else if (itemType == 'Burger') {
       sectionName = 'Burger';
+    } else if (itemType == 'Drink 1') {
+      sectionName = 'Drink 1';
+    } else if (itemType == 'Drink 2') {
+      sectionName = 'Drink 2';
     } else if (itemType == 'Drinks') {
+      // Legacy support
       sectionName = 'Drinks';
     }
 
@@ -1940,12 +1952,13 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
         // Special formatting for Combo Meal (same as Family Meal but with 12" pizza and no calzone)
         List<String> formattedItems = [];
 
-        // Define the correct order for Combo Meal: Pizza (12"), Shawarma, Burger, Drink
+        // Define the correct order for Combo Meal: Pizza (12"), Shawarma, Burger, Drinks
         List<String> orderedSections = [
           'Pizza (12")',
           'Shawarma',
           'Burger',
-          'Drinks',
+          'Drink 1',
+          'Drink 2',
         ];
 
         for (String sectionName in orderedSections) {
@@ -2038,8 +2051,8 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
                 'Burger: $itemName (${detailParts.join(', ')})',
               );
             } else if (sectionName.contains('Drink')) {
-              // Drink: name
-              formattedItems.add('Drink: $itemName');
+              // Drink 1: name or Drink 2: name
+              formattedItems.add('$sectionName: $itemName');
             }
           }
         }
@@ -2194,6 +2207,7 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
   Widget _buildSaladOption() {
     // Define salad options (same as used in deals category)
     List<String> saladOptions = [
+      'Full Salad',
       'Cucumber',
       'Lettuce',
       'Onions',
@@ -2309,10 +2323,39 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
                     isActive: isSelected,
                     onTap: () {
                       setState(() {
-                        if (isSelected) {
-                          _selectedSaladOptions.remove(salad);
+                        // Special handling for Full Salad option
+                        if (salad == 'Full Salad') {
+                          if (isSelected) {
+                            // If Full Salad is currently selected and clicked again, deselect it
+                            _selectedSaladOptions.remove(salad);
+                          } else {
+                            // If Full Salad is clicked, clear all other salad options and select only Full Salad
+                            _selectedSaladOptions.clear();
+                            _selectedSaladOptions.add(salad);
+                          }
+                        } else if ([
+                          'Cucumber',
+                          'Lettuce',
+                          'Onions',
+                          'Tomato',
+                          'Red Cabbage',
+                        ].contains(salad)) {
+                          // If any other salad option is clicked, remove Full Salad if it's selected
+                          _selectedSaladOptions.remove('Full Salad');
+
+                          // Then handle normal toggle logic for the clicked salad option
+                          if (isSelected) {
+                            _selectedSaladOptions.remove(salad);
+                          } else {
+                            _selectedSaladOptions.add(salad);
+                          }
                         } else {
-                          _selectedSaladOptions.add(salad);
+                          // Normal toggle logic for any other options (shouldn't happen in this context)
+                          if (isSelected) {
+                            _selectedSaladOptions.remove(salad);
+                          } else {
+                            _selectedSaladOptions.add(salad);
+                          }
                         }
                       });
                     },
@@ -2924,18 +2967,19 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
             widget.foodItem.name,
           );
 
-          // Check if ALL required items are selected
-          List<String> requiredSections = [
-            'Pizza (12")',
-            'Shawarma',
-            'Burger',
-            'Drinks',
-          ];
+          // Check if ALL required items are selected (including both drinks)
+          List<String> requiredSections = ['Pizza (12")', 'Shawarma', 'Burger'];
+
           bool allItemsSelected = requiredSections.every(
             (sectionName) => _dealSelections[sectionName] != null,
           );
 
-          if (!allItemsSelected) {
+          // Also check that both drinks are selected
+          bool bothDrinksSelected =
+              _dealSelections['Drink 1'] != null &&
+              _dealSelections['Drink 2'] != null;
+
+          if (!allItemsSelected || !bothDrinksSelected) {
             canConfirmSelection = false;
           } else {
             // All 4 items selected - auto-initialize Yes/No choices and validate
@@ -3796,10 +3840,48 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
                         return; // Do nothing if it's a default topping
                       }
                       setState(() {
-                        if (_selectedToppings.contains(topping)) {
-                          _selectedToppings.remove(topping);
+                        // Special handling for Full Salad option
+                        if (topping == 'Full Salad') {
+                          if (_selectedToppings.contains(topping)) {
+                            // If Full Salad is currently selected and clicked again, deselect it
+                            _selectedToppings.remove(topping);
+                          } else {
+                            // If Full Salad is clicked, remove all other salad options and select only Full Salad
+                            List<String> saladOptions = [
+                              'Cucumber',
+                              'Lettuce',
+                              'Onions',
+                              'Tomato',
+                              'Red Cabbage',
+                            ];
+                            for (String salad in saladOptions) {
+                              _selectedToppings.remove(salad);
+                            }
+                            _selectedToppings.add(topping);
+                          }
+                        } else if ([
+                          'Cucumber',
+                          'Lettuce',
+                          'Onions',
+                          'Tomato',
+                          'Red Cabbage',
+                        ].contains(topping)) {
+                          // If any other salad option is clicked, remove Full Salad if it's selected
+                          _selectedToppings.remove('Full Salad');
+
+                          // Then handle normal toggle logic for the clicked salad option
+                          if (_selectedToppings.contains(topping)) {
+                            _selectedToppings.remove(topping);
+                          } else {
+                            _selectedToppings.add(topping);
+                          }
                         } else {
-                          _selectedToppings.add(topping);
+                          // Normal toggle logic for non-salad toppings
+                          if (_selectedToppings.contains(topping)) {
+                            _selectedToppings.remove(topping);
+                          } else {
+                            _selectedToppings.add(topping);
+                          }
                         }
                         _updatePriceDisplay();
                       });
@@ -4134,6 +4216,7 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
 
     // Define the salad and sauce options
     List<String> saladOptions = [
+      'Full Salad',
       'Cucumber',
       'Lettuce',
       'Onions',
@@ -4375,6 +4458,7 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
 
     // Define salad options (same as Shawarma Deal)
     List<String> saladOptions = [
+      'Full Salad',
       'Cucumber',
       'Lettuce',
       'Onions',
@@ -4697,22 +4781,68 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
         ],
       );
     } else if (tabName.contains('Drinks')) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Drink selection
-          const Text(
-            'Select Drink:',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
+      // Special handling for combo meal drinks
+      if (widget.foodItem.name.toLowerCase() == 'combo meal') {
+        final drinkOptions = [
+          'Coca Cola',
+          'Pepsi',
+          '7Up',
+          'Fanta',
+          'Sprite',
+          "Irn Bru",
+          "Rubicon Mango",
+          "Caprisun",
+          "Water",
+        ];
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Drink 1 section
+            const Text(
+              'Drink 1:',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-          ),
-          const SizedBox(height: 15),
-          _buildToppingsStyleGrid(mainOptions, validationKey),
-        ],
-      );
+            const SizedBox(height: 15),
+            _buildToppingsStyleGrid(drinkOptions, 'Drink 1'),
+            const SizedBox(height: 25),
+
+            // Drink 2 section
+            const Text(
+              'Drink 2:',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 15),
+            _buildToppingsStyleGrid(drinkOptions, 'Drink 2'),
+          ],
+        );
+      } else {
+        // Default drink selection for other deals
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Drink selection
+            const Text(
+              'Select Drink:',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 15),
+            _buildToppingsStyleGrid(mainOptions, validationKey),
+          ],
+        );
+      }
     }
 
     // Default fallback
@@ -4789,15 +4919,49 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
                     onTap: () {
                       setState(() {
                         if (isMultiSelect) {
-                          // Handle multi-select options (sauces)
+                          // Handle multi-select options (sauces and salad options)
                           if (!_dealMultiSelections.containsKey(dealKey)) {
                             _dealMultiSelections[dealKey] = <String>{};
                           }
 
-                          if (isSelected) {
-                            _dealMultiSelections[dealKey]!.remove(option);
+                          // Special handling for Full Salad option
+                          bool isSaladOptionsKey = dealKey
+                              .toLowerCase()
+                              .contains('salad options');
+                          bool isFullSaladOption = option == 'Full Salad';
+
+                          if (isSaladOptionsKey && isFullSaladOption) {
+                            if (isSelected) {
+                              // If Full Salad is currently selected and clicked again, deselect it
+                              _dealMultiSelections[dealKey]!.remove(option);
+                            } else {
+                              // If Full Salad is clicked, clear all other salad options and select only Full Salad
+                              _dealMultiSelections[dealKey]!.clear();
+                              _dealMultiSelections[dealKey]!.add(option);
+                            }
+                          } else if (isSaladOptionsKey && !isFullSaladOption) {
+                            // If any other salad option is clicked, remove Full Salad if it's selected
+                            if (_dealMultiSelections[dealKey]!.contains(
+                              'Full Salad',
+                            )) {
+                              _dealMultiSelections[dealKey]!.remove(
+                                'Full Salad',
+                              );
+                            }
+
+                            // Then handle the normal multi-select logic for the clicked option
+                            if (isSelected) {
+                              _dealMultiSelections[dealKey]!.remove(option);
+                            } else {
+                              _dealMultiSelections[dealKey]!.add(option);
+                            }
                           } else {
-                            _dealMultiSelections[dealKey]!.add(option);
+                            // Normal multi-select logic for non-salad options (like sauces)
+                            if (isSelected) {
+                              _dealMultiSelections[dealKey]!.remove(option);
+                            } else {
+                              _dealMultiSelections[dealKey]!.add(option);
+                            }
                           }
                         } else {
                           // Handle single-select options
@@ -4897,13 +5061,7 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
           'Pizza (12")': comboMealPizzaOptions,
           'Shawarma': shawarmaOptions,
           'Burger': burgerOptions,
-          'Drinks': [
-            'Coca Cola (1.5L)',
-            'Pepsi (1.5L)',
-            '7Up (1.5L)',
-            'Fanta (1.5L)',
-            'Sprite (1.5L)',
-          ],
+          'Drinks': ['Drink 1', 'Drink 2'],
         };
       case 'pizza offers':
         // For Pizza Offers, include Garlic Bread items in all Pizza tabs

@@ -28,8 +28,10 @@ class _ReceiptPreviewDialogState extends State<ReceiptPreviewDialog> {
       child: Container(
         width: 400, // Adjust size as needed
         padding: const EdgeInsets.all(20),
-        child: Material( // Wrap in Material to provide Directionality and other inherited widgets
-          color: Colors.transparent, // Transparent to show parent dialog's shape
+        child: Material(
+          // Wrap in Material to provide Directionality and other inherited widgets
+          color:
+              Colors.transparent, // Transparent to show parent dialog's shape
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -45,27 +47,44 @@ class _ReceiptPreviewDialogState extends State<ReceiptPreviewDialog> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Order ID: ${widget.order.orderId}', style: TextStyle(fontWeight: FontWeight.bold)),
+                    Text(
+                      'Order ID: ${widget.order.orderId}',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     Text('Customer: ${widget.order.customerName}'),
-                    Text('Total: £${widget.order.orderTotalPrice.toStringAsFixed(2)}'),
+                    Text(
+                      'Total: £${widget.order.orderTotalPrice.toStringAsFixed(2)}',
+                    ),
                     Text('Payment: ${widget.order.paymentType.toUpperCase()}'),
                     Text('Type: ${widget.order.orderType.toUpperCase()}'),
                     const Divider(),
-                    const Text('Items:', style: TextStyle(fontWeight: FontWeight.bold)),
-                    ...widget.order.items.map((item) => Padding(
-                      padding: const EdgeInsets.only(bottom: 4.0),
-                      child: Text('${item.quantity}x ${item.itemName} (£${item.totalPrice.toStringAsFixed(2)})'),
-                    )),
+                    const Text(
+                      'Items:',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    ...widget.order.items.map(
+                      (item) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4.0),
+                        child: Text(
+                          '${item.quantity}x ${item.itemName} (£${item.totalPrice.toStringAsFixed(2)})',
+                        ),
+                      ),
+                    ),
                     const Divider(),
                   ],
                 ),
               ),
               const SizedBox(height: 15),
-              Text('Printer Status: ${widget.printerStatus}', style: TextStyle(fontStyle: FontStyle.italic)),
+              Text(
+                'Printer Status: ${widget.printerStatus}',
+                style: TextStyle(fontStyle: FontStyle.italic),
+              ),
               const SizedBox(height: 15),
               ElevatedButton(
                 onPressed: widget.isPrinting ? null : widget.onPrintPressed,
-                child: Text(widget.isPrinting ? 'Printing...' : 'Print Receipt'),
+                child: Text(
+                  widget.isPrinting ? 'Printing...' : 'Print Receipt',
+                ),
               ),
               const SizedBox(height: 10),
               TextButton(

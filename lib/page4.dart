@@ -13,7 +13,6 @@ import 'dart:ui';
 import 'package:epos/dynamic_order_list_screen.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:epos/services/thermal_printer_service.dart';
-import 'package:epos/services/xprinter_service.dart';
 // import 'package:epos/widgets/receipt_preview_dialog.dart';
 import 'package:epos/customer_details_widget.dart';
 import 'package:epos/payment_details_widget.dart';
@@ -337,33 +336,6 @@ class _Page4State extends State<Page4> {
         'Customer details updated successfully',
         type: PopupType.success,
       );
-    }
-  }
-
-  /// Opens the cash drawer for cash and card payments
-  Future<void> _openCashDrawer() async {
-    try {
-      print('💰 Opening cash drawer for payment...');
-
-      // Try Xprinter service first (USB)
-      final xprinterService = XprinterService();
-      if (xprinterService.isConnected) {
-        final success = await xprinterService.openCashBox();
-        if (success) {
-          print('✅ Cash drawer opened successfully via Xprinter');
-          return;
-        } else {
-          print('❌ Failed to open cash drawer via Xprinter');
-        }
-      }
-
-      // Fallback to thermal printer service
-      final thermalPrinterService = ThermalPrinterService();
-      await thermalPrinterService.openCashDrawer();
-      print('✅ Cash drawer opened via thermal printer service');
-    } catch (e) {
-      print('❌ Error opening cash drawer: $e');
-      // Don't show error to user - cash drawer opening is optional
     }
   }
 
@@ -2075,35 +2047,35 @@ class _Page4State extends State<Page4> {
   }
 
   /// Formats cart items for receipt preview by applying deal formatting
-  // List<CartItem> _formatCartItemsForReceipt(List<CartItem> cartItems) {
-  //   return cartItems.map((item) {
-  //     // Create a copy of the item with formatted options for deals
-  //     if (item.foodItem.category == 'Deals' &&
-  //         item.selectedOptions != null &&
-  //         item.selectedOptions!.isNotEmpty) {
-  //       List<String> formattedOptions;
-  //       if (item.foodItem.name.toLowerCase() == 'family meal' ||
-  //           item.foodItem.name.toLowerCase() == 'combo meal') {
-  //         formattedOptions = _formatFamilyComboMealOptions(
-  //           item.selectedOptions!,
-  //         );
-  //       } else {
-  //         formattedOptions = _formatDealOptions(item.selectedOptions!);
-  //       }
+  List<CartItem> _formatCartItemsForReceipt(List<CartItem> cartItems) {
+    return cartItems.map((item) {
+      // Create a copy of the item with formatted options for deals
+      if (item.foodItem.category == 'Deals' &&
+          item.selectedOptions != null &&
+          item.selectedOptions!.isNotEmpty) {
+        List<String> formattedOptions;
+        if (item.foodItem.name.toLowerCase() == 'family meal' ||
+            item.foodItem.name.toLowerCase() == 'combo meal') {
+          formattedOptions = _formatFamilyComboMealOptions(
+            item.selectedOptions!,
+          );
+        } else {
+          formattedOptions = _formatDealOptions(item.selectedOptions!);
+        }
 
-  //       return CartItem(
-  //         foodItem: item.foodItem,
-  //         quantity: item.quantity,
-  //         selectedOptions: formattedOptions,
-  //         pricePerUnit: item.pricePerUnit,
-  //         comment: item.comment,
-  //       );
-  //     }
+        return CartItem(
+          foodItem: item.foodItem,
+          quantity: item.quantity,
+          selectedOptions: formattedOptions,
+          pricePerUnit: item.pricePerUnit,
+          comment: item.comment,
+        );
+      }
 
-  //     // Return original item if not a deal
-  //     return item;
-  //   }).toList();
-  // }
+      // Return original item if not a deal
+      return item;
+    }).toList();
+  }
 
   List<String> _formatPizzaGroup(List<String> pizzas) {
     List<String> formattedItems = [];
@@ -3931,10 +3903,6 @@ class _Page4State extends State<Page4> {
                           setState(() {
                             _selectedPaymentType = 'cash';
                           });
-
-                          // Open cash drawer for cash payment
-                          await _openCashDrawer();
-
                           _proceedToNextStep();
                         },
                         child: Container(
@@ -3983,10 +3951,6 @@ class _Page4State extends State<Page4> {
                           setState(() {
                             _selectedPaymentType = 'card';
                           });
-
-                          // Open cash drawer for card payment
-                          await _openCashDrawer();
-
                           _proceedToNextStep();
                         },
                         child: Container(
@@ -4279,10 +4243,10 @@ class _Page4State extends State<Page4> {
       // Always use UK time for receipts and dialogs
       DateTime orderCreationTime = UKTimeService.now();
 
-      // // Format cart items for receipt preview (same as printing)
-      // List<CartItem> formattedCartItems = _formatCartItemsForReceipt(
-      //   _cartItems,
-      // );
+      // Format cart items for receipt preview (same as printing)
+      List<CartItem> formattedCartItems = _formatCartItemsForReceipt(
+        _cartItems,
+      );
 
       // Show receipt preview dialog before printing
       // await ReceiptPreviewDialog.show(
@@ -4318,6 +4282,7 @@ class _Page4State extends State<Page4> {
         paidStatus: paymentDetails.paidStatus,
         orderId: backendOrderId,
         orderDateTime: orderCreationTime,
+        formattedCartItems: formattedCartItems,
       );
     } catch (e) {
       print('Error in order completion: $e');
@@ -4438,6 +4403,7 @@ class _Page4State extends State<Page4> {
     required bool paidStatus,
     String? orderId,
     DateTime? orderDateTime,
+    List<CartItem>? formattedCartItems,
   }) async {
     try {
       // Extract customer details from orderData
@@ -4452,7 +4418,7 @@ class _Page4State extends State<Page4> {
       await ThermalPrinterService().printReceiptWithUserInteraction(
         transactionId: transactionId,
         orderType: _actualOrderType,
-        cartItems: _cartItems,
+        cartItems: formattedCartItems ?? _cartItems,
         subtotal: subtotal,
         totalCharge: totalCharge,
         extraNotes: extraNotes,

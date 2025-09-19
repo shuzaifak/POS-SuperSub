@@ -73,10 +73,10 @@ The app uses Flutter Provider for state management with a complex dependency gra
 
 ### Multi-Brand Support
 Brand configuration is handled in `lib/config/brand_info.dart`:
-- Current brand is set via `_currentBrand` constant ('TVP', 'Dallas', 'SuperSub', 'TEST')
+- Current brand is set via `_currentBrand` constant ('TVP', 'Dallas', 'SuperSub')
 - Default headers include brand identification for API calls
 - Headers include both 'brand' and 'x-client-id' fields
-- Currently set to 'TEST' brand in the codebase
+- Currently set to 'TVP' brand in the codebase
 
 ### Data Models & Hive Integration
 - **FoodItem** (`lib/models/food_item.dart`) - Menu item structure with pricing, availability
@@ -179,7 +179,7 @@ Brand configuration is handled in `lib/config/brand_info.dart`:
 **Development Tools:**
 - **flutter_lints** (^5.0.0) - Static analysis and code quality
 - **hive_generator** (^2.0.1) + **build_runner** (^2.4.13) - Code generation for Hive models
-- **flutter_launcher_icons** (^0.13.1) - App icon generation and configuration
+- **flutter_launcher_icons** (^0.13.1) - App icon generation (uses `assets/images/tvpLogo.png`)
 
 **Dependency Overrides:**
 - **image** (^4.5.4) - Image processing utilities
@@ -246,9 +246,8 @@ When modifying Hive models:
 
 ### Brand Switching
 To switch brands, modify `_currentBrand` in `lib/config/brand_info.dart`. Available options:
-- 'TVP'
-- 'Dallas' 
+- 'TVP' (current default)
+- 'Dallas'
 - 'SuperSub'
-- 'TEST' (current default)
 
 All API calls automatically include brand headers via `BrandInfo.getDefaultHeaders()`.

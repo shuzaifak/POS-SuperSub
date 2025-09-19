@@ -220,43 +220,6 @@ class _PaymentWidgetState extends State<PaymentWidget> {
     }
   }
 
-  Future<void> _openCashDrawer() async {
-    if (_isDrawerOpening || !_canOpenDrawer) return;
-
-    setState(() {
-      _isDrawerOpening = true;
-    });
-
-    try {
-      bool success = await ThermalPrinterService().openCashDrawer(
-        reason: "Manual open from payment screen",
-      );
-
-      if (mounted) {
-        CustomPopupService.show(
-          context,
-          success ? '💰 Cash drawer opened' : '❌ Failed to open cash drawer',
-          type: success ? PopupType.success : PopupType.failure,
-        );
-      }
-    } catch (e) {
-      print('Error opening cash drawer: $e');
-      if (mounted) {
-        CustomPopupService.show(
-          context,
-          '❌ Cash drawer error: $e',
-          type: PopupType.failure,
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isDrawerOpening = false;
-        });
-      }
-    }
-  }
-
   void _selectAmount(double amount) {
     setState(() {
       _selectedAmount = amount;
@@ -793,6 +756,9 @@ class _PaymentWidgetState extends State<PaymentWidget> {
                                           "Total Amount: £${paymentDetails.totalCharge}",
                                         );
 
+                                        // Open cash drawer when charge button is pressed
+                                        await _openCashDrawer();
+
                                         widget.onPaymentConfirmed?.call(
                                           paymentDetails,
                                         );
@@ -864,6 +830,9 @@ class _PaymentWidgetState extends State<PaymentWidget> {
                                       print(
                                         "Change Due: £${paymentDetails.changeDue}",
                                       );
+
+                                      // Open cash drawer when charge button is pressed
+                                      await _openCashDrawer();
 
                                       widget.onPaymentConfirmed?.call(
                                         paymentDetails,
@@ -1066,5 +1035,43 @@ class _PaymentWidgetState extends State<PaymentWidget> {
     print("_isCardForRemainingPressed: $_isCardForRemainingPressed");
     print("Returning: ${widget.paymentType}");
     return widget.paymentType;
+  }
+
+  /// Opens the cash drawer when charge button is pressed
+  Future<void> _openCashDrawer() async {
+    if (_isDrawerOpening || !_canOpenDrawer) return;
+
+    setState(() {
+      _isDrawerOpening = true;
+    });
+
+    try {
+      bool success = await ThermalPrinterService().openCashDrawer();
+
+      if (mounted) {
+        CustomPopupService.show(
+          context,
+          success
+              ? '💰 Cash drawer opened successfully'
+              : '❌ Failed to open cash drawer',
+          type: success ? PopupType.success : PopupType.failure,
+        );
+      }
+    } catch (e) {
+      print('Error opening cash drawer: $e');
+      if (mounted) {
+        CustomPopupService.show(
+          context,
+          '❌ Cash drawer error: $e',
+          type: PopupType.failure,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDrawerOpening = false;
+        });
+      }
+    }
   }
 }

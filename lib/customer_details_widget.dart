@@ -3,6 +3,7 @@ import 'package:epos/models/order_models.dart';
 import 'package:epos/services/order_api_service.dart';
 import 'package:epos/models/customer_search_model.dart';
 import 'package:epos/services/custom_popup_service.dart';
+import 'package:epos/services/api_service.dart';
 
 class CustomerDetailsWidget extends StatefulWidget {
   final double subtotal;
@@ -30,10 +31,17 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
+  final TextEditingController _houseNumberController = TextEditingController();
   final TextEditingController _cityController = TextEditingController();
   final TextEditingController _postalCodeController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   bool _isSearching = false;
+
+  // Postal code router data
+  List<Map<String, dynamic>> _postcodes = [];
+  Map<String, dynamic>? _selectedPostcode;
+  bool _isLoadingPostcodes = false;
+  List<String> _availableStreets = [];
 
   @override
   void initState() {
@@ -47,8 +55,14 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
     _phoneController.addListener(_updateButtonStates);
     _emailController.addListener(_updateButtonStates);
     _addressController.addListener(_updateButtonStates);
+    _houseNumberController.addListener(_updateButtonStates);
     _cityController.addListener(_updateButtonStates);
     _postalCodeController.addListener(_updateButtonStates);
+
+    // Fetch postcodes for delivery orders
+    if (widget.orderType.toLowerCase() == 'delivery') {
+      _fetchPostcodes();
+    }
   }
 
   // Method to populate fields with initial data
@@ -70,13 +84,43 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
       // Populate address fields only for delivery orders
       if (widget.orderType.toLowerCase() == 'delivery') {
         if (data.streetAddress != null) {
-          _addressController.text = data.streetAddress!;
+          // Parse the combined street address into house number and street
+          _parseAndSetAddress(data.streetAddress!);
         }
         if (data.city != null) {
           _cityController.text = data.city!;
         }
         if (data.postalCode != null) {
           _postalCodeController.text = data.postalCode!;
+          // Try to find matching postcode in the list once loaded
+          Future.delayed(const Duration(milliseconds: 500), () {
+            final matchingPostcode = _postcodes.firstWhere(
+              (pc) => pc['postcode'] == data.postalCode,
+              orElse: () => {},
+            );
+            if (matchingPostcode.isNotEmpty) {
+              setState(() {
+                _selectedPostcode = matchingPostcode;
+                final streets = matchingPostcode['streets'];
+                if (streets != null) {
+                  if (streets is List) {
+                    _availableStreets = streets.cast<String>();
+                  } else if (streets is String) {
+                    _availableStreets =
+                        streets
+                            .split(',')
+                            .map((s) => s.trim())
+                            .where((s) => s.isNotEmpty)
+                            .toList();
+                  } else {
+                    _availableStreets = [];
+                  }
+                } else {
+                  _availableStreets = [];
+                }
+              });
+            }
+          });
         }
       }
     }
@@ -88,6 +132,7 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
     _phoneController.dispose();
     _emailController.dispose();
     _addressController.dispose();
+    _houseNumberController.dispose();
     _cityController.dispose();
     _postalCodeController.dispose();
     _scrollController.dispose();
@@ -100,12 +145,34 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
     });
   }
 
+  // Fetch postcodes from API
+  Future<void> _fetchPostcodes() async {
+    setState(() {
+      _isLoadingPostcodes = true;
+    });
+
+    try {
+      final postcodes = await ApiService.getPostcodes();
+      setState(() {
+        _postcodes = postcodes;
+        _isLoadingPostcodes = false;
+      });
+    } catch (e) {
+      print('Error fetching postcodes: $e');
+      setState(() {
+        _postcodes = [];
+        _isLoadingPostcodes = false;
+      });
+    }
+  }
+
   // Check if any customer details are filled
   bool _hasCustomerDetails() {
     return _nameController.text.trim().isNotEmpty ||
         _phoneController.text.trim().isNotEmpty ||
         _emailController.text.trim().isNotEmpty ||
         _addressController.text.trim().isNotEmpty ||
+        _houseNumberController.text.trim().isNotEmpty ||
         _cityController.text.trim().isNotEmpty ||
         _postalCodeController.text.trim().isNotEmpty;
   }
@@ -129,6 +196,61 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
     r"^[a-zA-Z0-9.a-zA-Z0-9.!#$%&'*+-/=?^_`{|}~]+@[a-zA-Z0-9]+\.[a-zA-Z]+",
   );
 
+  // Helper method to combine house number with street address
+  String? _getCombinedAddress() {
+    final houseNumber = _houseNumberController.text.trim();
+    final streetAddress = _addressController.text.trim();
+
+    if (houseNumber.isEmpty && streetAddress.isEmpty) {
+      return null;
+    } else if (houseNumber.isEmpty) {
+      return streetAddress;
+    } else if (streetAddress.isEmpty) {
+      return houseNumber;
+    } else {
+      return '$houseNumber $streetAddress';
+    }
+  }
+
+  // Helper method to parse combined address into house number and street
+  void _parseAndSetAddress(String? combinedAddress) {
+    if (combinedAddress == null || combinedAddress.isEmpty) {
+      _houseNumberController.clear();
+      _addressController.clear();
+      return;
+    }
+
+    // Try to extract house number from the beginning of the address
+    // This assumes house number is at the start and separated by space
+    final parts = combinedAddress.trim().split(' ');
+
+    if (parts.isNotEmpty) {
+      final firstPart = parts[0];
+      // Check if first part looks like a house number (contains digits)
+      if (RegExp(
+            r'^\d+[A-Za-z]?$|^[A-Za-z]?\d+[A-Za-z]?$|^Flat\s\d+[A-Za-z]?$|^Apartment\s\d+[A-Za-z]?$',
+            caseSensitive: false,
+          ).hasMatch(firstPart) ||
+          (parts.length > 1 &&
+              firstPart.toLowerCase() == 'flat' &&
+              RegExp(r'^\d+[A-Za-z]?$').hasMatch(parts[1]))) {
+        if (firstPart.toLowerCase() == 'flat' && parts.length > 1) {
+          // Handle "Flat 2B" case
+          _houseNumberController.text = '${parts[0]} ${parts[1]}';
+          _addressController.text = parts.skip(2).join(' ');
+        } else {
+          // Handle "123A" or "2B" case
+          _houseNumberController.text = firstPart;
+          _addressController.text = parts.skip(1).join(' ');
+        }
+      } else {
+        // No clear house number pattern found, put everything in street address
+        _houseNumberController.clear();
+        _addressController.text = combinedAddress;
+      }
+    }
+  }
+
   bool _validateUKPhoneNumber(String phoneNumber) {
     if (phoneNumber.isEmpty) return false;
     String cleanedNumber = phoneNumber.replaceAll(RegExp(r'[()\s-]'), '');
@@ -146,6 +268,7 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
       case 'email':
         return false; // Email is now optional for all order types
       case 'address':
+      case 'houseNumber':
       case 'city':
       case 'postal':
         return orderType == 'delivery';
@@ -205,18 +328,52 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
 
         if (widget.orderType.toLowerCase() == 'delivery') {
           if (customer.address != null) {
-            _addressController.text = customer.address!.street;
+            // Parse the combined street address into house number and street
+            _parseAndSetAddress(customer.address!.street);
             _cityController.text = customer.address!.city;
             _postalCodeController.text = customer.address!.postalCode;
+            // Try to find matching postcode to populate street options
+            final matchingPostcode = _postcodes.firstWhere(
+              (pc) => pc['postcode'] == customer.address!.postalCode,
+              orElse: () => {},
+            );
+            if (matchingPostcode.isNotEmpty) {
+              setState(() {
+                _selectedPostcode = matchingPostcode;
+                final streets = matchingPostcode['streets'];
+                if (streets != null) {
+                  if (streets is List) {
+                    _availableStreets = streets.cast<String>();
+                  } else if (streets is String) {
+                    _availableStreets =
+                        streets
+                            .split(',')
+                            .map((s) => s.trim())
+                            .where((s) => s.isNotEmpty)
+                            .toList();
+                  } else {
+                    _availableStreets = [];
+                  }
+                } else {
+                  _availableStreets = [];
+                }
+              });
+            }
           } else {
             _addressController.clear();
+            _houseNumberController.clear();
             _cityController.clear();
             _postalCodeController.clear();
+            _selectedPostcode = null;
+            _availableStreets = [];
           }
         } else {
           _addressController.clear();
+          _houseNumberController.clear();
           _cityController.clear();
           _postalCodeController.clear();
+          _selectedPostcode = null;
+          _availableStreets = [];
         }
 
         CustomPopupService.show(
@@ -234,8 +391,11 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
         _emailController.clear();
         if (widget.orderType.toLowerCase() == 'delivery') {
           _addressController.clear();
+          _houseNumberController.clear();
           _cityController.clear();
           _postalCodeController.clear();
+          _selectedPostcode = null;
+          _availableStreets = [];
         }
       }
     } catch (e) {
@@ -546,53 +706,6 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
                             Container(
                               margin: const EdgeInsets.only(bottom: 20),
                               child: TextFormField(
-                                controller: _addressController,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontFamily: 'Poppins',
-                                ),
-                                decoration: InputDecoration(
-                                  labelText: _getFieldLabel(
-                                    'Street Address',
-                                    'address',
-                                  ),
-                                  labelStyle: const TextStyle(
-                                    fontSize: 16,
-                                    fontFamily: 'Poppins',
-                                    color: Colors.grey,
-                                  ),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(15),
-                                    borderSide: const BorderSide(
-                                      color: Colors.grey,
-                                      width: 1,
-                                    ),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(15),
-                                    borderSide: const BorderSide(
-                                      color: Color(0xFFCB6CE6),
-                                      width: 2.0,
-                                    ),
-                                  ),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 20,
-                                    vertical: 20,
-                                  ),
-                                ),
-                                validator: (value) {
-                                  if (_isFieldRequired('address') &&
-                                      (value == null || value.isEmpty)) {
-                                    return 'Please enter street address';
-                                  }
-                                  return null;
-                                },
-                              ),
-                            ),
-
-                            Container(
-                              margin: const EdgeInsets.only(bottom: 20),
-                              child: TextFormField(
                                 controller: _cityController,
                                 style: const TextStyle(
                                   fontSize: 18,
@@ -634,49 +747,585 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
                               ),
                             ),
 
+                            // House Number and Postal Code in one row
                             Container(
                               margin: const EdgeInsets.only(bottom: 20),
-                              child: TextFormField(
-                                controller: _postalCodeController,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontFamily: 'Poppins',
-                                ),
-                                decoration: InputDecoration(
-                                  labelText: _getFieldLabel(
-                                    'Postal Code',
-                                    'postal',
-                                  ),
-                                  labelStyle: const TextStyle(
-                                    fontSize: 16,
-                                    fontFamily: 'Poppins',
-                                    color: Colors.grey,
-                                  ),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(15),
-                                    borderSide: const BorderSide(
-                                      color: Colors.grey,
-                                      width: 1,
+                              child: Row(
+                                children: [
+                                  // House Number Field
+                                  Expanded(
+                                    flex: 2,
+                                    child: TextFormField(
+                                      controller: _houseNumberController,
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontFamily: 'Poppins',
+                                      ),
+                                      decoration: InputDecoration(
+                                        labelText: _getFieldLabel(
+                                          'House Number',
+                                          'houseNumber',
+                                        ),
+                                        hintText: 'e.g., 123, 45A',
+                                        labelStyle: const TextStyle(
+                                          fontSize: 16,
+                                          fontFamily: 'Poppins',
+                                          color: Colors.grey,
+                                        ),
+                                        hintStyle: const TextStyle(
+                                          fontSize: 14,
+                                          fontFamily: 'Poppins',
+                                          color: Colors.grey,
+                                        ),
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            15,
+                                          ),
+                                          borderSide: const BorderSide(
+                                            color: Colors.grey,
+                                            width: 1,
+                                          ),
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            15,
+                                          ),
+                                          borderSide: const BorderSide(
+                                            color: Color(0xFFCB6CE6),
+                                            width: 2.0,
+                                          ),
+                                        ),
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                              horizontal: 20,
+                                              vertical: 20,
+                                            ),
+                                      ),
+                                      validator: (value) {
+                                        if (_isFieldRequired('houseNumber') &&
+                                            (value == null || value.isEmpty)) {
+                                          return 'Please enter house number';
+                                        }
+                                        return null;
+                                      },
                                     ),
                                   ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(15),
-                                    borderSide: const BorderSide(
-                                      color: Color(0xFFCB6CE6),
-                                      width: 2.0,
-                                    ),
+                                  const SizedBox(width: 15),
+                                  // Postal Code Field
+                                  Expanded(
+                                    flex: 4,
+                                    child:
+                                        _isLoadingPostcodes
+                                            ? Container(
+                                              padding: const EdgeInsets.all(20),
+                                              decoration: BoxDecoration(
+                                                border: Border.all(
+                                                  color: Colors.grey,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(15),
+                                              ),
+                                              child: const Row(
+                                                children: [
+                                                  SizedBox(
+                                                    width: 20,
+                                                    height: 20,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                          strokeWidth: 2,
+                                                        ),
+                                                  ),
+                                                  SizedBox(width: 10),
+                                                  Text(
+                                                    'Loading postcodes...',
+                                                    style: TextStyle(
+                                                      fontSize: 16,
+                                                      fontFamily: 'Poppins',
+                                                      color: Colors.grey,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            )
+                                            : Autocomplete<
+                                              Map<String, dynamic>
+                                            >(
+                                              optionsBuilder: (
+                                                TextEditingValue
+                                                textEditingValue,
+                                              ) {
+                                                if (textEditingValue
+                                                    .text
+                                                    .isEmpty) {
+                                                  return _postcodes;
+                                                }
+                                                return _postcodes.where((
+                                                  postcode,
+                                                ) {
+                                                  final postcodeText =
+                                                      postcode['postcode']
+                                                          ?.toLowerCase() ??
+                                                      '';
+                                                  final query =
+                                                      textEditingValue.text
+                                                          .toLowerCase();
+                                                  return postcodeText.contains(
+                                                    query,
+                                                  );
+                                                });
+                                              },
+                                              displayStringForOption: (
+                                                Map<String, dynamic> option,
+                                              ) {
+                                                return option['postcode'] ?? '';
+                                              },
+                                              fieldViewBuilder: (
+                                                context,
+                                                controller,
+                                                focusNode,
+                                                onFieldSubmitted,
+                                              ) {
+                                                // Sync with our postal code controller
+                                                if (controller.text !=
+                                                    _postalCodeController
+                                                        .text) {
+                                                  controller.text =
+                                                      _postalCodeController
+                                                          .text;
+                                                }
+
+                                                return TextFormField(
+                                                  controller: controller,
+                                                  focusNode: focusNode,
+                                                  style: const TextStyle(
+                                                    fontSize: 18,
+                                                    fontFamily: 'Poppins',
+                                                  ),
+                                                  decoration: InputDecoration(
+                                                    labelText: _getFieldLabel(
+                                                      'Postal Code',
+                                                      'postal',
+                                                    ),
+                                                    hintText:
+                                                        'Enter or select postal code',
+                                                    labelStyle: const TextStyle(
+                                                      fontSize: 16,
+                                                      fontFamily: 'Poppins',
+                                                      color: Colors.grey,
+                                                    ),
+                                                    border: OutlineInputBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            15,
+                                                          ),
+                                                      borderSide:
+                                                          const BorderSide(
+                                                            color: Colors.grey,
+                                                            width: 1,
+                                                          ),
+                                                    ),
+                                                    focusedBorder:
+                                                        OutlineInputBorder(
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                15,
+                                                              ),
+                                                          borderSide:
+                                                              const BorderSide(
+                                                                color: Color(
+                                                                  0xFFCB6CE6,
+                                                                ),
+                                                                width: 2.0,
+                                                              ),
+                                                        ),
+                                                    contentPadding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 20,
+                                                          vertical: 20,
+                                                        ),
+                                                  ),
+                                                  validator: (value) {
+                                                    if (_isFieldRequired(
+                                                          'postal',
+                                                        ) &&
+                                                        (value == null ||
+                                                            value.isEmpty)) {
+                                                      return 'Please enter postal code';
+                                                    }
+                                                    return null;
+                                                  },
+                                                  onChanged: (value) {
+                                                    _postalCodeController.text =
+                                                        value;
+                                                    // Clear address and available streets if postal code is changed manually
+                                                    if (_selectedPostcode !=
+                                                            null &&
+                                                        _selectedPostcode!['postcode'] !=
+                                                            value) {
+                                                      setState(() {
+                                                        _selectedPostcode =
+                                                            null;
+                                                        _addressController
+                                                            .clear();
+                                                        _availableStreets = [];
+                                                      });
+                                                    }
+                                                  },
+                                                );
+                                              },
+                                              optionsViewBuilder: (
+                                                context,
+                                                onSelected,
+                                                options,
+                                              ) {
+                                                return Align(
+                                                  alignment: Alignment.topLeft,
+                                                  child: Material(
+                                                    elevation: 4.0,
+                                                    child: Container(
+                                                      constraints:
+                                                          const BoxConstraints(
+                                                            maxHeight: 300,
+                                                          ),
+                                                      width:
+                                                          MediaQuery.of(
+                                                            context,
+                                                          ).size.width -
+                                                          40,
+                                                      child: ListView.builder(
+                                                        padding:
+                                                            EdgeInsets.zero,
+                                                        shrinkWrap: true,
+                                                        itemCount:
+                                                            options.length,
+                                                        itemBuilder: (
+                                                          context,
+                                                          index,
+                                                        ) {
+                                                          final option = options
+                                                              .elementAt(index);
+                                                          return ListTile(
+                                                            title: Text(
+                                                              option['postcode'] ??
+                                                                  '',
+                                                              style: const TextStyle(
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold,
+                                                                fontFamily:
+                                                                    'Poppins',
+                                                              ),
+                                                            ),
+                                                            onTap: () {
+                                                              onSelected(
+                                                                option,
+                                                              );
+                                                              setState(() {
+                                                                _selectedPostcode =
+                                                                    option;
+                                                                _postalCodeController
+                                                                        .text =
+                                                                    option['postcode'] ??
+                                                                    '';
+                                                                // Clear current address and populate available streets
+                                                                _addressController
+                                                                    .clear();
+                                                                final streets =
+                                                                    option['streets'];
+
+                                                                print(
+                                                                  '🏠 Postal code selected: ${option['postcode']}',
+                                                                );
+                                                                print(
+                                                                  '🏠 Previous postal code: ${_selectedPostcode?['postcode']}',
+                                                                );
+                                                                print(
+                                                                  '🏠 Streets data type: ${streets.runtimeType}',
+                                                                );
+                                                                print(
+                                                                  '🏠 Streets data: $streets',
+                                                                );
+
+                                                                // Clear the old streets list first
+                                                                _availableStreets
+                                                                    .clear();
+
+                                                                if (streets !=
+                                                                    null) {
+                                                                  if (streets
+                                                                      is List) {
+                                                                    _availableStreets = List<
+                                                                      String
+                                                                    >.from(
+                                                                      streets
+                                                                          .cast<
+                                                                            String
+                                                                          >(),
+                                                                    );
+                                                                  } else if (streets
+                                                                      is String) {
+                                                                    _availableStreets =
+                                                                        streets
+                                                                            .split(
+                                                                              ',',
+                                                                            )
+                                                                            .map(
+                                                                              (
+                                                                                s,
+                                                                              ) =>
+                                                                                  s.trim(),
+                                                                            )
+                                                                            .where(
+                                                                              (
+                                                                                s,
+                                                                              ) =>
+                                                                                  s.isNotEmpty,
+                                                                            )
+                                                                            .toList();
+                                                                  } else {
+                                                                    print(
+                                                                      '🏠 Streets data is neither List nor String: ${streets.runtimeType}',
+                                                                    );
+                                                                    _availableStreets =
+                                                                        [];
+                                                                  }
+                                                                } else {
+                                                                  print(
+                                                                    '🏠 No streets data found for this postal code',
+                                                                  );
+                                                                  _availableStreets =
+                                                                      [];
+                                                                }
+
+                                                                print(
+                                                                  '🏠 Available streets after processing: $_availableStreets',
+                                                                );
+                                                                print(
+                                                                  '🏠 Number of streets: ${_availableStreets.length}',
+                                                                );
+                                                                print(
+                                                                  '🏠 Street autocomplete key will be: street_autocomplete_${option['postcode']}_${_availableStreets.length}',
+                                                                );
+                                                              });
+                                                            },
+                                                          );
+                                                        },
+                                                      ),
+                                                    ),
+                                                  ),
+                                                );
+                                              },
+                                            ),
                                   ),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 20,
-                                    vertical: 20,
-                                  ),
+                                ],
+                              ),
+                            ),
+
+                            Container(
+                              margin: const EdgeInsets.only(bottom: 20),
+                              child: Autocomplete<String>(
+                                key: ValueKey(
+                                  'street_autocomplete_${_selectedPostcode?['postcode'] ?? 'none'}_${_availableStreets.length}',
                                 ),
-                                validator: (value) {
-                                  if (_isFieldRequired('postal') &&
-                                      (value == null || value.isEmpty)) {
-                                    return 'Please enter postal code';
+                                optionsBuilder: (
+                                  TextEditingValue textEditingValue,
+                                ) {
+                                  print(
+                                    '🔍 Street autocomplete optionsBuilder called',
+                                  );
+                                  print(
+                                    '🔍 Current postal code: ${_selectedPostcode?['postcode']}',
+                                  );
+                                  print(
+                                    '🔍 Widget key: street_autocomplete_${_selectedPostcode?['postcode'] ?? 'none'}_${_availableStreets.length}',
+                                  );
+                                  print(
+                                    '🔍 Available streets: $_availableStreets',
+                                  );
+                                  print(
+                                    '🔍 Available streets length: ${_availableStreets.length}',
+                                  );
+                                  print(
+                                    '🔍 Text input: "${textEditingValue.text}"',
+                                  );
+
+                                  if (_availableStreets.isEmpty) {
+                                    print(
+                                      '🔍 No available streets, returning empty',
+                                    );
+                                    return const Iterable<String>.empty();
                                   }
-                                  return null;
+                                  if (textEditingValue.text.isEmpty) {
+                                    print(
+                                      '🔍 Empty text, returning all streets: $_availableStreets',
+                                    );
+                                    return _availableStreets;
+                                  }
+                                  final filtered =
+                                      _availableStreets.where((street) {
+                                        return street.toLowerCase().contains(
+                                          textEditingValue.text.toLowerCase(),
+                                        );
+                                      }).toList();
+                                  print('🔍 Filtered streets: $filtered');
+                                  return filtered;
+                                },
+                                displayStringForOption:
+                                    (String option) => option,
+                                fieldViewBuilder: (
+                                  context,
+                                  controller,
+                                  focusNode,
+                                  onFieldSubmitted,
+                                ) {
+                                  // Sync with our address controller
+                                  if (controller.text !=
+                                      _addressController.text) {
+                                    controller.text = _addressController.text;
+                                  }
+
+                                  return TextFormField(
+                                    controller: controller,
+                                    focusNode: focusNode,
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontFamily: 'Poppins',
+                                    ),
+                                    decoration: InputDecoration(
+                                      labelText: _getFieldLabel(
+                                        'Street Address',
+                                        'address',
+                                      ),
+                                      hintText:
+                                          _availableStreets.isEmpty
+                                              ? (_selectedPostcode == null
+                                                  ? 'Select a postal code first'
+                                                  : 'Enter street address')
+                                              : 'Enter or select street address',
+                                      labelStyle: const TextStyle(
+                                        fontSize: 16,
+                                        fontFamily: 'Poppins',
+                                        color: Colors.grey,
+                                      ),
+                                      hintStyle: const TextStyle(
+                                        fontSize: 14,
+                                        fontFamily: 'Poppins',
+                                        color: Colors.grey,
+                                      ),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(15),
+                                        borderSide: const BorderSide(
+                                          color: Colors.grey,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(15),
+                                        borderSide: const BorderSide(
+                                          color: Color(0xFFCB6CE6),
+                                          width: 2.0,
+                                        ),
+                                      ),
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                            horizontal: 20,
+                                            vertical: 20,
+                                          ),
+                                    ),
+                                    validator: (value) {
+                                      if (_isFieldRequired('address') &&
+                                          (value == null || value.isEmpty)) {
+                                        return 'Please enter street address';
+                                      }
+                                      return null;
+                                    },
+                                    onChanged: (value) {
+                                      _addressController.text = value;
+                                    },
+                                  );
+                                },
+                                optionsViewBuilder: (
+                                  context,
+                                  onSelected,
+                                  options,
+                                ) {
+                                  if (options.isEmpty) {
+                                    return const SizedBox.shrink();
+                                  }
+
+                                  return Align(
+                                    alignment: Alignment.topLeft,
+                                    child: Material(
+                                      elevation: 4.0,
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Container(
+                                        constraints: const BoxConstraints(
+                                          maxHeight: 200,
+                                          minWidth: 200,
+                                        ),
+                                        width:
+                                            MediaQuery.of(context).size.width -
+                                            40,
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                          border: Border.all(
+                                            color: Colors.grey.shade300,
+                                          ),
+                                        ),
+                                        child: ListView.builder(
+                                          padding: EdgeInsets.zero,
+                                          shrinkWrap: true,
+                                          itemCount: options.length,
+                                          itemBuilder: (context, index) {
+                                            final option = options.elementAt(
+                                              index,
+                                            );
+                                            return InkWell(
+                                              onTap: () {
+                                                onSelected(option);
+                                                _addressController.text =
+                                                    option;
+                                              },
+                                              child: Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 16,
+                                                      vertical: 12,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  border:
+                                                      index < options.length - 1
+                                                          ? Border(
+                                                            bottom: BorderSide(
+                                                              color:
+                                                                  Colors
+                                                                      .grey
+                                                                      .shade200,
+                                                            ),
+                                                          )
+                                                          : null,
+                                                ),
+                                                child: Text(
+                                                  option,
+                                                  style: const TextStyle(
+                                                    fontFamily: 'Poppins',
+                                                    fontSize: 16,
+                                                  ),
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                                onSelected: (String selection) {
+                                  _addressController.text = selection;
                                 },
                               ),
                             ),
@@ -789,10 +1438,7 @@ class _CustomerDetailsWidgetState extends State<CustomerDetailsWidget> {
                                   _emailController.text.trim().isEmpty
                                       ? null
                                       : _emailController.text.trim(),
-                              streetAddress:
-                                  _addressController.text.trim().isEmpty
-                                      ? null
-                                      : _addressController.text.trim(),
+                              streetAddress: _getCombinedAddress(),
                               city:
                                   _cityController.text.trim().isEmpty
                                       ? null

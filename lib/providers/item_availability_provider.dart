@@ -84,8 +84,9 @@ class ItemAvailabilityProvider with ChangeNotifier {
 
       try {
         // Make API call with timeout for release mode reliability
-        await ApiService.setItemAvailability(itemId, newAvailability)
-            .timeout(const Duration(seconds: 15)); // Increased timeout for production
+        await ApiService.setItemAvailability(itemId, newAvailability).timeout(
+          const Duration(seconds: 15),
+        ); // Increased timeout for production
 
         // Production-safe logging
         print(
@@ -105,7 +106,9 @@ class ItemAvailabilityProvider with ChangeNotifier {
         // await _refreshSingleItem(itemId);
       } catch (e) {
         // Production-safe logging
-        print('ItemAvailabilityProvider: Failed to update ${originalItem.name} on server: $e');
+        print(
+          'ItemAvailabilityProvider: Failed to update ${originalItem.name} on server: $e',
+        );
 
         // Revert optimistic update on error - ensure we're still in valid state
         if (itemIndex < _allItems.length && _allItems[itemIndex].id == itemId) {
@@ -123,7 +126,9 @@ class ItemAvailabilityProvider with ChangeNotifier {
       }
     } catch (e) {
       // Catch-all for any unexpected errors
-      print('ItemAvailabilityProvider: Unexpected error in updateItemAvailability: $e');
+      print(
+        'ItemAvailabilityProvider: Unexpected error in updateItemAvailability: $e',
+      );
       if (context.mounted) {
         CustomPopupService.show(
           context,
@@ -160,5 +165,56 @@ class ItemAvailabilityProvider with ChangeNotifier {
   bool isItemAvailable(int itemId) {
     final item = getItemById(itemId);
     return item?.availability ?? false;
+  }
+
+  // Method to add a new item
+  Future<void> addItem({
+    required BuildContext context,
+    required String itemName,
+    required String type,
+    required String description,
+    required Map<String, double> priceOptions,
+    required List<String> toppings,
+    required bool website,
+    String? subtype,
+  }) async {
+    try {
+      // Call the API service to add the item
+      final response = await ApiService.addItem(
+        itemName: itemName,
+        type: type,
+        description: description,
+        price: priceOptions, // Send as JSONB field
+        toppings: toppings,
+        website: website,
+        subtype: subtype,
+      );
+
+      print('ItemAvailabilityProvider: Item added successfully: $response');
+
+      // Refresh the items list to include the new item
+      await fetchItems();
+
+      if (context.mounted) {
+        CustomPopupService.show(
+          context,
+          'Item "$itemName" added successfully!',
+          type: PopupType.success,
+        );
+      }
+    } catch (e) {
+      print('ItemAvailabilityProvider: Failed to add item: $e');
+
+      if (context.mounted) {
+        CustomPopupService.show(
+          context,
+          'Failed to add item: ${e.toString()}',
+          type: PopupType.failure,
+        );
+      }
+
+      // Re-throw the error so the UI can handle it appropriately
+      rethrow;
+    }
   }
 }

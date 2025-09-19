@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.nio.charset.Charset;
+import java.io.UnsupportedEncodingException;
 
 import net.posprinter.IDeviceConnection;
 import net.posprinter.POSConnect;
@@ -174,21 +175,128 @@ public class XprinterPlugin implements FlutterPlugin, MethodCallHandler {
                     return;
                 }
 
-                // Initialize printer and print receipt
-                posPrinter.initializePrinter()
-                         .printString(receiptData)
-                         .feedLine(3)
-                         .cutPaper();
+                Log.d(TAG, "Starting receipt print with proper CP437 encoding for pound signs");
 
-                Log.d(TAG, "Receipt printed successfully");
+                // Initialize printer with CP437 character set
+                posPrinter.initializePrinter();
+                
+                // CRITICAL FIX: Proper pound sign handling for Xprinter
+                String processedReceipt = fixPoundSignEncoding(receiptData);
+                
+                // Initialize printer for CP437 character set (critical for pound sign)
+                String initCommands = "";
+                initCommands += (char) 0x1B + (char) 0x40; // ESC @ (Initialize)
+                initCommands += (char) 0x1B + (char) 0x74 + (char) 0x00; // ESC t 0 (Select CP437 - Page 0)
+                initCommands += (char) 0x1C + (char) 0x2E; // FS . (Cancel Chinese mode)
+                initCommands += (char) 0x1B + (char) 0x52 + (char) 0x00; // ESC R 0 (International charset)
+                
+                // Print initialization commands first
+                posPrinter.printString(initCommands);
+                
+                // Print the receipt content with fixed pound signs
+                posPrinter.printString(processedReceipt);
+                
+                // Feed and cut
+                posPrinter.feedLine(3).cutPaper();
+
+                Log.d(TAG, "Receipt printed successfully with CP437 pound sign encoding");
                 mainHandler.post(() -> result.success(true));
+                
             } catch (Exception e) {
                 Log.e(TAG, "Error printing receipt", e);
-                mainHandler.post(() -> result.error("PRINT_ERROR", e.getMessage(), null));
+                
+                // Fallback: Try without encoding fixes
+                try {
+                    Log.d(TAG, "Attempting fallback print without encoding fixes...");
+                    posPrinter.initializePrinter()
+                             .printString(receiptData)
+                             .feedLine(3)
+                             .cutPaper();
+                    Log.d(TAG, "Fallback print successful");
+                    mainHandler.post(() -> result.success(true));
+                } catch (Exception fallbackException) {
+                    Log.e(TAG, "Both main and fallback print methods failed", fallbackException);
+                    mainHandler.post(() -> result.error("PRINT_ERROR", e.getMessage(), null));
+                }
             }
         });
     }
 
+    /**
+     * Fix pound sign encoding for proper display on Xprinter thermal printers
+     * Converts Unicode £ to CP437 character code 156 (0x9C)
+     */
+    private String fixPoundSignEncoding(String input) {
+        if (input == null || !input.contains("£")) {
+            return input;
+        }
+
+        Log.d(TAG, "POUND SIGN FIX: Processing " + countPoundSigns(input) + " pound signs");
+        
+        try {
+            // Method 1: Direct character replacement with CP437 code
+            // In CP437, pound sign is at position 156 (0x9C)
+            String result = input.replace("£", String.valueOf((char) 0x9C));
+            
+            Log.d(TAG, "POUND SIGN FIX: Applied direct CP437 character code replacement");
+            return result;
+            
+        } catch (Exception e) {
+            Log.w(TAG, "POUND SIGN FIX: Direct replacement failed, trying byte-level fix", e);
+            
+            try {
+                // Method 2: Byte-level replacement for UTF-8 encoded pound signs
+                byte[] bytes = input.getBytes("UTF-8");
+                List<Byte> fixedBytes = new ArrayList<>();
+                
+                for (int i = 0; i < bytes.length; i++) {
+                    // Check for UTF-8 pound sign sequence (0xC2 0xA3)
+                    if (i < bytes.length - 1 && 
+                        (bytes[i] & 0xFF) == 0xC2 && 
+                        (bytes[i + 1] & 0xFF) == 0xA3) {
+                        
+                        // Replace UTF-8 pound sign with CP437 pound sign
+                        fixedBytes.add((byte) 0x9C);
+                        i++; // Skip the next byte as we've processed the pair
+                        Log.d(TAG, "POUND SIGN FIX: Replaced UTF-8 sequence (C2 A3) with CP437 (9C)");
+                        
+                    } else if ((bytes[i] & 0xFF) == 0xA3) {
+                        // Handle Latin-1 pound sign (0xA3) -> CP437 (0x9C)
+                        fixedBytes.add((byte) 0x9C);
+                        Log.d(TAG, "POUND SIGN FIX: Replaced Latin-1 (A3) with CP437 (9C)");
+                        
+                    } else {
+                        fixedBytes.add(bytes[i]);
+                    }
+                }
+                
+                // Convert back to string using Latin-1 to preserve byte values
+                byte[] resultBytes = new byte[fixedBytes.size()];
+                for (int i = 0; i < fixedBytes.size(); i++) {
+                    resultBytes[i] = fixedBytes.get(i);
+                }
+                
+                String result = new String(resultBytes, "ISO-8859-1");
+                Log.d(TAG, "POUND SIGN FIX: Applied byte-level replacement successfully");
+                return result;
+                
+            } catch (Exception byteException) {
+                Log.e(TAG, "POUND SIGN FIX: All methods failed, using original string", byteException);
+                return input;
+            }
+        }
+    }
+    
+    /**
+     * Count pound signs in string for debugging
+     */
+    private int countPoundSigns(String input) {
+        int count = 0;
+        for (char c : input.toCharArray()) {
+            if (c == '£') count++;
+        }
+        return count;
+    }
 
     private void openCashBox(Integer pinNum, Integer onTime, Integer offTime, Result result) {
         executor.execute(() -> {

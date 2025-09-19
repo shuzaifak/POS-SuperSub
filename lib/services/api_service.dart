@@ -826,6 +826,38 @@ class ApiService {
     }
   }
 
+  static Future<List<Map<String, dynamic>>> getPostcodes() async {
+    final url = Uri.parse("$baseUrl/admin/postcodes");
+    print("getPostcodes: Attempting to fetch from URL: $url");
+
+    try {
+      final response = await http.get(
+        url,
+        headers: BrandInfo.getDefaultHeaders(),
+      );
+
+      print("getPostcodes: Response Code: ${response.statusCode}");
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = jsonDecode(response.body);
+        if (data['rows'] != null) {
+          return List<Map<String, dynamic>>.from(data['rows']);
+        } else {
+          print("getPostcodes: No rows found in response");
+          return [];
+        }
+      } else {
+        print(
+          "getPostcodes: Failed with status ${response.statusCode}: ${response.body}",
+        );
+        return [];
+      }
+    } catch (e) {
+      print("getPostcodes: Error occurred: $e");
+      return [];
+    }
+  }
+
   static Future<Map<String, dynamic>> getDriverReport(DateTime date) async {
     const String proxy = "https://corsproxy.io/?";
     const String backend = "https://thevillage-backend.onrender.com";
@@ -866,9 +898,10 @@ class ApiService {
     required String itemName,
     required String type,
     required String description,
-    required double price,
+    required Map<String, double> price,
     required List<String> toppings,
     required bool website,
+    String? subtype,
   }) async {
     final url = Uri.parse("$baseUrl/item/add-items");
     print("addItem: Attempting to add new item: $itemName");
@@ -878,10 +911,15 @@ class ApiService {
         "item_name": itemName,
         "type": type,
         "description": description,
-        "price": price,
+        "price": price, // Now sending as Map<String, double> for JSONB field
         "toppings": toppings,
         "website": website,
       };
+
+      // Add subtype if provided (backend expects "subType")
+      if (subtype != null && subtype.isNotEmpty) {
+        requestBody["subType"] = subtype;
+      }
 
       print("addItem: Request body: ${jsonEncode(requestBody)}");
 
