@@ -20,8 +20,7 @@ class ShopStatusData {
 
 class OrderApiService {
   static const String _httpProxyUrl = 'https://corsproxy.io/?';
-  static const String _backendBaseUrl =
-      'https://thevillage-backend.onrender.com';
+  static const String _backendBaseUrl = 'https://dallasbackend.onrender.com';
 
   // Singleton instance for OrderApiService
   static final OrderApiService _instance = OrderApiService._internal();
@@ -263,7 +262,9 @@ class OrderApiService {
     print('🔍 URL: $url');
     print('🔍 Headers: ${BrandInfo.getDefaultHeaders()}');
     print('🔍 Request Body: ${jsonEncode(requestBody)}');
-    print('🔍 Order ID: $orderId, Internal Status: $newStatus, Backend Status: $statusToSend');
+    print(
+      '🔍 Order ID: $orderId, Internal Status: $newStatus, Backend Status: $statusToSend',
+    );
 
     try {
       final response = await http.post(
@@ -279,7 +280,9 @@ class OrderApiService {
         print('✅ Order status update successful');
         return true;
       } else {
-        print('❌ Order status update failed - Status Code: ${response.statusCode}');
+        print(
+          '❌ Order status update failed - Status Code: ${response.statusCode}',
+        );
         print('❌ Response: ${response.body}');
         return false;
       }

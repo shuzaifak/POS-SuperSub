@@ -140,6 +140,8 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
 
   String _getCategoryIcon(String categoryName) {
     switch (categoryName.toUpperCase()) {
+      case 'DEALS':
+        return 'assets/images/deals.png';
       case 'PIZZA':
         return 'assets/images/PizzasS.png';
       case 'SHAWARMAS':

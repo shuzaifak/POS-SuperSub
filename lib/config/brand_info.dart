@@ -1,7 +1,7 @@
 // lib/config/brand_info.dart
 class BrandInfo {
   static const String _currentBrand =
-      'TVP'; // Change this value to switch brands
+      'Dallas'; // Change this value to switch brands
 
   static const Map<String, String> _brandConfigs = {
     'TVP': 'TVP',
