@@ -100,6 +100,10 @@ class _Page4State extends State<Page4> {
   int _selectedDealsSubcategory = 0;
   List<String> _dealsSubcategories = [];
 
+  // Wings subcategories
+  int _selectedWingsSubcategory = 0;
+  List<String> _wingsSubcategories = [];
+
   bool _showAddItemModal = false;
   void _scrollCategoriesLeft() {
     _categoryScrollController.animateTo(
@@ -1663,6 +1667,7 @@ class _Page4State extends State<Page4> {
                                   ),
                                   _buildShawarmaSubcategoryTabs(),
                                   _buildDealsSubcategoryTabs(),
+                                  _buildWingsSubcategoryTabs(),
                                   Expanded(child: _buildItemGrid()),
                                 ],
                               ),
@@ -2148,6 +2153,29 @@ class _Page4State extends State<Page4> {
     }
   }
 
+  void _updateWingsSubcategories(List<FoodItem> allFoodItems) {
+    final Set<String> uniqueSubcategories = {};
+
+    for (final item in allFoodItems) {
+      if (item.category.toLowerCase() == 'wings' &&
+          item.subType != null &&
+          item.subType!.trim().isNotEmpty) {
+        uniqueSubcategories.add(item.subType!.trim());
+      }
+    }
+
+    final List<String> sortedSubcategories =
+        uniqueSubcategories.toList()..sort();
+
+    // Only update if subcategories have changed to avoid unnecessary rebuilds
+    if (!_listsEqual(_wingsSubcategories, sortedSubcategories)) {
+      setState(() {
+        _wingsSubcategories = sortedSubcategories;
+        _selectedWingsSubcategory = 0; // Reset to first subcategory
+      });
+    }
+  }
+
   // Helper method to compare two lists
   bool _listsEqual<T>(List<T> a, List<T> b) {
     if (a.length != b.length) return false;
@@ -2291,6 +2319,75 @@ class _Page4State extends State<Page4> {
     return const SizedBox.shrink();
   }
 
+  Widget _buildWingsSubcategoryTabs() {
+    if (selectedCategory >= 0 &&
+        selectedCategory < categories.length &&
+        categories[selectedCategory].name.toLowerCase() == 'wings' &&
+        _wingsSubcategories.isNotEmpty) {
+      return Container(
+        padding: const EdgeInsets.only(
+          left: 80,
+          right: 80,
+          top: 15,
+          bottom: 10,
+        ),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              for (int i = 0; i < _wingsSubcategories.length; i++)
+                Padding(
+                  padding: EdgeInsets.only(
+                    right: i < _wingsSubcategories.length - 1 ? 20 : 0,
+                  ),
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _selectedWingsSubcategory = i;
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color:
+                            _selectedWingsSubcategory == i
+                                ? const Color(0xFFCB6CE6)
+                                : Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color:
+                              _selectedWingsSubcategory == i
+                                  ? const Color(0xFFCB6CE6)
+                                  : Colors.grey.shade300,
+                          width: 2,
+                        ),
+                      ),
+                      child: Text(
+                        _wingsSubcategories[i],
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontFamily: 'Poppins',
+                          color:
+                              _selectedWingsSubcategory == i
+                                  ? Colors.white
+                                  : Colors.black,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+    return const SizedBox.shrink();
+  }
+
   Widget _buildItemGrid() {
     return Consumer<ItemAvailabilityProvider>(
       builder: (context, itemProvider, child) {
@@ -2306,6 +2403,7 @@ class _Page4State extends State<Page4> {
         // Update deals subcategories whenever food items change
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _updateDealsSubcategories(allFoodItems);
+          _updateWingsSubcategories(allFoodItems);
         });
 
         // Production-safe logging
@@ -2393,6 +2491,18 @@ class _Page4State extends State<Page4> {
             _dealsSubcategories.isNotEmpty) {
           final selectedSubcategory =
               _dealsSubcategories[_selectedDealsSubcategory];
+          currentItems = currentItems.where(
+            (item) =>
+                item.subType?.trim().toLowerCase() ==
+                selectedSubcategory.trim().toLowerCase(),
+          );
+        }
+
+        // Filter by subcategory for Wings items
+        if (selectedCategoryName.toLowerCase() == 'wings' &&
+            _wingsSubcategories.isNotEmpty) {
+          final selectedSubcategory =
+              _wingsSubcategories[_selectedWingsSubcategory];
           currentItems = currentItems.where(
             (item) =>
                 item.subType?.trim().toLowerCase() ==
@@ -3022,7 +3132,8 @@ class _Page4State extends State<Page4> {
                             }
                           }
                         } else if (lowerOption.contains('sauce:') ||
-                            lowerOption.contains('sauce dip:')) {
+                            lowerOption.contains('sauce dip:') ||
+                            lowerOption.contains('sauces:')) {
                           // Skip individual sauce parsing for deals - they have their own formatting
                           if (item.foodItem.category != 'Deals') {
                             String dipsValue = option.split(':').last.trim();
@@ -3174,7 +3285,11 @@ class _Page4State extends State<Page4> {
                                                       ),
                                                     if (sauceDips.isNotEmpty)
                                                       Text(
-                                                        '${(item.foodItem.category == 'Pizza' || item.foodItem.category == 'GarlicBread' || item.foodItem.category == 'Chicken' || item.foodItem.category == 'Wings' || item.foodItem.category == 'Strips') ? 'Sauce Dip' : 'Sauce'}: ${sauceDips.join(', ')}',
+                                                        '${(item.foodItem.category == 'Pizza' || item.foodItem.category == 'GarlicBread' || item.foodItem.category == 'Chicken' || item.foodItem.category == 'Wings' || item.foodItem.category == 'Strips' || item.foodItem.category == 'Kebabs')
+                                                            ? 'Sauce Dip'
+                                                            : (item.foodItem.category == 'Burgers' || item.foodItem.category == 'Wraps')
+                                                            ? 'Sauces'
+                                                            : 'Sauce'}: ${sauceDips.join(', ')}',
                                                         style: const TextStyle(
                                                           fontSize: 15,
                                                           fontFamily: 'Poppins',
@@ -3255,16 +3370,12 @@ class _Page4State extends State<Page4> {
                                                             ),
                                                           )
                                                           .toList(),
-                                                    // Display meal information (including Kids Meal and Deal drinks)
+                                                    // Display meal information (including Kids Meal drinks but NOT Deal drinks to prevent duplication)
                                                     if ((isMeal ||
                                                             item
                                                                     .foodItem
                                                                     .category ==
-                                                                'KidsMeal' ||
-                                                            item
-                                                                    .foodItem
-                                                                    .category ==
-                                                                'Deals') &&
+                                                                'KidsMeal') &&
                                                         selectedDrink !=
                                                             null) ...[
                                                       Text(
@@ -4709,6 +4820,7 @@ class _Page4State extends State<Page4> {
                           _searchQuery = '';
                           _selectedShawarmaSubcategory = 0;
                           _selectedDealsSubcategory = 0;
+                          _selectedWingsSubcategory = 0;
                         });
                       },
                       child: Column(

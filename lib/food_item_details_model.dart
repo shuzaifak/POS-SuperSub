@@ -238,7 +238,18 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
                 sauceValue.toLowerCase() == 'no') {
               _sauceChoice = sauceValue;
               _noSauce = sauceValue.toLowerCase() == 'no';
+            } else {
+              // Handle actual sauce names like "Sauce: Mayo, Ketchup" (for Shawarma)
+              _sauceChoice = 'Yes';
+              _selectedSauces.addAll(
+                sauceValue.split(',').map((s) => s.trim()),
+              );
             }
+          } else if (lowerOption.startsWith('sauces:')) {
+            // Handle "Sauces: Mayo, Ketchup" format for Burgers and Wraps
+            String sauceValue = option.split(':').last.trim();
+            _sauceChoice = 'Yes';
+            _selectedSauces.addAll(sauceValue.split(',').map((s) => s.trim()));
           } else if (lowerOption == 'no cream') {
             _noCream = true;
           } else if (lowerOption.startsWith('flavor:') &&
@@ -703,8 +714,9 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
       'Chicken',
       'Wings',
       'Strips',
+      'Kebabs',
     ].contains(widget.foodItem.category)) {
-      // Chicken, Wings, and Strips use the same sauce pricing as Pizza (paid sauce dips)
+      // Chicken, Wings, Strips, and Kebabs use the same sauce pricing as Pizza (paid sauce dips)
       double sauceCost = 0.0;
       for (var sauce in _selectedSauces) {
         if (sauce == "Chilli sauce" || sauce == "Garlic Sauce") {
@@ -715,7 +727,7 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
       }
       price += sauceCost;
       debugPrint(
-        "After Chicken/Wings/Strips sauces: $price (added: $sauceCost)",
+        "After Chicken/Wings/Strips/Kebabs sauces: $price (added: $sauceCost)",
       );
     } else if ([
       'Shawarma',
@@ -999,23 +1011,7 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
       return;
     }
 
-    // Check Red Salt selection requirement when Meal size is selected
-    if (_isMealSizeSelected() &&
-        [
-          'Burgers',
-          'Wraps',
-          'Chicken',
-          'Wings',
-          'Strips',
-        ].contains(widget.foodItem.category) &&
-        _selectedRedSaltChoice == null) {
-      CustomPopupService.show(
-        context,
-        'Please select Red Salt choice for your meal',
-        type: PopupType.failure,
-      );
-      return;
-    }
+    // Red Salt selection is now optional for all categories
 
     if ((_drinkFlavors.containsKey(widget.foodItem.name) &&
             _selectedDrinkFlavor == null) ||
@@ -1074,7 +1070,7 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
       selectedOptions.add('Crust: $_selectedCrust');
     }
 
-    // Only show specific sauce names for Pizza, GarlicBread, Chicken, Wings, and Strips
+    // Only show specific sauce names for Pizza, GarlicBread, Chicken, Wings, Strips, and Kebabs
     // Sides category removed from sauce dips
     if (_selectedSauces.isNotEmpty &&
         !_noSauce &&
@@ -1082,8 +1078,9 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
             widget.foodItem.category == 'GarlicBread' ||
             widget.foodItem.category == 'Chicken' ||
             widget.foodItem.category == 'Wings' ||
-            widget.foodItem.category == 'Strips')) {
-      // Use "Sauce Dip:" for Pizza, Garlic Bread, Chicken, Wings, and Strips
+            widget.foodItem.category == 'Strips' ||
+            widget.foodItem.category == 'Kebabs')) {
+      // Use "Sauce Dip:" for Pizza, Garlic Bread, Chicken, Wings, Strips, and Kebabs
       String sauceLabel = 'Sauce Dip';
       selectedOptions.add('$sauceLabel: ${_selectedSauces.join(', ')}');
     }
@@ -1118,9 +1115,8 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
       }
     }
 
-    // Only apply salad/sauce logic to regular items, NOT deals
-    // REMOVED Chicken, Wings, and Strips from salad logic - they now use Sauce Dips instead
-    if (['Shawarma', 'Wraps', 'Burgers'].contains(widget.foodItem.category) &&
+    // Shawarma, Burgers, and Wraps use traditional salad + sauce Yes/No system
+    if (['Shawarma', 'Burgers', 'Wraps'].contains(widget.foodItem.category) &&
         widget.foodItem.category != 'Deals') {
       // Handle salad display - keep as Yes/No format
       if (_saladChoice == 'No') {
@@ -1133,8 +1129,12 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
       if (_sauceChoice == 'No') {
         selectedOptions.add('No Sauce');
       } else if (_sauceChoice == 'Yes' && _selectedSauces.isNotEmpty) {
-        // Show the actual selected sauces
-        selectedOptions.add('Sauce: ${_selectedSauces.join(', ')}');
+        // Show "Sauces:" for Burgers and Wraps, "Sauce:" for Shawarma
+        String sauceLabel =
+            (['Burgers', 'Wraps'].contains(widget.foodItem.category))
+                ? 'Sauces:'
+                : 'Sauce:';
+        selectedOptions.add('$sauceLabel ${_selectedSauces.join(', ')}');
       }
     }
 
@@ -1642,7 +1642,10 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
         // Original logic for other deals (exclude Pizza Offers and 3X12" Pizza Deal)
         _dealSelections.forEach((sectionName, selectedOption) {
           if (selectedOption != null) {
-            selectedOptions.add('$sectionName: $selectedOption');
+            // Skip drink sections to prevent duplication - drinks are handled separately below
+            if (!sectionName.toLowerCase().contains('drink')) {
+              selectedOptions.add('$sectionName: $selectedOption');
+            }
           }
         });
 
@@ -2073,12 +2076,24 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
               Expanded(child: _buildSauceOption()),
             ],
           ),
-          if (_isMealSizeSelected()) ...[
-            const SizedBox(height: 20),
-            _buildDrinkSelectionSection(),
-          ],
           // NEW: Add chip seasoning section
           _buildRedSaltChoiceSection(),
+        ],
+      ),
+    );
+  }
+
+  // Simplified method for just salad and sauce buttons (without meal drink selection)
+  Widget _buildSaladAndSauceOptions() {
+    return Center(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          // Salad
+          Expanded(child: _buildSaladOption()),
+          const SizedBox(width: 15),
+          // Sauce Yes/No choice
+          Expanded(child: _buildSauceOption()),
         ],
       ),
     );
@@ -2359,21 +2374,6 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
     if (widget.foodItem.category == 'KidsMeal' && _selectedDrink == null) {
       canConfirmSelection = false;
     }
-
-    // Kids Meal with chips/fries must have Red Salt choice selected
-    bool kidsMealNeedsRedSalt =
-        widget.foodItem.category == 'KidsMeal' &&
-        (widget.foodItem.name.toLowerCase().contains('chips') ||
-            widget.foodItem.name.toLowerCase().contains('fries') ||
-            widget.foodItem.description?.toLowerCase().contains('chips') ==
-                true ||
-            widget.foodItem.description?.toLowerCase().contains('fries') ==
-                true);
-
-    if (kidsMealNeedsRedSalt && _selectedRedSaltChoice == null) {
-      canConfirmSelection = false;
-    }
-
     // Deal validation - check if drink is required and selected
     if (widget.foodItem.category == 'Deals' &&
         _hasDrink() &&
@@ -2408,11 +2408,7 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
         print('🔍 NEW ITEM: Applying validation');
       }
 
-      // RED SALT CHOICE VALIDATION - mandatory for ALL deals
-      if (_selectedRedSaltChoice == null) {
-        print('🔍 DEAL VALIDATION FAILED: Red Salt choice not selected');
-        canConfirmSelection = false;
-      }
+      // Red Salt choice is now optional for all deals
 
       if (shouldValidate) {
         // For new items, apply strict validation
@@ -3093,23 +3089,43 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
                         _buildSelectedOptionDisplay(),
                       ],
 
-                      // Shawarma, Wraps, Burgers use salad + sauce Yes/No system
-                      if ([
-                        'Shawarma',
-                        'Wraps',
-                        'Burgers',
-                      ].contains(widget.foodItem.category)) ...[
+                      // Shawarma use salad + sauce Yes/No system
+                      if (widget.foodItem.category == 'Shawarma') ...[
                         _buildMealAndExclusionOptions(),
-                        const SizedBox(height: 20),
-                        if (_sauceChoice == 'Yes')
-                          _buildSauceOptionsForCategory(),
+                        // Show sauce options when Yes is selected (in the middle section)
+                        if (_sauceChoice == 'Yes') ...[
+                          const SizedBox(height: 20),
+                          _buildSauceSelectionForTraditionalCategories(),
+                        ],
                       ],
 
-                      // Chicken, Wings, and Strips use Sauce Dips (no salad options)
+                      // Burgers and Wraps use salad + sauce Yes/No system like Shawarma
+                      if ([
+                        'Burgers',
+                        'Wraps',
+                      ].contains(widget.foodItem.category)) ...[
+                        _buildSaladAndSauceOptions(),
+                        // Show sauce options when Yes is selected (in the middle section)
+                        if (_sauceChoice == 'Yes') ...[
+                          const SizedBox(height: 20),
+                          _buildFreeSauceOptionsForBurgersAndWraps(),
+                        ],
+                        // Add drink selection for meal size (appears below sauces)
+                        if (_isMealSizeSelected()) ...[
+                          const SizedBox(height: 20),
+                          _buildDrinkSelectionSection(),
+                        ],
+                        // Add red salt choice section
+                        const SizedBox(height: 20),
+                        _buildRedSaltChoiceSection(),
+                      ],
+
+                      // Chicken, Wings, Strips, and Kebabs use Sauce Dips (no salad options)
                       if ([
                         'Wings',
                         'Chicken',
                         'Strips',
+                        'Kebabs',
                       ].contains(widget.foodItem.category)) ...[
                         const SizedBox(height: 20),
                         _buildSauceOptionsForCategory(),
@@ -5247,6 +5263,166 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
               },
             );
           }).toList(),
+    );
+  }
+
+  // Free sauce selection for Burgers and Wraps (no price increment)
+  Widget _buildFreeSauceOptionsForBurgersAndWraps() {
+    final double modalWidth = min(
+      MediaQuery.of(context).size.width * 0.95,
+      1000.0,
+    );
+    const double horizontalPaddingOfParent = 30.0;
+    final double availableWidthForWrap = modalWidth - horizontalPaddingOfParent;
+
+    const double itemSpacing = 12.0;
+    const int desiredColumns = 3;
+
+    final double idealItemWidth =
+        (availableWidthForWrap - (itemSpacing * (desiredColumns - 1))) /
+        desiredColumns;
+
+    // Free sauce options for Burgers and Wraps (no price increment)
+    List<String> sauceOptions = [
+      'Mayo',
+      'Ketchup',
+      'Chilli Sauce',
+      'Sweet Chilli',
+      'Garlic Sauce',
+      'BBQ Sauce',
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Sauces:',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 15),
+        Wrap(
+          spacing: itemSpacing,
+          runSpacing: 15,
+          alignment: WrapAlignment.start,
+          children:
+              sauceOptions.map((sauce) {
+                final bool isSelected = _selectedSauces.contains(sauce);
+
+                return SizedBox(
+                  width: idealItemWidth,
+                  child: _buildOptionButton(
+                    title: sauce,
+                    isActive: isSelected,
+                    onTap: () {
+                      setState(() {
+                        if (isSelected) {
+                          _selectedSauces.remove(sauce);
+                        } else {
+                          _selectedSauces.add(sauce);
+                        }
+                        // No price update since sauces are free
+                      });
+                    },
+                  ),
+                );
+              }).toList(),
+        ),
+      ],
+    );
+  }
+
+  // Traditional sauce selection for Burgers, Wraps, Shawarma (free sauces, no pricing)
+  Widget _buildSauceSelectionForTraditionalCategories() {
+    final double modalWidth = min(
+      MediaQuery.of(context).size.width * 0.95,
+      1000.0,
+    );
+    const double horizontalPaddingOfParent = 30.0;
+    final double availableWidthForWrap = modalWidth - horizontalPaddingOfParent;
+
+    const double itemSpacing = 12.0;
+    const int desiredColumns = 3;
+
+    final double idealItemWidth =
+        (availableWidthForWrap - (itemSpacing * (desiredColumns - 1))) /
+        desiredColumns;
+
+    // Traditional sauce options for free sauce categories
+    List<String> sauceOptions = [
+      'Mayo',
+      'Ketchup',
+      'Chilli Sauce',
+      'Sweet Chilli',
+      'Garlic Sauce',
+      'BBQ Sauce',
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Sauce Options:',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 15),
+        Wrap(
+          spacing: itemSpacing,
+          runSpacing: 15,
+          alignment: WrapAlignment.start,
+          children:
+              sauceOptions.map((sauce) {
+                final bool isSelected = _selectedSauces.contains(sauce);
+
+                return SizedBox(
+                  width: idealItemWidth,
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        if (isSelected) {
+                          _selectedSauces.remove(sauce);
+                        } else {
+                          _selectedSauces.add(sauce);
+                        }
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color:
+                            isSelected ? const Color(0xFFCB6CE6) : Colors.white,
+                        borderRadius: BorderRadius.circular(15),
+                        border: Border.all(
+                          color:
+                              isSelected
+                                  ? const Color(0xFFCB6CE6)
+                                  : Colors.grey.shade300,
+                          width: 2,
+                        ),
+                      ),
+                      child: Text(
+                        sauce,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontFamily: 'Poppins',
+                          color: isSelected ? Colors.white : Colors.black,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+        ),
+      ],
     );
   }
 

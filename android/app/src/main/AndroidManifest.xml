@@ -23,7 +23,7 @@
     <uses-feature android:name="android.hardware.usb.accessory" android:required="false" />
 
     <application
-        android:label="The Village POS"
+        android:label="Dallas POS"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

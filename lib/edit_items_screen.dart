@@ -925,7 +925,8 @@ class _EditItemsScreenState extends State<EditItemsScreen> {
 
   bool _shouldShowSubtype() {
     return _addItemSelectedCategory == 'Pizza' ||
-        _addItemSelectedCategory == 'Shawarma';
+        _addItemSelectedCategory == 'Shawarma' ||
+        _addItemSelectedCategory == 'Wings';
   }
 
   bool _shouldShowToppings() {
@@ -1073,6 +1074,8 @@ class _EditItemsScreenState extends State<EditItemsScreen> {
         ];
       case 'Shawarma':
         return ['Donner & Shawarma kebab', 'Shawarma & kebab tray'];
+      case 'Wings':
+        return ['Wings', 'BBQ Wings'];
       default:
         return [];
     }
