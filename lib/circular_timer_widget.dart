@@ -47,12 +47,23 @@ class _CircularTimerState extends State<CircularTimer> {
 
   void _updateElapsedTime() {
     setState(() {
-      // Get current time in UK timezone
-      final currentTime = UKTimeService.now();
-      final orderStartTime = widget.startTime;
+      // Get current UK time
+      final currentUKTime = UKTimeService.now();
 
-      // Both times should now be in UK timezone - calculate difference directly
-      _elapsed = currentTime.difference(orderStartTime);
+      // FIXED: Treat order time as UK local time (ignore the Z suffix)
+      // Database stores UK local time but incorrectly marks it as UTC
+      final orderStartAsUKLocal = DateTime(
+        widget.startTime.year,
+        widget.startTime.month,
+        widget.startTime.day,
+        widget.startTime.hour,
+        widget.startTime.minute,
+        widget.startTime.second,
+        widget.startTime.millisecond,
+      );
+
+      // Calculate difference using UK local times
+      _elapsed = currentUKTime.difference(orderStartAsUKLocal);
     });
   }
 

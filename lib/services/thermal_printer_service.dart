@@ -69,6 +69,42 @@ class ThermalPrinterService {
     return false;
   }
 
+  // Helper method to wrap text without breaking words in the middle
+  List<String> _wrapText(String text, int maxWidth) {
+    if (text.length <= maxWidth) {
+      return [text];
+    }
+
+    List<String> lines = [];
+    List<String> words = text.split(' ');
+    String currentLine = '';
+
+    for (String word in words) {
+      // Check if adding this word would exceed the max width
+      String testLine = currentLine.isEmpty ? word : '$currentLine $word';
+
+      if (testLine.length <= maxWidth) {
+        currentLine = testLine;
+      } else {
+        // If current line has content, add it to lines and start new line with this word
+        if (currentLine.isNotEmpty) {
+          lines.add(currentLine);
+          currentLine = word;
+        } else {
+          // Single word is too long, but don't break it - just put it on its own line
+          currentLine = word;
+        }
+      }
+    }
+
+    // Add any remaining content
+    if (currentLine.isNotEmpty) {
+      lines.add(currentLine);
+    }
+
+    return lines;
+  }
+
   Future<Map<String, bool>> testAllConnections() async {
     print('🧪 Testing all printer connections...');
 
@@ -2316,17 +2352,29 @@ class ThermalPrinterService {
               // Split by line breaks and print each line
               List<String> lines = option.split('\n');
               for (String line in lines) {
-                receipt.writeln('  + ${line.trim()}');
+                // Word wrap each line to prevent mid-word breaking
+                List<String> wrappedLines = _wrapText('  + ${line.trim()}', 48);
+                for (String wrappedLine in wrappedLines) {
+                  receipt.writeln(wrappedLine);
+                }
               }
             } else {
-              receipt.writeln('  + $option');
+              // Word wrap single options to prevent mid-word breaking
+              List<String> wrappedLines = _wrapText('  + $option', 48);
+              for (String wrappedLine in wrappedLines) {
+                receipt.writeln(wrappedLine);
+              }
             }
           }
         }
       }
 
       if (!_shouldExcludeField(item.comment)) {
-        receipt.writeln('  Note: ${item.comment}');
+        // Word wrap comments to prevent mid-word breaking
+        List<String> wrappedLines = _wrapText('  Note: ${item.comment}', 48);
+        for (String wrappedLine in wrappedLines) {
+          receipt.writeln(wrappedLine);
+        }
       }
       receipt.writeln();
     }
@@ -2434,6 +2482,8 @@ class ThermalPrinterService {
         bold: true,
       ),
     );
+    // Add gap between Dallas and separator line
+    bytes += generator.emptyLines(1);
     bytes += generator.text(
       '================================================',
       styles: const PosStyles(align: PosAlign.center),
@@ -2581,17 +2631,29 @@ class ThermalPrinterService {
               // Split by line breaks and print each line
               List<String> lines = option.split('\n');
               for (String line in lines) {
-                bytes += generator.text('  + ${line.trim()}');
+                // Word wrap each line to prevent mid-word breaking
+                List<String> wrappedLines = _wrapText('  + ${line.trim()}', 42);
+                for (String wrappedLine in wrappedLines) {
+                  bytes += generator.text(wrappedLine);
+                }
               }
             } else {
-              bytes += generator.text('  + $option');
+              // Word wrap single options to prevent mid-word breaking
+              List<String> wrappedLines = _wrapText('  + $option', 42);
+              for (String wrappedLine in wrappedLines) {
+                bytes += generator.text(wrappedLine);
+              }
             }
           }
         }
       }
 
       if (!_shouldExcludeField(item.comment)) {
-        bytes += generator.text('  Note: ${item.comment}');
+        // Word wrap comments to prevent mid-word breaking
+        List<String> wrappedLines = _wrapText('  Note: ${item.comment}', 42);
+        for (String wrappedLine in wrappedLines) {
+          bytes += generator.text(wrappedLine);
+        }
       }
       bytes += generator.emptyLines(1);
     }
@@ -2607,10 +2669,14 @@ class ThermalPrinterService {
               ? '${deliveryCharge.toStringAsFixed(2)}'
               : '${deliveryCharge.toStringAsFixed(2)}';
       bytes += generator.row([
-        PosColumn(text: 'Delivery Charges:', width: 9),
+        PosColumn(
+          text: 'Delivery Charges:',
+          width: 8,
+          styles: const PosStyles(align: PosAlign.left),
+        ),
         PosColumn(
           text: deliveryChargeText,
-          width: 3,
+          width: 4,
           styles: const PosStyles(align: PosAlign.right),
         ),
       ]);
@@ -2621,10 +2687,14 @@ class ThermalPrinterService {
             ? '${subtotal.toStringAsFixed(2)}'
             : '${subtotal.toStringAsFixed(2)}';
     bytes += generator.row([
-      PosColumn(text: 'Subtotal:', width: 9),
+      PosColumn(
+        text: 'Subtotal:',
+        width: 8,
+        styles: const PosStyles(align: PosAlign.left),
+      ),
       PosColumn(
         text: subtotalText,
-        width: 3,
+        width: 4,
         styles: const PosStyles(align: PosAlign.right),
       ),
     ]);
@@ -2639,10 +2709,14 @@ class ThermalPrinterService {
             ? 'GBP ${totalCharge.toStringAsFixed(2)}'
             : 'GBP${totalCharge.toStringAsFixed(2)}';
     bytes += generator.row([
-      PosColumn(text: 'TOTAL:', width: 9, styles: const PosStyles(bold: true)),
+      PosColumn(
+        text: 'TOTAL:',
+        width: 8,
+        styles: const PosStyles(align: PosAlign.left, bold: true),
+      ),
       PosColumn(
         text: totalText,
-        width: 3,
+        width: 4,
         styles: const PosStyles(align: PosAlign.right, bold: true),
       ),
     ]);

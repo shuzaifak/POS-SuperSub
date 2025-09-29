@@ -222,7 +222,7 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
               _selectedDrink = drinkAndFlavor;
             }
           } else if (lowerOption.startsWith('chips seasoning:') ||
-              lowerOption.startsWith('red salt choice:')) {
+              lowerOption.startsWith('red salt:')) {
             _selectedRedSaltChoice = option.split(':').last.trim();
           } else if (lowerOption == 'no salad') {
             _saladChoice = 'No';
@@ -332,10 +332,10 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
               print('🔍 PARSED FAMILY DEALS SIDE CHOICE: $sideValue');
             }
             // Parse Red Salt choice
-            else if (option.startsWith('Red salt choice:') ||
+            else if (option.startsWith('Red salt:') ||
                 option.startsWith('Red Salt:')) {
               String redSaltValue =
-                  option.contains('Red salt choice:')
+                  option.contains('Red salt:')
                       ? option.substring(17).trim()
                       : option.substring(9).trim();
               _selectedRedSaltChoice = redSaltValue;
@@ -450,10 +450,10 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
                 !_isFamilyDeal() &&
                 !_isPizzaDealWithOptions()) {
               // Parse Red Salt choice
-              if (option.startsWith('Red salt choice:') ||
+              if (option.startsWith('Red salt:') ||
                   option.startsWith('Red Salt:')) {
                 String redSaltValue =
-                    option.contains('Red salt choice:')
+                    option.contains('Red salt:')
                         ? option.substring(17).trim()
                         : option.substring(9).trim();
                 _selectedRedSaltChoice = redSaltValue;
@@ -1111,7 +1111,7 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
 
       // NEW: Add red salt choice option for non-deals
       if (_selectedRedSaltChoice != null && _shouldShowRedSaltChoice()) {
-        selectedOptions.add('Red salt choice: $_selectedRedSaltChoice');
+        selectedOptions.add('Red salt: $_selectedRedSaltChoice');
       }
     }
 
@@ -1715,7 +1715,7 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
 
       // Add red salt choice for deals
       if (_selectedRedSaltChoice != null && _shouldShowRedSaltChoice()) {
-        selectedOptions.add('Red salt choice: $_selectedRedSaltChoice');
+        selectedOptions.add('Red salt: $_selectedRedSaltChoice');
       }
     }
 
@@ -2020,7 +2020,7 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
       children: [
         const SizedBox(height: 20),
         const Text(
-          'Red salt choice:',
+          'Red salt:',
           style: const TextStyle(
             color: Colors.white,
             fontSize: 24,

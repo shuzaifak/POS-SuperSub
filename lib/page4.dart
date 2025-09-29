@@ -1849,11 +1849,20 @@ class _Page4State extends State<Page4> {
   List<CartItem> _formatCartItemsForReceipt(List<CartItem> cartItems) {
     return cartItems.map((item) {
       // Create a copy of the item with formatted options for deals
-      if (item.foodItem.category == 'Deals' &&
-          item.selectedOptions != null &&
-          item.selectedOptions!.isNotEmpty) {
-        // For all deals, use selectedOptions as-is since they're already properly formatted
-        List<String> formattedOptions = item.selectedOptions!;
+      if (item.foodItem.category == 'Deals') {
+        // For Deals: Include the description first, then selectedOptions
+        List<String> formattedOptions = [];
+
+        // Add description if it exists
+        if (item.foodItem.description != null &&
+            item.foodItem.description!.isNotEmpty) {
+          formattedOptions.add(item.foodItem.description!);
+        }
+
+        // Add selectedOptions if they exist
+        if (item.selectedOptions != null && item.selectedOptions!.isNotEmpty) {
+          formattedOptions.addAll(item.selectedOptions!);
+        }
 
         return CartItem(
           foodItem: item.foodItem,
@@ -3158,7 +3167,7 @@ class _Page4State extends State<Page4> {
                           }
                         } else if ((lowerOption.contains('seasoning:') ||
                                 lowerOption.contains('chips seasoning:') ||
-                                lowerOption.contains('red salt choice:')) &&
+                                lowerOption.contains('red salt:')) &&
                             item.foodItem.category != 'Deals') {
                           String seasoningValue = option.split(':').last.trim();
                           if (seasoningValue.isNotEmpty) {
@@ -3175,9 +3184,17 @@ class _Page4State extends State<Page4> {
 
                     // Handle deal-specific options display
                     List<String> dealOptions = [];
-                    if (item.foodItem.category == 'Deals' && hasOptions) {
-                      // For all deals, use selectedOptions as-is since they're already properly formatted
-                      dealOptions = item.selectedOptions!;
+                    if (item.foodItem.category == 'Deals') {
+                      // For Deals: Include the description first, then selectedOptions
+                      if (item.foodItem.description != null &&
+                          item.foodItem.description!.isNotEmpty) {
+                        dealOptions.add(item.foodItem.description!);
+                      }
+
+                      // Add selectedOptions if they exist
+                      if (hasOptions && item.selectedOptions != null) {
+                        dealOptions.addAll(item.selectedOptions!);
+                      }
                     }
 
                     return Padding(
@@ -3320,7 +3337,7 @@ class _Page4State extends State<Page4> {
                                                                     'Yes' ||
                                                                 selectedSeasoning ==
                                                                     'No')
-                                                            ? 'Red salt choice: $selectedSeasoning'
+                                                            ? 'Red salt: $selectedSeasoning'
                                                             : 'Seasoning: $selectedSeasoning',
                                                         style: const TextStyle(
                                                           fontSize: 15,

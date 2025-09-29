@@ -14,6 +14,7 @@ class XprinterService {
   String? _connectedDevice;
 
   /// Get list of available USB devices
+  ///
   Future<List<Map<String, dynamic>>> getUsbDevices() async {
     try {
       if (kDebugMode) {

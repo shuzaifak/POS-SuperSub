@@ -20,7 +20,7 @@ class ShopStatusData {
 
 class OrderApiService {
   static const String _httpProxyUrl = 'https://corsproxy.io/?';
-  static const String _backendBaseUrl = 'https://dallasbackend.onrender.com';
+  static const String _backendBaseUrl = 'https://api.dallasandgioschicken.uk';
 
   // Singleton instance for OrderApiService
   static final OrderApiService _instance = OrderApiService._internal();

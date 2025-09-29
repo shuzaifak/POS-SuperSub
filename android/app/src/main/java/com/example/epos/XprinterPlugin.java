@@ -185,10 +185,20 @@ public class XprinterPlugin implements FlutterPlugin, MethodCallHandler {
                 
                 // Initialize printer for CP437 character set (critical for pound sign)
                 String initCommands = "";
-                initCommands += (char) 0x1B + (char) 0x40; // ESC @ (Initialize)
+                initCommands += (char) 0x1B + (char) 0x40; // ESC @ (Initialize/Reset printer)
                 initCommands += (char) 0x1B + (char) 0x74 + (char) 0x00; // ESC t 0 (Select CP437 - Page 0)
                 initCommands += (char) 0x1C + (char) 0x2E; // FS . (Cancel Chinese mode)
                 initCommands += (char) 0x1B + (char) 0x52 + (char) 0x00; // ESC R 0 (International charset)
+
+                // CRITICAL: Clear any stored header/business info that might be auto-printing
+                initCommands += (char) 0x1B + (char) 0x45 + (char) 0x00; // ESC E 0 (Cancel emphasized mode)
+                initCommands += (char) 0x1B + (char) 0x21 + (char) 0x00; // ESC ! 0 (Reset all text attributes)
+                initCommands += (char) 0x1D + (char) 0x49 + (char) 0x00; // GS I 0 (Clear stored graphics)
+                initCommands += (char) 0x1D + (char) 0x42 + (char) 0x00; // GS B 0 (Cancel white/black reverse)
+
+                // Force clear any auto-header settings
+                initCommands += (char) 0x1B + (char) 0x25 + (char) 0x00; // ESC % 0 (Cancel user-defined chars)
+                initCommands += (char) 0x1F + (char) 0x11; // US DC1 (Cancel stored settings)
                 
                 // Print initialization commands first
                 posPrinter.printString(initCommands);

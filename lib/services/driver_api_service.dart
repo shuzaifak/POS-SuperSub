@@ -6,9 +6,9 @@ import 'package:http/http.dart' as http;
 
 class DriverApiService {
   static const String baseUrl =
-      "https://corsproxy.io/?https://dallasbackend.onrender.com";
+      "https://corsproxy.io/?https://api.dallasandgioschicken.uk";
   static const String alternativeProxy =
-      "https://corsproxy.io/?https://dallasbackend.onrender.com";
+      "https://corsproxy.io/?https://api.dallasandgioschicken.uk";
 
   // Create Driver
   static Future<Map<String, dynamic>> createDriver({

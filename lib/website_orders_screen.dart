@@ -311,57 +311,13 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                     ? (orderItem.totalPrice / orderItem.quantity)
                     : 0.0;
 
-            // Extract options from description for proper printing
-            Map<String, dynamic> itemOptions =
-                _extractAllOptionsFromDescription(
-                  orderItem.description,
-                  defaultFoodItemToppings: orderItem.foodItem?.defaultToppings,
-                  defaultFoodItemCheese: orderItem.foodItem?.defaultCheese,
-                );
-
-            // Build selectedOptions list for receipt printing
+            // For website orders, use the description directly without parsing
+            // The website order description already contains all necessary information
             List<String> selectedOptions = [];
 
-            if (itemOptions['hasOptions'] == true) {
-              if (itemOptions['size'] != null) {
-                String sizeOption = 'Size: ${itemOptions['size']}';
-                if (!_shouldExcludeOption(sizeOption))
-                  selectedOptions.add(sizeOption);
-              }
-              if (itemOptions['crust'] != null) {
-                String crustOption = 'Crust: ${itemOptions['crust']}';
-                if (!_shouldExcludeOption(crustOption))
-                  selectedOptions.add(crustOption);
-              }
-              if (itemOptions['base'] != null) {
-                String baseOption = 'Base: ${itemOptions['base']}';
-                if (!_shouldExcludeOption(baseOption))
-                  selectedOptions.add(baseOption);
-              }
-              if (itemOptions['toppings'] != null &&
-                  (itemOptions['toppings'] as List).isNotEmpty) {
-                selectedOptions.addAll(itemOptions['toppings'] as List<String>);
-              }
-              if (itemOptions['sauceDips'] != null &&
-                  (itemOptions['sauceDips'] as List).isNotEmpty) {
-                selectedOptions.addAll(
-                  itemOptions['sauceDips'] as List<String>,
-                );
-              }
-              if (itemOptions['isMeal'] == true) {
-                selectedOptions.add('MEAL');
-              }
-              if (itemOptions['drink'] != null) {
-                selectedOptions.add('${itemOptions['drink']}');
-              }
-            }
-
-            // ENHANCED: If no meaningful options were extracted, show the full description
-            // This ensures deal details and complex items are fully displayed in receipts
-            if (selectedOptions.isEmpty &&
-                orderItem.description.isNotEmpty &&
+            if (orderItem.description.isNotEmpty &&
                 orderItem.description != orderItem.itemName) {
-              // Split description by newlines and add each as a separate line
+              // Split description by newlines and use each line directly
               List<String> descriptionLines =
                   orderItem.description
                       .split('\n')
@@ -370,26 +326,17 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                         (line) =>
                             line.isNotEmpty &&
                             line != orderItem.itemName &&
-                            !line.toLowerCase().startsWith(
-                              'review note:',
-                            ), // Exclude review notes from UI display
+                            !_shouldExcludeOption(
+                              line,
+                            ), // Filter out default/N/A options
                       )
                       .toList();
 
               selectedOptions.addAll(descriptionLines);
             }
 
-            // Combine original comment with extracted review note
+            // Use the original comment as-is
             String? finalComment = orderItem.comment;
-            String? extractedComment = itemOptions['extractedComment'];
-
-            if (extractedComment != null && extractedComment.isNotEmpty) {
-              if (finalComment != null && finalComment.isNotEmpty) {
-                finalComment = '$finalComment - $extractedComment';
-              } else {
-                finalComment = extractedComment;
-              }
-            }
 
             return CartItem(
               foodItem:
@@ -1386,534 +1333,6 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
     }
   }
 
-  Map<String, dynamic> _extractAllOptionsFromDescription(
-    String description, {
-    List<String>? defaultFoodItemToppings,
-    List<String>? defaultFoodItemCheese,
-  }) {
-    print('🔍 WebsiteOrdersScreen: Parsing description: "$description"');
-
-    Map<String, dynamic> options = {
-      'size': null,
-      'crust': null,
-      'base': null,
-      'drink': null, // NEW: Add drink support
-      'isMeal': false, // NEW: Add meal detection
-      'toppings': <String>[],
-      'sauceDips': <String>[],
-      'baseItemName': description,
-      'hasOptions': false,
-      'extractedComment': null, // NEW: Add extracted comment support
-    };
-
-    List<String> optionsList = [];
-    bool foundOptionsSyntax = false;
-    bool anyNonDefaultOptionFound = false;
-
-    // Check if it's parentheses format (EPOS): "Item Name (Size: Large, Crust: Thin)"
-    // For deals with nested parentheses, we need to find the last closing parenthesis
-    int firstParen = description.indexOf('(');
-    int lastParen = description.lastIndexOf(')');
-
-    if (firstParen != -1 && lastParen != -1 && lastParen > firstParen) {
-      // Extract content between first opening and last closing parenthesis
-      String optionsString = description.substring(firstParen + 1, lastParen);
-      foundOptionsSyntax = true;
-      optionsList = _smartSplitOptions(optionsString);
-    } else if (description.contains('\n') || description.contains(':')) {
-      // Website format with newlines: "Size: 7 inch\nBase: Tomato\nCrust: Normal"
-      List<String> lines =
-          description
-              .split('\n')
-              .map((s) => s.trim())
-              .where((s) => s.isNotEmpty)
-              .toList();
-
-      print('🔍 WebsiteOrdersScreen: Split into lines: $lines');
-
-      // For website orders, process ALL lines, not just those with colons
-      // Website orders can have important options like "MEAL", "No Salad", "No Sauce"
-      if (lines.isNotEmpty) {
-        foundOptionsSyntax = true;
-        optionsList = lines; // Process ALL lines, not just ones with colons
-        print(
-          '🔍 WebsiteOrdersScreen: Processing ALL lines as options: $optionsList',
-        );
-
-        // Find the first line that doesn't contain a colon and isn't a special topping (likely the item name)
-        String foundItemName = '';
-        for (var line in lines) {
-          String lowerLine = line.toLowerCase();
-          if (!line.contains(':') &&
-              lowerLine != 'no salad' &&
-              lowerLine != 'no sauce' &&
-              lowerLine != 'no cream' &&
-              lowerLine != 'meal') {
-            foundItemName = line;
-            break;
-          }
-        }
-
-        if (foundItemName.isNotEmpty) {
-          options['baseItemName'] = foundItemName;
-        } else {
-          options['baseItemName'] = description; // Fallback to full description
-        }
-      }
-    }
-
-    // If no options syntax found, it's a simple description like "Chocolate Milkshake"
-    if (!foundOptionsSyntax) {
-      options['baseItemName'] = description;
-      options['hasOptions'] = false;
-      return options;
-    }
-
-    // --- NEW: Combine default toppings and cheese from the FoodItem ---
-    // If FoodItem data is not available, use empty set to avoid filtering out valid toppings
-    final Set<String> defaultToppingsAndCheese = {};
-    if (defaultFoodItemToppings != null) {
-      defaultToppingsAndCheese.addAll(
-        defaultFoodItemToppings.map((t) => t.trim().toLowerCase()),
-      );
-    }
-    if (defaultFoodItemCheese != null) {
-      defaultToppingsAndCheese.addAll(
-        defaultFoodItemCheese.map((c) => c.trim().toLowerCase()),
-      );
-    }
-
-    // Process the options and apply filtering for default values
-    print('🔍 WebsiteOrdersScreen: Processing options list: $optionsList');
-    for (var option in optionsList) {
-      String lowerOption = option.toLowerCase();
-      print(
-        '🔍 WebsiteOrdersScreen: Processing option: "$option" (lower: "$lowerOption")',
-      );
-
-      // NEW: Check for meal option
-      if (lowerOption.contains('make it a meal') ||
-          lowerOption.contains('meal') ||
-          lowerOption == 'meal') {
-        options['isMeal'] = true;
-        anyNonDefaultOptionFound = true;
-        print('🔍 WebsiteOrdersScreen: Set isMeal to true');
-      }
-      // NEW: Extract drink information
-      else if (lowerOption.startsWith('drink:')) {
-        String drinkValue = option.substring('drink:'.length).trim();
-        if (drinkValue.isNotEmpty) {
-          options['drink'] = drinkValue;
-          anyNonDefaultOptionFound = true;
-          print('🔍 WebsiteOrdersScreen: Set drink to: "$drinkValue"');
-        }
-      } else if (lowerOption.startsWith('size:')) {
-        String sizeValue = option.substring('size:'.length).trim();
-        print('🔍 WebsiteOrdersScreen: Found size: "$sizeValue"');
-        if (sizeValue.isNotEmpty) {
-          options['size'] = sizeValue;
-          // Always consider size as a non-default option for website orders
-          anyNonDefaultOptionFound = true;
-          print('🔍 WebsiteOrdersScreen: Set size to: "${options['size']}"');
-        }
-      } else if (lowerOption.startsWith('crust:')) {
-        String crustValue = option.substring('crust:'.length).trim();
-        print('🔍 WebsiteOrdersScreen: Found crust: "$crustValue"');
-        if (crustValue.isNotEmpty) {
-          options['crust'] = crustValue;
-          // Always consider crust as a non-default option for website orders
-          anyNonDefaultOptionFound = true;
-          print('🔍 WebsiteOrdersScreen: Set crust to: "${options['crust']}"');
-        }
-      } else if (lowerOption.startsWith('base:')) {
-        String baseValue = option.substring('base:'.length).trim();
-        print('🔍 WebsiteOrdersScreen: Found base: "$baseValue"');
-        if (baseValue.isNotEmpty) {
-          if (baseValue.contains(',')) {
-            List<String> baseList =
-                baseValue.split(',').map((b) => b.trim()).toList();
-            options['base'] = baseList.join(', ');
-          } else {
-            options['base'] = baseValue;
-          }
-          // Always consider base as a non-default option for website orders
-          anyNonDefaultOptionFound = true;
-          print('🔍 WebsiteOrdersScreen: Set base to: "${options['base']}"');
-        }
-      } else if (lowerOption.startsWith('toppings:') ||
-          lowerOption.startsWith('extra toppings:')) {
-        String prefix =
-            lowerOption.startsWith('extra toppings:')
-                ? 'extra toppings:'
-                : 'toppings:';
-        String toppingsValue = option.substring(prefix.length).trim();
-
-        if (toppingsValue.isNotEmpty) {
-          List<String> currentToppingsFromDescription =
-              toppingsValue
-                  .split(',')
-                  .map((t) => t.trim())
-                  .where((t) => t.isNotEmpty)
-                  .toList();
-
-          // --- NEW: Filter against FoodItem's default toppings/cheese ---
-          List<String> filteredToppings =
-              currentToppingsFromDescription.where((topping) {
-                String trimmedToppingLower = topping.trim().toLowerCase();
-                // Also keep the general "none", "no toppings" filter
-                return !defaultToppingsAndCheese.contains(
-                      trimmedToppingLower,
-                    ) &&
-                    ![
-                      'none',
-                      'no toppings',
-                      'standard',
-                      'default',
-                    ].contains(trimmedToppingLower);
-              }).toList();
-
-          if (filteredToppings.isNotEmpty) {
-            List<String> existingToppings = List<String>.from(
-              options['toppings'],
-            );
-            existingToppings.addAll(filteredToppings);
-            options['toppings'] = existingToppings.toSet().toList();
-            anyNonDefaultOptionFound = true;
-          }
-        }
-      } else if (lowerOption.startsWith('sauce dips:') ||
-          lowerOption.startsWith('sauces:') ||
-          lowerOption.startsWith('dips:') ||
-          lowerOption.startsWith('sauce:') ||
-          lowerOption.contains('dip:')) {
-        String sauceDipsValue = '';
-        if (lowerOption.startsWith('sauce dips:')) {
-          sauceDipsValue = option.substring('sauce dips:'.length).trim();
-        } else if (lowerOption.startsWith('sauces:')) {
-          sauceDipsValue = option.substring('sauces:'.length).trim();
-        } else if (lowerOption.startsWith('dips:')) {
-          sauceDipsValue = option.substring('dips:'.length).trim();
-        } else if (lowerOption.startsWith('sauce:')) {
-          sauceDipsValue = option.substring('sauce:'.length).trim();
-        } else if (lowerOption.contains('dip:')) {
-          int dipIndex = lowerOption.indexOf('dip:');
-          sauceDipsValue = option.substring(dipIndex + 'dip:'.length).trim();
-        }
-
-        if (sauceDipsValue.isNotEmpty) {
-          List<String> sauceDipsList =
-              sauceDipsValue
-                  .split(',')
-                  .map((t) => t.trim())
-                  .where((t) => t.isNotEmpty)
-                  .toList();
-          List<String> currentSauceDips = List<String>.from(
-            options['sauceDips'],
-          );
-          currentSauceDips.addAll(sauceDipsList);
-          options['sauceDips'] = currentSauceDips.toSet().toList();
-          anyNonDefaultOptionFound = true;
-        }
-      } else if (lowerOption.startsWith('salads:') ||
-          lowerOption.startsWith('salad:')) {
-        String saladValue = '';
-        if (lowerOption.startsWith('salads:')) {
-          saladValue = option.substring('salads:'.length).trim();
-        } else if (lowerOption.startsWith('salad:')) {
-          saladValue = option.substring('salad:'.length).trim();
-        }
-
-        if (saladValue.isNotEmpty) {
-          List<String> saladList =
-              saladValue
-                  .split(',')
-                  .map((t) => t.trim())
-                  .where((t) => t.isNotEmpty)
-                  .toList();
-          List<String> currentToppings = List<String>.from(options['toppings']);
-          currentToppings.addAll(saladList);
-          options['toppings'] = currentToppings.toSet().toList();
-          anyNonDefaultOptionFound = true;
-        }
-      } else if (lowerOption.startsWith('seasonings:') ||
-          lowerOption.startsWith('seasoning:')) {
-        String seasoningValue = '';
-        if (lowerOption.startsWith('seasonings:')) {
-          seasoningValue = option.substring('seasonings:'.length).trim();
-        } else if (lowerOption.startsWith('seasoning:')) {
-          seasoningValue = option.substring('seasoning:'.length).trim();
-        }
-
-        if (seasoningValue.isNotEmpty) {
-          List<String> seasoningList =
-              seasoningValue
-                  .split(',')
-                  .map((t) => t.trim())
-                  .where((t) => t.isNotEmpty)
-                  .toList();
-          List<String> currentToppings = List<String>.from(options['toppings']);
-          currentToppings.addAll(seasoningList);
-          options['toppings'] = currentToppings.toSet().toList();
-          anyNonDefaultOptionFound = true;
-        }
-      } else if (lowerOption.startsWith('comment:') ||
-          lowerOption.startsWith('note:') ||
-          lowerOption.startsWith('notes:') ||
-          lowerOption.startsWith('review note:') ||
-          lowerOption.startsWith('special instructions:')) {
-        String commentValue = '';
-        if (lowerOption.startsWith('comment:')) {
-          commentValue = option.substring('comment:'.length).trim();
-        } else if (lowerOption.startsWith('note:') ||
-            lowerOption.startsWith('review note:')) {
-          String prefix =
-              lowerOption.startsWith('review note:') ? 'review note:' : 'note:';
-          commentValue = option.substring(prefix.length).trim();
-        } else if (lowerOption.startsWith('notes:')) {
-          commentValue = option.substring('notes:'.length).trim();
-        } else if (lowerOption.startsWith('special instructions:')) {
-          commentValue =
-              option.substring('special instructions:'.length).trim();
-        }
-
-        if (commentValue.isNotEmpty) {
-          options['extractedComment'] = commentValue;
-          anyNonDefaultOptionFound = true;
-        }
-      } else if (lowerOption == 'no salad' ||
-          lowerOption == 'no sauce' ||
-          lowerOption == 'no cream') {
-        // These are special toppings - add them to toppings array only
-        // Don't process them as standalone display items
-        List<String> currentToppings = List<String>.from(options['toppings']);
-        currentToppings.add(option);
-        options['toppings'] = currentToppings.toSet().toList();
-        anyNonDefaultOptionFound = true;
-        print(
-          '🔍 WebsiteOrdersScreen: Added special option to toppings: "$option"',
-        );
-      }
-    }
-
-    // Handle deal-specific parsing (Selected Pizzas, Selected Shawarmas, etc.)
-    if (description.contains('Selected Pizzas') ||
-        description.contains('Selected Shawarmas') ||
-        description.contains('Pizza (') ||
-        description.contains('Shawarma:') ||
-        description.contains('Burger:') ||
-        description.contains('Calzone:') ||
-        description.contains('Fries:') ||
-        description.contains('Drink (')) {
-      anyNonDefaultOptionFound = true;
-
-      // Extract deal selections and add them to a special field
-      options['dealSelections'] = optionsList;
-    }
-
-    options['hasOptions'] = anyNonDefaultOptionFound;
-
-    print(
-      '🔍 WebsiteOrdersScreen: Parsed result - hasOptions: ${options['hasOptions']}, size: ${options['size']}, crust: ${options['crust']}, base: ${options['base']}, isMeal: ${options['isMeal']}, drink: ${options['drink']}, toppings: ${options['toppings']}, sauceDips: ${options['sauceDips']}, dealSelections: ${options['dealSelections']}',
-    );
-
-    return options;
-  }
-
-  // Helper method for EPOS format (parentheses) smart splitting
-  List<String> _smartSplitOptions(String optionsString) {
-    List<String> result = [];
-    String current = '';
-    bool inToppings = false;
-    bool inSauceDips = false;
-
-    List<String> parts = optionsString.split(', ');
-
-    for (int i = 0; i < parts.length; i++) {
-      String part = parts[i];
-      String lowerPart = part.toLowerCase();
-
-      if (lowerPart.startsWith('toppings:') ||
-          lowerPart.startsWith('extra toppings:')) {
-        if (current.isNotEmpty) {
-          result.add(current.trim());
-          current = '';
-        }
-        current = part;
-        inToppings = true;
-        inSauceDips = false;
-      } else if (lowerPart.startsWith('sauce dips:') ||
-          lowerPart.startsWith('dips:') ||
-          lowerPart.startsWith('sauce:') ||
-          lowerPart.contains('dip:')) {
-        if (current.isNotEmpty) {
-          result.add(current.trim());
-          current = '';
-        }
-        current = part;
-        inToppings = false;
-        inSauceDips = true;
-      } else if (lowerPart.startsWith('size:') ||
-          lowerPart.startsWith('base:') ||
-          lowerPart.startsWith('crust:')) {
-        if (current.isNotEmpty) {
-          result.add(current.trim());
-          current = '';
-        }
-        current = part;
-        inToppings = false;
-        inSauceDips = false;
-      } else {
-        if (inToppings || inSauceDips) {
-          current += ', ' + part;
-        } else {
-          if (current.isNotEmpty) {
-            result.add(current.trim());
-          }
-          current = part;
-        }
-      }
-    }
-
-    if (current.isNotEmpty) {
-      result.add(current.trim());
-    }
-
-    return result;
-  }
-
-  // Future<void> _showReceiptDialog(
-  //   Order order,
-  //   List<CartItem> cartItems,
-  //   double subtotal,
-  // ) async {
-  //   String receiptContent = _generateReceiptContent(order, cartItems, subtotal);
-  //
-  //   showDialog(
-  //     context: context,
-  //     builder: (BuildContext context) {
-  //       return Dialog(
-  //         child: Container(
-  //           width: 400,
-  //           height: 600,
-  //           padding: const EdgeInsets.all(16),
-  //           child: Column(
-  //             children: [
-  //               Row(
-  //                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-  //                 children: [
-  //                   const Text(
-  //                     'Receipt Preview',
-  //                     style: TextStyle(
-  //                       fontSize: 18,
-  //                       fontWeight: FontWeight.bold,
-  //                     ),
-  //                   ),
-  //                   IconButton(
-  //                     icon: const Icon(Icons.close),
-  //                     onPressed: () => Navigator.of(context).pop(),
-  //                   ),
-  //                 ],
-  //               ),
-  //               const Divider(),
-  //               Expanded(
-  //                 child: SingleChildScrollView(
-  //                   child: Container(
-  //                     padding: const EdgeInsets.all(12),
-  //                     decoration: BoxDecoration(
-  //                       color: Colors.grey[100],
-  //                       borderRadius: BorderRadius.circular(8),
-  //                     ),
-  //                     child: Text(
-  //                       receiptContent,
-  //                       style: const TextStyle(
-  //                         fontFamily: 'monospace',
-  //                         fontSize: 12,
-  //                       ),
-  //                     ),
-  //                   ),
-  //                 ),
-  //               ),
-  //             ],
-  //           ),
-  //         ),
-  //       );
-  //     },
-  //   );
-  // }
-  //
-  // String _generateReceiptContent(
-  //   Order order,
-  //   List<CartItem> cartItems,
-  //   double subtotal,
-  // ) {
-  //   StringBuffer content = StringBuffer();
-  //   content.writeln('================================================');
-  //   content.writeln('                RECEIPT PREVIEW                ');
-  //   content.writeln('================================================');
-  //   content.writeln('Order ID: ${order.orderId}');
-  //   content.writeln('Order Type: ${order.orderType}');
-  //   content.writeln('Date: ${DateTime.now().toString().split('.')[0]}');
-  //   content.writeln('------------------------------------------------');
-  //
-  //   if (order.customerName.isNotEmpty == true) {
-  //     content.writeln('Customer: ${order.customerName}');
-  //   }
-  //   if (order.phoneNumber?.isNotEmpty == true) {
-  //     content.writeln('Phone: ${order.phoneNumber}');
-  //   }
-  //   if (order.streetAddress?.isNotEmpty == true) {
-  //     content.writeln('Address: ${order.streetAddress}');
-  //     if (order.city?.isNotEmpty == true) {
-  //       content.writeln('City: ${order.city}');
-  //     }
-  //     if (order.postalCode?.isNotEmpty == true) {
-  //       content.writeln('Postal Code: ${order.postalCode}');
-  //     }
-  //   }
-  //   content.writeln('------------------------------------------------');
-  //
-  //   for (var item in cartItems) {
-  //     content.writeln('${item.foodItem.name} x${item.quantity}');
-  //     content.writeln(
-  //       '  £${(item.pricePerUnit * item.quantity).toStringAsFixed(2)}',
-  //     );
-  //
-  //     if (item.selectedOptions != null && item.selectedOptions!.isNotEmpty) {
-  //       for (var option in item.selectedOptions!) {
-  //         content.writeln('  + $option');
-  //       }
-  //     }
-  //
-  //     if (item.comment?.isNotEmpty == true) {
-  //       content.writeln('  Note: ${item.comment}');
-  //     }
-  //     content.writeln('');
-  //   }
-  //
-  //   content.writeln('------------------------------------------------');
-  //   content.writeln('Subtotal: £${subtotal.toStringAsFixed(2)}');
-  //   content.writeln('TOTAL: £${order.orderTotalPrice.toStringAsFixed(2)}');
-  //
-  //   if (order.changeDue > 0) {
-  //     content.writeln('Change Due: £${order.changeDue.toStringAsFixed(2)}');
-  //   }
-  //
-  //   if (order.paymentType.isNotEmpty == true) {
-  //     content.writeln('Payment: ${order.paymentType}');
-  //   }
-  //
-  //   if (order.orderExtraNotes?.isNotEmpty == true) {
-  //     content.writeln('------------------------------------------------');
-  //     content.writeln('Notes: ${order.orderExtraNotes}');
-  //   }
-  //
-  //   content.writeln('================================================');
-  //   content.writeln('           Thank you for your order!           ');
-  //   content.writeln('================================================');
-  //
-  //   return content.toString();
-  // }
-
   String _getNextStepLabel(Order order) {
     // Check if this is an offline order first
     if (order.status.toLowerCase() == 'offline' ||
@@ -2268,10 +1687,22 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                                         String status,
                                         DateTime orderCreatedAt,
                                       ) {
-                                        // Calculate time for THIS specific order
+                                        // Calculate time for THIS specific order - FIXED timezone issue
                                         DateTime now = UKTimeService.now();
+
+                                        // FIXED: Treat order time as UK local time (same fix as timer)
+                                        final orderStartAsUKLocal = DateTime(
+                                          orderCreatedAt.year,
+                                          orderCreatedAt.month,
+                                          orderCreatedAt.day,
+                                          orderCreatedAt.hour,
+                                          orderCreatedAt.minute,
+                                          orderCreatedAt.second,
+                                          orderCreatedAt.millisecond,
+                                        );
+
                                         Duration orderAge = now.difference(
-                                          orderCreatedAt,
+                                          orderStartAsUKLocal,
                                         );
                                         int minutesPassed = orderAge.inMinutes;
 
@@ -2843,40 +2274,30 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                                         final item =
                                             _selectedOrder!.items[itemIndex];
 
-                                        // Enhanced option extraction
-                                        Map<String, dynamic> itemOptions =
-                                            _extractAllOptionsFromDescription(
-                                              item.description,
-                                              defaultFoodItemToppings:
-                                                  item
-                                                      .foodItem
-                                                      ?.defaultToppings,
-                                              defaultFoodItemCheese:
-                                                  item.foodItem?.defaultCheese,
-                                            );
+                                        // FIXED: Use direct description approach (same as receipt printing)
+                                        List<String> directOptions = [];
 
-                                        String? selectedSize =
-                                            itemOptions['size'];
-                                        String? selectedCrust =
-                                            itemOptions['crust'];
-                                        String? selectedBase =
-                                            itemOptions['base'];
-                                        String? selectedDrink =
-                                            itemOptions['drink'];
-                                        bool isMeal =
-                                            itemOptions['isMeal'] ?? false;
-                                        List<String> toppings =
-                                            itemOptions['toppings'] ?? [];
-                                        List<String> sauceDips =
-                                            itemOptions['sauceDips'] ?? [];
-                                        String baseItemName =
-                                            itemOptions['baseItemName'] ??
-                                            item.itemName;
-                                        String displayItemName = item.itemName;
-                                        bool hasOptions =
-                                            itemOptions['hasOptions'] ?? false;
-                                        String? extractedComment =
-                                            itemOptions['extractedComment'];
+                                        if (item.description.isNotEmpty &&
+                                            item.description != item.itemName) {
+                                          // Split description by newlines and use each line directly
+                                          List<String> descriptionLines =
+                                              item.description
+                                                  .split('\n')
+                                                  .map((line) => line.trim())
+                                                  .where(
+                                                    (line) =>
+                                                        line.isNotEmpty &&
+                                                        line != item.itemName &&
+                                                        !_shouldExcludeOption(
+                                                          line,
+                                                        ),
+                                                  )
+                                                  .toList();
+
+                                          directOptions.addAll(
+                                            descriptionLines,
+                                          );
+                                        }
 
                                         return Padding(
                                           padding: EdgeInsets.only(
@@ -2933,405 +2354,52 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                                                                     CrossAxisAlignment
                                                                         .start,
                                                                 children: [
-                                                                  // Always show parsed information if available, otherwise show raw description
-                                                                  // Replace this section in the build method where item details are displayed
-                                                                  // Look for the section that starts with "if (hasOptions) ...[" and replace it with this:
-                                                                  // Replace the section in the build method where item details are displayed
-                                                                  // Look for the "if (hasOptions) ...[" section and replace it with this:
-                                                                  if (hasOptions) ...[
-                                                                    // Show extracted base item name if it's different and meaningful
-                                                                    if (baseItemName !=
-                                                                            displayItemName &&
-                                                                        baseItemName
-                                                                            .trim()
-                                                                            .isNotEmpty &&
-                                                                        !baseItemName
-                                                                            .toLowerCase()
-                                                                            .contains(
-                                                                              'size:',
-                                                                            ) &&
-                                                                        !baseItemName
-                                                                            .toLowerCase()
-                                                                            .contains(
-                                                                              'crust:',
-                                                                            ) &&
-                                                                        !baseItemName
-                                                                            .toLowerCase()
-                                                                            .contains(
-                                                                              'base:',
-                                                                            ))
-                                                                      Text(
-                                                                        baseItemName,
-                                                                        style: TextStyle(
-                                                                          fontSize:
-                                                                              isLargeScreen
-                                                                                  ? 17
-                                                                                  : 15,
-                                                                          fontFamily:
-                                                                              'Poppins',
-                                                                          color:
-                                                                              Colors.black,
-                                                                          fontWeight:
-                                                                              FontWeight.normal,
+                                                                  // FIXED: Use direct description approach (same as receipt printing) to avoid duplication and show complete information
+                                                                  ...directOptions
+                                                                      .map(
+                                                                        (
+                                                                          option,
+                                                                        ) => Text(
+                                                                          option,
+                                                                          style: TextStyle(
+                                                                            fontSize:
+                                                                                isLargeScreen
+                                                                                    ? 17
+                                                                                    : 15,
+                                                                            fontFamily:
+                                                                                'Poppins',
+                                                                            color:
+                                                                                Colors.black,
+                                                                            fontWeight:
+                                                                                FontWeight.normal,
+                                                                          ),
+                                                                          maxLines:
+                                                                              option.contains(
+                                                                                        'Selected Pizzas',
+                                                                                      ) ||
+                                                                                      option.contains(
+                                                                                        'Selected Shawarmas',
+                                                                                      ) ||
+                                                                                      option.contains(
+                                                                                        'Deal',
+                                                                                      )
+                                                                                  ? null
+                                                                                  : 3,
+                                                                          overflow:
+                                                                              option.contains(
+                                                                                        'Selected Pizzas',
+                                                                                      ) ||
+                                                                                      option.contains(
+                                                                                        'Selected Shawarmas',
+                                                                                      ) ||
+                                                                                      option.contains(
+                                                                                        'Deal',
+                                                                                      )
+                                                                                  ? TextOverflow.visible
+                                                                                  : TextOverflow.ellipsis,
                                                                         ),
-                                                                        overflow:
-                                                                            baseItemName.contains(
-                                                                                      'Selected Pizzas',
-                                                                                    ) ||
-                                                                                    baseItemName.contains(
-                                                                                      'Selected Shawarmas',
-                                                                                    ) ||
-                                                                                    baseItemName.contains(
-                                                                                      'Deal',
-                                                                                    )
-                                                                                ? TextOverflow.visible
-                                                                                : TextOverflow.ellipsis,
-                                                                        maxLines:
-                                                                            baseItemName.contains(
-                                                                                      'Selected Pizzas',
-                                                                                    ) ||
-                                                                                    baseItemName.contains(
-                                                                                      'Selected Shawarmas',
-                                                                                    ) ||
-                                                                                    baseItemName.contains(
-                                                                                      'Deal',
-                                                                                    )
-                                                                                ? null
-                                                                                : 1,
-                                                                      ),
-
-                                                                    // Display Size (only if not default)
-                                                                    if (selectedSize !=
-                                                                        null)
-                                                                      Text(
-                                                                        'Size: $selectedSize',
-                                                                        style: TextStyle(
-                                                                          fontSize:
-                                                                              isLargeScreen
-                                                                                  ? 17
-                                                                                  : 15,
-                                                                          fontFamily:
-                                                                              'Poppins',
-                                                                          color:
-                                                                              Colors.black,
-                                                                        ),
-                                                                        overflow:
-                                                                            TextOverflow.ellipsis,
-                                                                      ),
-
-                                                                    // Display Crust (only if not default)
-                                                                    if (selectedCrust !=
-                                                                        null)
-                                                                      Text(
-                                                                        'Crust: $selectedCrust',
-                                                                        style: TextStyle(
-                                                                          fontSize:
-                                                                              isLargeScreen
-                                                                                  ? 17
-                                                                                  : 15,
-                                                                          fontFamily:
-                                                                              'Poppins',
-                                                                          color:
-                                                                              Colors.black,
-                                                                        ),
-                                                                        overflow:
-                                                                            TextOverflow.ellipsis,
-                                                                      ),
-
-                                                                    // Display Base (only if not default)
-                                                                    if (selectedBase !=
-                                                                        null)
-                                                                      Text(
-                                                                        'Base: $selectedBase',
-                                                                        style: TextStyle(
-                                                                          fontSize:
-                                                                              isLargeScreen
-                                                                                  ? 17
-                                                                                  : 15,
-                                                                          fontFamily:
-                                                                              'Poppins',
-                                                                          color:
-                                                                              Colors.black,
-                                                                        ),
-                                                                        overflow:
-                                                                            TextOverflow.ellipsis,
-                                                                      ),
-
-                                                                    // Display MEAL first if it's a meal
-                                                                    if (isMeal)
-                                                                      Text(
-                                                                        'MEAL',
-                                                                        style: TextStyle(
-                                                                          fontSize:
-                                                                              isLargeScreen
-                                                                                  ? 17
-                                                                                  : 15,
-                                                                          fontFamily:
-                                                                              'Poppins',
-                                                                          color:
-                                                                              Colors.black,
-                                                                          fontWeight:
-                                                                              FontWeight.bold,
-                                                                        ),
-                                                                        overflow:
-                                                                            TextOverflow.ellipsis,
-                                                                      ),
-
-                                                                    // Display drink information
-                                                                    if (selectedDrink !=
-                                                                            null &&
-                                                                        selectedDrink
-                                                                            .isNotEmpty)
-                                                                      Text(
-                                                                        'Drink: $selectedDrink',
-                                                                        style: TextStyle(
-                                                                          fontSize:
-                                                                              isLargeScreen
-                                                                                  ? 17
-                                                                                  : 15,
-                                                                          fontFamily:
-                                                                              'Poppins',
-                                                                          color:
-                                                                              Colors.black,
-                                                                        ),
-                                                                        overflow:
-                                                                            TextOverflow.ellipsis,
-                                                                      ),
-
-                                                                    // Display Toppings (only if not empty) - Show AFTER meal info
-                                                                    if (toppings
-                                                                        .isNotEmpty)
-                                                                      Text(
-                                                                        'Extra Toppings: ${toppings.join(', ')}',
-                                                                        style: TextStyle(
-                                                                          fontSize:
-                                                                              isLargeScreen
-                                                                                  ? 17
-                                                                                  : 15,
-                                                                          fontFamily:
-                                                                              'Poppins',
-                                                                          color:
-                                                                              Colors.black,
-                                                                        ),
-                                                                        maxLines:
-                                                                            3,
-                                                                        overflow:
-                                                                            TextOverflow.ellipsis,
-                                                                      ),
-
-                                                                    // Display Sauce Dips (only if not empty)
-                                                                    if (sauceDips
-                                                                        .isNotEmpty)
-                                                                      Text(
-                                                                        'Sauce Dips: ${sauceDips.join(', ')}',
-                                                                        style: TextStyle(
-                                                                          fontSize:
-                                                                              isLargeScreen
-                                                                                  ? 17
-                                                                                  : 15,
-                                                                          fontFamily:
-                                                                              'Poppins',
-                                                                          color:
-                                                                              Colors.black,
-                                                                        ),
-                                                                        maxLines:
-                                                                            2,
-                                                                        overflow:
-                                                                            TextOverflow.ellipsis,
-                                                                      ),
-                                                                  ] else ...[
-                                                                    // No structured options found, show raw description
-                                                                    Text(
-                                                                      item.description,
-                                                                      style: TextStyle(
-                                                                        fontSize:
-                                                                            isLargeScreen
-                                                                                ? 17
-                                                                                : 15,
-                                                                        fontFamily:
-                                                                            'Poppins',
-                                                                        color:
-                                                                            Colors.black,
-                                                                        fontStyle:
-                                                                            FontStyle.normal,
-                                                                      ),
-                                                                      maxLines:
-                                                                          3,
-                                                                      overflow:
-                                                                          TextOverflow
-                                                                              .ellipsis,
-                                                                    ),
-
-                                                                    // Display deal selections
-                                                                    if (itemOptions['dealSelections'] !=
-                                                                        null)
-                                                                      ...(itemOptions['dealSelections']
-                                                                              as List<
-                                                                                String
-                                                                              >)
-                                                                          .map(
-                                                                            (
-                                                                              dealSelection,
-                                                                            ) => Text(
-                                                                              dealSelection,
-                                                                              style: TextStyle(
-                                                                                fontSize:
-                                                                                    isLargeScreen
-                                                                                        ? 17
-                                                                                        : 15,
-                                                                                fontFamily:
-                                                                                    'Poppins',
-                                                                                color:
-                                                                                    Colors.black,
-                                                                              ),
-                                                                              maxLines:
-                                                                                  null,
-                                                                              overflow:
-                                                                                  TextOverflow.visible,
-                                                                            ),
-                                                                          )
-                                                                          .toList(),
-                                                                  ],
-
-                                                                  // ENHANCED: Show full description for complex deal items to capture all components
-                                                                  if (hasOptions &&
-                                                                      item
-                                                                          .description
-                                                                          .isNotEmpty &&
-                                                                      item.description !=
-                                                                          item.itemName) ...[
-                                                                    // For deals, show all description lines but avoid exact duplicates of already parsed info
-                                                                    Builder(
-                                                                      builder: (
-                                                                        context,
-                                                                      ) {
-                                                                        List<
-                                                                          String
-                                                                        >
-                                                                        descriptionLines =
-                                                                            item.description
-                                                                                .split(
-                                                                                  '\n',
-                                                                                )
-                                                                                .map(
-                                                                                  (
-                                                                                    line,
-                                                                                  ) =>
-                                                                                      line.trim(),
-                                                                                )
-                                                                                .where(
-                                                                                  (
-                                                                                    line,
-                                                                                  ) =>
-                                                                                      line.isNotEmpty,
-                                                                                )
-                                                                                .toList();
-
-                                                                        // Create a set of already displayed information to avoid exact duplicates
-                                                                        Set<
-                                                                          String
-                                                                        >
-                                                                        alreadyShown =
-                                                                            {};
-
-                                                                        // Add the base item name only if it was actually displayed above
-                                                                        if (baseItemName !=
-                                                                                item.itemName &&
-                                                                            baseItemName.trim().isNotEmpty) {
-                                                                          alreadyShown.add(
-                                                                            baseItemName.toLowerCase().trim(),
-                                                                          );
-                                                                        }
-
-                                                                        // Add parsed options that were already displayed
-                                                                        if (selectedSize !=
-                                                                            null)
-                                                                          alreadyShown.add(
-                                                                            'size: ${selectedSize}'.toLowerCase(),
-                                                                          );
-                                                                        if (selectedCrust !=
-                                                                            null)
-                                                                          alreadyShown.add(
-                                                                            'crust: ${selectedCrust}'.toLowerCase(),
-                                                                          );
-                                                                        if (selectedBase !=
-                                                                            null)
-                                                                          alreadyShown.add(
-                                                                            'base: ${selectedBase}'.toLowerCase(),
-                                                                          );
-                                                                        if (selectedDrink !=
-                                                                                null &&
-                                                                            selectedDrink
-                                                                                .trim()
-                                                                                .isNotEmpty)
-                                                                          alreadyShown.add(
-                                                                            'drink: ${selectedDrink}'.toLowerCase(),
-                                                                          );
-                                                                        if (isMeal)
-                                                                          alreadyShown.add(
-                                                                            'meal',
-                                                                          );
-
-                                                                        // Filter out only exact duplicates of what's already displayed
-                                                                        List<
-                                                                          String
-                                                                        >
-                                                                        filteredLines =
-                                                                            descriptionLines.where((
-                                                                              line,
-                                                                            ) {
-                                                                              String
-                                                                              lowerLine =
-                                                                                  line.toLowerCase().trim();
-
-                                                                              // Only filter if it's an exact match of something already shown
-                                                                              return !alreadyShown.contains(
-                                                                                lowerLine,
-                                                                              );
-                                                                            }).toList();
-
-                                                                        if (filteredLines
-                                                                            .isNotEmpty) {
-                                                                          return Column(
-                                                                            crossAxisAlignment:
-                                                                                CrossAxisAlignment.start,
-                                                                            children: [
-                                                                              const SizedBox(
-                                                                                height:
-                                                                                    8,
-                                                                              ),
-                                                                              ...filteredLines
-                                                                                  .map(
-                                                                                    (
-                                                                                      line,
-                                                                                    ) => Padding(
-                                                                                      padding: const EdgeInsets.only(
-                                                                                        bottom:
-                                                                                            2,
-                                                                                      ),
-                                                                                      child: Text(
-                                                                                        line,
-                                                                                        style: TextStyle(
-                                                                                          fontSize:
-                                                                                              isLargeScreen
-                                                                                                  ? 17
-                                                                                                  : 15,
-                                                                                          fontFamily:
-                                                                                              'Poppins',
-                                                                                          color:
-                                                                                              Colors.black,
-                                                                                        ),
-                                                                                      ),
-                                                                                    ),
-                                                                                  )
-                                                                                  .toList(),
-                                                                            ],
-                                                                          );
-                                                                        }
-                                                                        return const SizedBox.shrink();
-                                                                      },
-                                                                    ),
-                                                                  ],
+                                                                      )
+                                                                      .toList(),
                                                                 ],
                                                               ),
                                                             ),
@@ -3404,7 +2472,7 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                                                                     : 8,
                                                           ),
                                                           Text(
-                                                            displayItemName,
+                                                            item.itemName,
                                                             textAlign:
                                                                 TextAlign
                                                                     .center,
@@ -3431,13 +2499,8 @@ class _WebsiteOrdersScreenState extends State<WebsiteOrdersScreen> {
                                                 ),
                                               ),
 
-                                              if ((item.comment != null &&
-                                                      item
-                                                          .comment!
-                                                          .isNotEmpty) ||
-                                                  (extractedComment != null &&
-                                                      extractedComment
-                                                          .isNotEmpty))
+                                              if (item.comment != null &&
+                                                  item.comment!.isNotEmpty)
                                                 Padding(
                                                   padding: EdgeInsets.only(
                                                     top:

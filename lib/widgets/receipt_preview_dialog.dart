@@ -166,7 +166,7 @@ class ReceiptPreviewDialog extends StatelessWidget {
 
     // Use full 80mm paper width (48 characters)
     receipt.writeln('================================================');
-    receipt.writeln('                    **TVP**'); // Bold restaurant name
+    receipt.writeln('                    **Dallas**'); // Bold restaurant name
     receipt.writeln('================================================');
     DateTime displayDateTime = orderDateTime ?? DateTime.now();
     receipt.writeln(
