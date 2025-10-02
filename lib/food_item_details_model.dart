@@ -61,7 +61,10 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
   String? _selectedSize;
   Set<String> _selectedToppings = {};
   String? _selectedCrust;
-  Set<String> _selectedSauces = {};
+  Set<String> _selectedSauces =
+      {}; // For free sauces (Burgers, Wraps, Shawarma, Kebabs) OR paid sauce dips (Pizza, Chicken, Wings, Strips)
+  Set<String> _selectedSauceDips =
+      {}; // For PAID sauce dips on Kebabs only (in addition to free sauces)
 
   // _makeItAMeal removed - now handled by Meal size selection
   String? _selectedDrink;
@@ -195,11 +198,23 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
             _selectedSauces.addAll(
               option.split(':').last.trim().split(',').map((s) => s.trim()),
             );
-          } else if (lowerOption.startsWith('sauce dip:')) {
-            // Handle "Sauce Dip:" format used by Chicken, Wings, and Strips categories
+          } else if (lowerOption.startsWith('sauces:')) {
+            // Handle "Sauces:" format - free sauces for Burgers, Wraps, Kebabs
             _selectedSauces.addAll(
               option.split(':').last.trim().split(',').map((s) => s.trim()),
             );
+          } else if (lowerOption.startsWith('sauce dip:')) {
+            // For Kebabs: paid sauce dips go to _selectedSauceDips
+            // For other categories (Chicken, Wings, Strips, Pizza): paid sauce dips go to _selectedSauces
+            if (widget.foodItem.category == 'Kebabs') {
+              _selectedSauceDips.addAll(
+                option.split(':').last.trim().split(',').map((s) => s.trim()),
+              );
+            } else {
+              _selectedSauces.addAll(
+                option.split(':').last.trim().split(',').map((s) => s.trim()),
+              );
+            }
           } else if (lowerOption == 'make it a meal') {
             // Legacy support - convert to meal size
             _selectedSize = 'Meal';
@@ -714,9 +729,8 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
       'Chicken',
       'Wings',
       'Strips',
-      'Kebabs',
     ].contains(widget.foodItem.category)) {
-      // Chicken, Wings, Strips, and Kebabs use the same sauce pricing as Pizza (paid sauce dips)
+      // Chicken, Wings, Strips use paid sauce dips
       double sauceCost = 0.0;
       for (var sauce in _selectedSauces) {
         if (sauce == "Chilli sauce" || sauce == "Garlic Sauce") {
@@ -727,7 +741,21 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
       }
       price += sauceCost;
       debugPrint(
-        "After Chicken/Wings/Strips/Kebabs sauces: $price (added: $sauceCost)",
+        "After Chicken/Wings/Strips sauces: $price (added: $sauceCost)",
+      );
+    } else if (widget.foodItem.category == 'Kebabs') {
+      // Kebabs have FREE sauces (_selectedSauces) AND paid sauce dips (_selectedSauceDips)
+      double sauceCost = 0.0;
+      for (var sauce in _selectedSauceDips) {
+        if (sauce == "Chilli sauce" || sauce == "Garlic Sauce") {
+          sauceCost += 0.75;
+        } else {
+          sauceCost += 0.5;
+        }
+      }
+      price += sauceCost;
+      debugPrint(
+        "Kebabs - Free sauces: ${_selectedSauces.length}, Paid sauce dips: ${_selectedSauceDips.length}, cost: $sauceCost",
       );
     } else if ([
       'Shawarma',
@@ -755,13 +783,42 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
       // Special pricing logic for 3X12" Pizza Deal
       double dealExtraCost = 0.0;
 
-      // Add stuffed crust costs for each pizza (£1.50 per stuffed crust)
+      // Define meat toppings (same as regular Pizza category)
+      final List<String> meatToppings = [
+        "BBQ chicken",
+        "Chicken",
+        "Pepperoni",
+        "Prawns",
+        "Spicy Beef",
+        "Tandoori Chicken",
+        "Tuna",
+        "Turkey Ham",
+      ];
+
+      // Calculate costs for each of the 3 pizzas
       for (int i = 1; i <= 3; i++) {
-        String crustKey = 'Pizza $i - Crust';
+        String pizzaKey = 'Pizza $i';
+
+        // Add stuffed crust cost (£1.50 per stuffed crust)
+        String crustKey = '$pizzaKey - Crust';
         String? selectedCrust = _dealSelections[crustKey];
         if (selectedCrust == "Stuffed") {
           dealExtraCost += 1.5; // Same price as regular 12" pizza stuffed crust
           debugPrint("Added stuffed crust cost for Pizza $i: £1.50");
+        }
+
+        // Add topping costs for extra toppings (12 inch pricing)
+        String toppingsKey = '$pizzaKey - Toppings';
+        Set<String>? selectedToppings = _dealMultiSelections[toppingsKey];
+        if (selectedToppings != null && selectedToppings.isNotEmpty) {
+          for (var topping in selectedToppings) {
+            bool isMeatTopping = meatToppings.contains(topping);
+            double toppingCost = isMeatTopping ? 0.99 : 0.70; // 12 inch pricing
+            dealExtraCost += toppingCost;
+            debugPrint(
+              "Added topping cost for Pizza $i - $topping: £$toppingCost",
+            );
+          }
         }
       }
 
@@ -1070,19 +1127,31 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
       selectedOptions.add('Crust: $_selectedCrust');
     }
 
-    // Only show specific sauce names for Pizza, GarlicBread, Chicken, Wings, Strips, and Kebabs
+    // Only show specific sauce names for Pizza, GarlicBread, Chicken, Wings, Strips
     // Sides category removed from sauce dips
+    // Kebabs handled separately below
     if (_selectedSauces.isNotEmpty &&
         !_noSauce &&
         (widget.foodItem.category == 'Pizza' ||
             widget.foodItem.category == 'GarlicBread' ||
             widget.foodItem.category == 'Chicken' ||
             widget.foodItem.category == 'Wings' ||
-            widget.foodItem.category == 'Strips' ||
-            widget.foodItem.category == 'Kebabs')) {
-      // Use "Sauce Dip:" for Pizza, Garlic Bread, Chicken, Wings, Strips, and Kebabs
+            widget.foodItem.category == 'Strips')) {
+      // Use "Sauce Dip:" for Pizza, Garlic Bread, Chicken, Wings, Strips
       String sauceLabel = 'Sauce Dip';
       selectedOptions.add('$sauceLabel: ${_selectedSauces.join(', ')}');
+    }
+
+    // Handle Kebabs - show free sauces and paid sauce dips separately
+    if (widget.foodItem.category == 'Kebabs') {
+      // Show free sauces (like Burgers)
+      if (_selectedSauces.isNotEmpty) {
+        selectedOptions.add('Sauces: ${_selectedSauces.join(', ')}');
+      }
+      // Show paid sauce dips
+      if (_selectedSauceDips.isNotEmpty) {
+        selectedOptions.add('Sauce Dip: ${_selectedSauceDips.join(', ')}');
+      }
     }
 
     // Only add drinks and red salt choice for non-deal categories
@@ -3120,12 +3189,11 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
                         _buildRedSaltChoiceSection(),
                       ],
 
-                      // Chicken, Wings, Strips, and Kebabs use Sauce Dips (no salad options)
+                      // Chicken, Wings, Strips use Sauce Dips (no salad options)
                       if ([
                         'Wings',
                         'Chicken',
                         'Strips',
-                        'Kebabs',
                       ].contains(widget.foodItem.category)) ...[
                         const SizedBox(height: 20),
                         _buildSauceOptionsForCategory(),
@@ -3135,6 +3203,19 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
                           _buildDrinkSelectionSection(),
                         ],
                         // Add red salt choice section
+                        _buildRedSaltChoiceSection(),
+                      ],
+
+                      // Kebabs use FREE Sauces (like Burgers) AND Paid Sauce Dips
+                      if (widget.foodItem.category == 'Kebabs') ...[
+                        const SizedBox(height: 20),
+                        _buildFreeSauceOptionsForBurgersAndWraps(), // Free sauces
+                        const SizedBox(height: 20),
+                        _buildPaidSauceDipsForKebabs(), // Paid sauce dips
+                        if (_isMealSizeSelected()) ...[
+                          const SizedBox(height: 20),
+                          _buildDrinkSelectionSection(),
+                        ],
                         _buildRedSaltChoiceSection(),
                       ],
 
@@ -4092,6 +4173,11 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
                     _dealMultiSelections[toppingsKey]!.remove(topping);
                   } else {
                     _dealMultiSelections[toppingsKey]!.add(topping);
+                  }
+                  // Update price when toppings change for 3X12" Pizza Deal
+                  if (widget.foodItem.name.toLowerCase() ==
+                      '3x12" pizza deal') {
+                    _calculatedPricePerUnit = _calculatePricePerUnit();
                   }
                 });
               },
@@ -5325,6 +5411,76 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
                           _selectedSauces.add(sauce);
                         }
                         // No price update since sauces are free
+                      });
+                    },
+                  ),
+                );
+              }).toList(),
+        ),
+      ],
+    );
+  }
+
+  // Paid sauce dips for Kebabs (with pricing)
+  Widget _buildPaidSauceDipsForKebabs() {
+    final double modalWidth = min(
+      MediaQuery.of(context).size.width * 0.95,
+      1000.0,
+    );
+    const double horizontalPaddingOfParent = 30.0;
+    final double availableWidthForWrap = modalWidth - horizontalPaddingOfParent;
+
+    const double itemSpacing = 12.0;
+    const int desiredColumns = 3;
+
+    final double idealItemWidth =
+        (availableWidthForWrap - (itemSpacing * (desiredColumns - 1))) /
+        desiredColumns;
+
+    // Paid sauce dips for Kebabs (£0.50 or £0.75 per sauce)
+    List<String> sauceDipOptions = [
+      'Mayo',
+      'Ketchup',
+      'Chilli sauce',
+      'Sweet Chilli',
+      'Garlic Sauce',
+      'BBQ Sauce',
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Sauce Dips:',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 15),
+        Wrap(
+          spacing: itemSpacing,
+          runSpacing: 15,
+          alignment: WrapAlignment.start,
+          children:
+              sauceDipOptions.map((sauce) {
+                final bool isSelected = _selectedSauceDips.contains(sauce);
+
+                return SizedBox(
+                  width: idealItemWidth,
+                  child: _buildOptionButton(
+                    title: sauce,
+                    isActive: isSelected,
+                    onTap: () {
+                      setState(() {
+                        if (isSelected) {
+                          _selectedSauceDips.remove(sauce);
+                        } else {
+                          _selectedSauceDips.add(sauce);
+                        }
+                        // Update price since sauce dips are paid
+                        _calculatedPricePerUnit = _calculatePricePerUnit();
                       });
                     },
                   ),

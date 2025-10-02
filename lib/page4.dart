@@ -3143,8 +3143,9 @@ class _Page4State extends State<Page4> {
                         } else if (lowerOption.contains('sauce:') ||
                             lowerOption.contains('sauce dip:') ||
                             lowerOption.contains('sauces:')) {
-                          // Skip individual sauce parsing for deals - they have their own formatting
-                          if (item.foodItem.category != 'Deals') {
+                          // Skip individual sauce parsing for deals and Kebabs - they have their own formatting
+                          if (item.foodItem.category != 'Deals' &&
+                              item.foodItem.category != 'Kebabs') {
                             String dipsValue = option.split(':').last.trim();
                             if (dipsValue.isNotEmpty) {
                               List<String> dipsList =
@@ -3182,7 +3183,7 @@ class _Page4State extends State<Page4> {
                       }
                     }
 
-                    // Handle deal-specific options display
+                    // Handle deal-specific options display and Kebabs
                     List<String> dealOptions = [];
                     if (item.foodItem.category == 'Deals') {
                       // For Deals: Include the description first, then selectedOptions
@@ -3192,6 +3193,11 @@ class _Page4State extends State<Page4> {
                       }
 
                       // Add selectedOptions if they exist
+                      if (hasOptions && item.selectedOptions != null) {
+                        dealOptions.addAll(item.selectedOptions!);
+                      }
+                    } else if (item.foodItem.category == 'Kebabs') {
+                      // For Kebabs: Show selectedOptions directly like Deals to display both "Sauces:" and "Sauce Dip:" separately
                       if (hasOptions && item.selectedOptions != null) {
                         dealOptions.addAll(item.selectedOptions!);
                       }

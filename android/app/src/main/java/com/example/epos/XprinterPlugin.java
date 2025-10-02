@@ -21,8 +21,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.nio.charset.Charset;
-import java.io.UnsupportedEncodingException;
 
 import net.posprinter.IDeviceConnection;
 import net.posprinter.POSConnect;
@@ -30,6 +28,7 @@ import net.posprinter.POSPrinter;
 
 /**
  * XprinterPlugin handles communication between Flutter and Xprinter SDK
+ * Updated to prevent auto-printing of stored headers/numbers
  */
 public class XprinterPlugin implements FlutterPlugin, MethodCallHandler {
     private static final String TAG = "XprinterPlugin";
@@ -137,7 +136,11 @@ public class XprinterPlugin implements FlutterPlugin, MethodCallHandler {
 
                 if (connected) {
                     posPrinter = new POSPrinter(usbConnection);
-                    Log.d(TAG, "USB printer connected successfully");
+                    
+                    // CRITICAL: Clear printer memory on connection to prevent auto-headers
+                    clearPrinterMemory();
+                    
+                    Log.d(TAG, "USB printer connected and memory cleared successfully");
                     mainHandler.post(() -> result.success(true));
                 } else {
                     Log.e(TAG, "Failed to connect USB printer");
@@ -148,6 +151,68 @@ public class XprinterPlugin implements FlutterPlugin, MethodCallHandler {
                 mainHandler.post(() -> result.error("USB_CONNECT_ERROR", e.getMessage(), null));
             }
         });
+    }
+
+    /**
+     * Comprehensive method to clear all printer memory and stored settings
+     * This prevents auto-printing of stored headers, numbers, or logos
+     */
+    private void clearPrinterMemory() {
+        try {
+            if (posPrinter == null) return;
+            
+            Log.d(TAG, "Clearing all printer memory and stored settings...");
+            
+            // Build comprehensive memory clear command sequence
+            StringBuilder clearCmd = new StringBuilder();
+            
+            // 1. Full hardware reset
+            clearCmd.append((char) 0x1B).append((char) 0x40); // ESC @ - Initialize printer
+            
+            // 2. Clear stored NV graphics/logos (most common cause of auto-printing)
+            clearCmd.append((char) 0x1D).append((char) 0x2A).append((char) 0x00).append((char) 0x00); // GS * 0 0
+            
+            // 3. Clear NV bit image memory
+            for (int i = 0; i < 255; i++) {
+                clearCmd.append((char) 0x1C).append((char) 0x71).append((char) i).append((char) 0x00); // FS q n 0
+            }
+            
+            // 4. Disable all auto-print modes
+            clearCmd.append((char) 0x1F).append((char) 0x11); // US DC1 - Cancel user settings
+            clearCmd.append((char) 0x1B).append((char) 0x25).append((char) 0x00); // ESC % 0 - Cancel user-defined
+            
+            // 5. Clear barcode settings that might auto-print
+            clearCmd.append((char) 0x1D).append((char) 0x48).append((char) 0x00); // GS H 0 - HRI position off
+            clearCmd.append((char) 0x1D).append((char) 0x77).append((char) 0x02); // GS w 2 - Barcode width default
+            
+            // 6. Reset character set
+            clearCmd.append((char) 0x1B).append((char) 0x74).append((char) 0x00); // ESC t 0 - CP437
+            clearCmd.append((char) 0x1C).append((char) 0x2E); // FS . - Cancel Chinese mode
+            clearCmd.append((char) 0x1B).append((char) 0x52).append((char) 0x00); // ESC R 0 - International
+            
+            // 7. Reset all text formatting
+            clearCmd.append((char) 0x1B).append((char) 0x21).append((char) 0x00); // ESC ! 0 - Reset all
+            clearCmd.append((char) 0x1B).append((char) 0x45).append((char) 0x00); // ESC E 0 - Cancel bold
+            clearCmd.append((char) 0x1B).append((char) 0x47).append((char) 0x00); // ESC G 0 - Cancel double-strike
+            clearCmd.append((char) 0x1D).append((char) 0x42).append((char) 0x00); // GS B 0 - Cancel reverse
+            
+            // 8. Reset alignment
+            clearCmd.append((char) 0x1B).append((char) 0x61).append((char) 0x00); // ESC a 0 - Left align
+            
+            // 9. Clear any pending data in buffer
+            clearCmd.append((char) 0x18); // CAN - Cancel data in buffer
+            
+            // Send all clear commands
+            posPrinter.printString(clearCmd.toString());
+            
+            // Wait for commands to process
+            Thread.sleep(300);
+            
+            Log.d(TAG, "Printer memory cleared successfully");
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error clearing printer memory: " + e.getMessage(), e);
+        }
     }
 
     private void disconnect(Result result) {
@@ -175,137 +240,57 @@ public class XprinterPlugin implements FlutterPlugin, MethodCallHandler {
                     return;
                 }
 
-                Log.d(TAG, "Starting receipt print with proper CP437 encoding for pound signs");
+                Log.d(TAG, "Starting receipt print with anti-auto-header protection");
 
-                // Initialize printer with CP437 character set
-                posPrinter.initializePrinter();
+                // STEP 1: Pre-print initialization to prevent auto-headers
+                StringBuilder initCmd = new StringBuilder();
                 
-                // CRITICAL FIX: Proper pound sign handling for Xprinter
-                String processedReceipt = fixPoundSignEncoding(receiptData);
+                // Full reset
+                initCmd.append((char) 0x1B).append((char) 0x40); // ESC @
                 
-                // Initialize printer for CP437 character set (critical for pound sign)
-                String initCommands = "";
-                initCommands += (char) 0x1B + (char) 0x40; // ESC @ (Initialize/Reset printer)
-                initCommands += (char) 0x1B + (char) 0x74 + (char) 0x00; // ESC t 0 (Select CP437 - Page 0)
-                initCommands += (char) 0x1C + (char) 0x2E; // FS . (Cancel Chinese mode)
-                initCommands += (char) 0x1B + (char) 0x52 + (char) 0x00; // ESC R 0 (International charset)
-
-                // CRITICAL: Clear any stored header/business info that might be auto-printing
-                initCommands += (char) 0x1B + (char) 0x45 + (char) 0x00; // ESC E 0 (Cancel emphasized mode)
-                initCommands += (char) 0x1B + (char) 0x21 + (char) 0x00; // ESC ! 0 (Reset all text attributes)
-                initCommands += (char) 0x1D + (char) 0x49 + (char) 0x00; // GS I 0 (Clear stored graphics)
-                initCommands += (char) 0x1D + (char) 0x42 + (char) 0x00; // GS B 0 (Cancel white/black reverse)
-
-                // Force clear any auto-header settings
-                initCommands += (char) 0x1B + (char) 0x25 + (char) 0x00; // ESC % 0 (Cancel user-defined chars)
-                initCommands += (char) 0x1F + (char) 0x11; // US DC1 (Cancel stored settings)
+                // Cancel any stored auto-print content
+                initCmd.append((char) 0x18); // CAN - Cancel buffer
+                initCmd.append((char) 0x1F).append((char) 0x11); // US DC1 - Cancel stored
                 
-                // Print initialization commands first
-                posPrinter.printString(initCommands);
+                // Set character set
+                initCmd.append((char) 0x1B).append((char) 0x74).append((char) 0x00); // ESC t 0
+                initCmd.append((char) 0x1C).append((char) 0x2E); // FS .
+                initCmd.append((char) 0x1B).append((char) 0x52).append((char) 0x00); // ESC R 0
                 
-                // Print the receipt content with fixed pound signs
-                posPrinter.printString(processedReceipt);
+                // Reset formatting
+                initCmd.append((char) 0x1B).append((char) 0x21).append((char) 0x00); // ESC ! 0
+                initCmd.append((char) 0x1B).append((char) 0x61).append((char) 0x00); // ESC a 0
                 
-                // Feed and cut
+                // Send initialization
+                posPrinter.printString(initCmd.toString());
+                Thread.sleep(150);
+                
+                // STEP 2: Print receipt
+                posPrinter.printString(receiptData);
+                
+                // STEP 3: Feed and cut
                 posPrinter.feedLine(3).cutPaper();
 
-                Log.d(TAG, "Receipt printed successfully with CP437 pound sign encoding");
+                Log.d(TAG, "Receipt printed successfully without auto-header");
                 mainHandler.post(() -> result.success(true));
                 
             } catch (Exception e) {
                 Log.e(TAG, "Error printing receipt", e);
                 
-                // Fallback: Try without encoding fixes
+                // Fallback: Try simple print
                 try {
-                    Log.d(TAG, "Attempting fallback print without encoding fixes...");
+                    Log.d(TAG, "Attempting fallback print...");
                     posPrinter.initializePrinter()
                              .printString(receiptData)
                              .feedLine(3)
                              .cutPaper();
-                    Log.d(TAG, "Fallback print successful");
                     mainHandler.post(() -> result.success(true));
                 } catch (Exception fallbackException) {
-                    Log.e(TAG, "Both main and fallback print methods failed", fallbackException);
+                    Log.e(TAG, "Both main and fallback print failed", fallbackException);
                     mainHandler.post(() -> result.error("PRINT_ERROR", e.getMessage(), null));
                 }
             }
         });
-    }
-
-    /**
-     * Fix pound sign encoding for proper display on Xprinter thermal printers
-     * Converts Unicode £ to CP437 character code 156 (0x9C)
-     */
-    private String fixPoundSignEncoding(String input) {
-        if (input == null || !input.contains("£")) {
-            return input;
-        }
-
-        Log.d(TAG, "POUND SIGN FIX: Processing " + countPoundSigns(input) + " pound signs");
-        
-        try {
-            // Method 1: Direct character replacement with CP437 code
-            // In CP437, pound sign is at position 156 (0x9C)
-            String result = input.replace("£", String.valueOf((char) 0x9C));
-            
-            Log.d(TAG, "POUND SIGN FIX: Applied direct CP437 character code replacement");
-            return result;
-            
-        } catch (Exception e) {
-            Log.w(TAG, "POUND SIGN FIX: Direct replacement failed, trying byte-level fix", e);
-            
-            try {
-                // Method 2: Byte-level replacement for UTF-8 encoded pound signs
-                byte[] bytes = input.getBytes("UTF-8");
-                List<Byte> fixedBytes = new ArrayList<>();
-                
-                for (int i = 0; i < bytes.length; i++) {
-                    // Check for UTF-8 pound sign sequence (0xC2 0xA3)
-                    if (i < bytes.length - 1 && 
-                        (bytes[i] & 0xFF) == 0xC2 && 
-                        (bytes[i + 1] & 0xFF) == 0xA3) {
-                        
-                        // Replace UTF-8 pound sign with CP437 pound sign
-                        fixedBytes.add((byte) 0x9C);
-                        i++; // Skip the next byte as we've processed the pair
-                        Log.d(TAG, "POUND SIGN FIX: Replaced UTF-8 sequence (C2 A3) with CP437 (9C)");
-                        
-                    } else if ((bytes[i] & 0xFF) == 0xA3) {
-                        // Handle Latin-1 pound sign (0xA3) -> CP437 (0x9C)
-                        fixedBytes.add((byte) 0x9C);
-                        Log.d(TAG, "POUND SIGN FIX: Replaced Latin-1 (A3) with CP437 (9C)");
-                        
-                    } else {
-                        fixedBytes.add(bytes[i]);
-                    }
-                }
-                
-                // Convert back to string using Latin-1 to preserve byte values
-                byte[] resultBytes = new byte[fixedBytes.size()];
-                for (int i = 0; i < fixedBytes.size(); i++) {
-                    resultBytes[i] = fixedBytes.get(i);
-                }
-                
-                String result = new String(resultBytes, "ISO-8859-1");
-                Log.d(TAG, "POUND SIGN FIX: Applied byte-level replacement successfully");
-                return result;
-                
-            } catch (Exception byteException) {
-                Log.e(TAG, "POUND SIGN FIX: All methods failed, using original string", byteException);
-                return input;
-            }
-        }
-    }
-    
-    /**
-     * Count pound signs in string for debugging
-     */
-    private int countPoundSigns(String input) {
-        int count = 0;
-        for (char c : input.toCharArray()) {
-            if (c == '£') count++;
-        }
-        return count;
     }
 
     private void openCashBox(Integer pinNum, Integer onTime, Integer offTime, Result result) {
@@ -316,9 +301,9 @@ public class XprinterPlugin implements FlutterPlugin, MethodCallHandler {
                     return;
                 }
 
-                int pin = pinNum != null ? pinNum : 0;    // PIN_TWO by default
-                int on = onTime != null ? onTime : 30;    // Default onTime
-                int off = offTime != null ? offTime : 255; // Default offTime
+                int pin = pinNum != null ? pinNum : 0;
+                int on = onTime != null ? onTime : 30;
+                int off = offTime != null ? offTime : 255;
 
                 posPrinter.openCashBox(pin, on, off);
                 Log.d(TAG, "Cash box opened");
@@ -338,7 +323,6 @@ public class XprinterPlugin implements FlutterPlugin, MethodCallHandler {
                     return;
                 }
 
-                // Use a simpler approach - just check if connection object exists and is not null
                 Map<String, Object> statusInfo = new HashMap<>();
                 statusInfo.put("connected", usbConnection != null);
                 statusInfo.put("statusCode", usbConnection != null ? 1 : 0);
@@ -354,7 +338,6 @@ public class XprinterPlugin implements FlutterPlugin, MethodCallHandler {
     public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
         channel.setMethodCallHandler(null);
         
-        // Clean up resources
         if (executor != null) {
             executor.shutdown();
         }

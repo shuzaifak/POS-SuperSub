@@ -645,32 +645,32 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
       //   orderDateTime: UKTimeService.now(),
       // );
 
-      bool success = await ThermalPrinterService()
-          .printReceiptWithUserInteraction(
-            transactionId: order.orderId.toString(),
-            orderType: order.orderType,
-            cartItems: cartItems,
-            subtotal: order.orderTotalPrice,
-            totalCharge: order.orderTotalPrice,
-            changeDue: order.changeDue,
-            extraNotes: order.orderExtraNotes,
-            customerName: order.customerName,
-            customerEmail: order.customerEmail,
-            phoneNumber: order.phoneNumber,
-            streetAddress: order.streetAddress,
-            city: order.city,
-            postalCode: order.postalCode,
-            paymentType: order.paymentType,
-            deliveryCharge: deliveryChargeAmount,
-            orderDateTime:
-                UKTimeService.now(), // Always use UK time for printing
-            onShowMethodSelection: (availableMethods) {
-              _showPopup(
-                "Available printing methods: ${availableMethods.join(', ')}",
-                type: PopupType.success,
-              );
-            },
+      bool
+      success = await ThermalPrinterService().printReceiptWithUserInteraction(
+        transactionId: order.orderId.toString(),
+        orderType: order.orderType,
+        cartItems: cartItems,
+        subtotal: order.orderTotalPrice,
+        totalCharge: order.orderTotalPrice,
+        changeDue: order.changeDue,
+        extraNotes: order.orderExtraNotes,
+        customerName: order.customerName,
+        customerEmail: order.customerEmail,
+        phoneNumber: order.phoneNumber,
+        streetAddress: order.streetAddress,
+        city: order.city,
+        postalCode: order.postalCode,
+        paymentType: order.paymentType,
+        paidStatus: order.paidStatus, // FIXED: Add missing paidStatus parameter
+        deliveryCharge: deliveryChargeAmount,
+        orderDateTime: UKTimeService.now(), // Always use UK time for printing
+        onShowMethodSelection: (availableMethods) {
+          _showPopup(
+            "Available printing methods: ${availableMethods.join(', ')}",
+            type: PopupType.success,
           );
+        },
+      );
 
       _showPopup(
         success

@@ -1131,11 +1131,24 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
                                             String status,
                                             DateTime orderCreatedAt,
                                           ) {
-                                            final now = UKTimeService.now();
-                                            final timeDifference = now
-                                                .difference(orderCreatedAt);
-                                            final minutesPassed =
-                                                timeDifference.inMinutes;
+                                            // Calculate time for THIS specific order - FIXED timezone issue
+                                            DateTime now = UKTimeService.now();
+                                            // FIXED: Treat order time as UK local time (same fix as timer)
+                                            final orderStartAsUKLocal =
+                                                DateTime(
+                                                  orderCreatedAt.year,
+                                                  orderCreatedAt.month,
+                                                  orderCreatedAt.day,
+                                                  orderCreatedAt.hour,
+                                                  orderCreatedAt.minute,
+                                                  orderCreatedAt.second,
+                                                  orderCreatedAt.millisecond,
+                                                );
+                                            Duration orderAge = now.difference(
+                                              orderStartAsUKLocal,
+                                            );
+                                            int minutesPassed =
+                                                orderAge.inMinutes;
 
                                             print(
                                               '🕐 Order ${order.orderId}: ${minutesPassed} minutes elapsed - Color should be ${minutesPassed < 30
@@ -1145,7 +1158,7 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
                                                   : "RED"}',
                                             );
 
-                                            // First check if order is completed - completed orders should always be grey
+                                            // Completed orders are always grey regardless of time
                                             if (status.toLowerCase() ==
                                                     'blue' ||
                                                 status.toLowerCase() ==

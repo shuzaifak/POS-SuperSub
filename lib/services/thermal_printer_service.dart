@@ -2407,14 +2407,8 @@ class ThermalPrinterService {
       receipt.writeln('**Payment Method: $paymentType**'); // Bold payment type
     }
 
-    // Determine payment status - use paidStatus for most orders, but override for COD
+    // Simple payment status logic: only use paid_status
     String paymentStatus = (paidStatus == true) ? 'PAID' : 'UNPAID';
-
-    // Override: Cash on Delivery orders are always UNPAID regardless of paidStatus
-    if (paymentType != null &&
-        paymentType.toLowerCase().contains('cash on delivery')) {
-      paymentStatus = 'UNPAID';
-    }
 
     // Show payment details based on payment type and status
     if (paidStatus == true) {
@@ -2744,14 +2738,8 @@ class ThermalPrinterService {
       );
     }
 
-    // Determine payment status - use paidStatus for most orders, but override for COD
+    // Simple payment status logic: only use paid_status
     String paymentStatus = (paidStatus == true) ? 'PAID' : 'UNPAID';
-
-    // Override: Cash on Delivery orders are always UNPAID regardless of paidStatus
-    if (paymentType != null &&
-        paymentType.toLowerCase().contains('cash on delivery')) {
-      paymentStatus = 'UNPAID';
-    }
 
     // Show payment details for paid orders
     if (paymentStatus == 'PAID' &&
