@@ -539,24 +539,17 @@ class _Page4State extends State<Page4> {
   }
 
   final List<Category> categories = [
-    Category(name: 'DEALS', image: 'assets/images/deals.png'),
-    Category(name: 'PIZZA', image: 'assets/images/PizzasS.png'),
-    //Category(name: 'CALZONES', image: 'assets/images/CalzonesS.png'),
-    //Category(name: 'SHAWARMAS', image: 'assets/images/ShawarmaS.png'),
-    Category(name: 'BURGERS', image: 'assets/images/BurgersS.png'),
-    Category(name: 'CHICKEN', image: 'assets/images/Chicken.png'),
-    Category(name: 'STRIPS', image: 'assets/images/Wings.png'),
-    Category(name: 'GARLIC BREAD', image: 'assets/images/GarlicBreadS.png'),
+    Category(name: 'BREAKFAST', image: 'assets/images/breakfast.png'),
+    Category(name: 'SANDWICHES', image: 'assets/images/sandwiches.png'),
     Category(name: 'WRAPS', image: 'assets/images/WrapsS.png'),
-    Category(name: 'WINGS', image: 'assets/images/Wings.png'),
-    Category(name: 'KEBABS', image: 'assets/images/Kebabs.png'),
-    Category(name: 'KIDS MEAL', image: 'assets/images/KidsMealS.png'),
-    Category(name: 'DESSERTS', image: 'assets/images/Desserts.png'),
+    Category(name: 'SALADS', image: 'assets/images/salads.png'),
+    Category(name: 'BOWLS', image: 'assets/images/bowls.png'),
     Category(name: 'SIDES', image: 'assets/images/SidesS.png'),
-    Category(name: 'MILKSHAKE', image: 'assets/images/MilkshakeS.png'),
-    //Category(name: 'COFFEE', image: 'assets/images/Coffee.png'),
-    Category(name: 'DRINKS', image: 'assets/images/DrinksS.png'),
-    Category(name: 'DIPS', image: 'assets/images/DipsS.png'),
+    Category(name: 'SOFTDRINKS', image: 'assets/images/DrinksS.png'),
+    Category(name: 'HOTDRINKS', image: 'assets/images/hotdrinks.png'),
+    Category(name: 'DESSERTS', image: 'assets/images/dessert.png'),
+    Category(name: 'CRISPS', image: 'assets/images/crisps.png'),
+    Category(name: 'REDBULLENERGY', image: 'assets/images/DrinksS.png'),
   ];
 
   String _toTitleCase(String text) {

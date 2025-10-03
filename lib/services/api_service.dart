@@ -7,9 +7,9 @@ import '../models/paidout_models.dart';
 
 class ApiService {
   static const String baseUrl =
-      "https://corsproxy.io/?https://api.dallasandgioschicken.uk";
+      "https://corsproxy.io/?https://api.supersubs.uk";
   static const String alternativeProxy =
-      "https://corsproxy.io/?https://api.dallasandgioschicken.uk";
+      "https://corsproxy.io/?https://api.supersubs.uk";
 
   // Method to mark order as paid
   static Future<bool> markOrderAsPaid(int orderId) async {
@@ -302,9 +302,9 @@ class ApiService {
 
   static Future<String> _toggleShopStatusFallback(bool shopOpen) async {
     final proxyUrls = [
-      "https://api.allorigins.win/raw?url=https://api.dallasandgioschicken.uk/admin/shop-toggle",
-      "https://cors-anywhere.herokuapp.com/https://api.dallasandgioschicken.uk/admin/shop-toggle",
-      "https://crossorigin.me/https://api.dallasandgioschicken.uk/admin/shop-toggle",
+      "https://api.allorigins.win/raw?url=https://api.supersubs.uk/admin/shop-toggle",
+      "https://cors-anywhere.herokuapp.com/https://api.supersubs.uk/admin/shop-toggle",
+      "https://crossorigin.me/https://api.supersubs.uk/admin/shop-toggle",
     ];
 
     for (String proxyUrl in proxyUrls) {
@@ -373,7 +373,7 @@ class ApiService {
     String closeTime,
   ) async {
     final fallbackUrl = Uri.parse(
-      "https://cors-anywhere.herokuapp.com/https://api.dallasandgioschicken.uk/admin/update-shop-timings",
+      "https://cors-anywhere.herokuapp.com/https://api.supersubs.uk/admin/update-shop-timings",
     );
     print(
       "updateShopTimings: Fallback - Attempting to update shop timings - Open: $openTime, Close: $closeTime",
@@ -472,7 +472,7 @@ class ApiService {
     bool value,
   ) async {
     final fallbackUrl = Uri.parse(
-      "https://cors-anywhere.herokuapp.com/https://api.dallasandgioschicken.uk/admin/offers/update",
+      "https://cors-anywhere.herokuapp.com/https://api.supersubs.uk/admin/offers/update",
     );
 
     try {
@@ -569,9 +569,9 @@ class ApiService {
     bool availability,
   ) async {
     final fallbackProxies = [
-      "https://cors-anywhere.herokuapp.com/https://api.dallasandgioschicken.uk/item/set-availability",
-      "https://api.allorigins.win/raw?url=https://api.dallasandgioschicken.uk/item/set-availability",
-      "https://proxy.corsfix.com/?url=https://api.dallasandgioschicken.uk/item/set-availability",
+      "https://cors-anywhere.herokuapp.com/https://api.supersubs.uk/item/set-availability",
+      "https://api.allorigins.win/raw?url=https://api.supersubs.uk/item/set-availability",
+      "https://proxy.corsfix.com/?url=https://api.supersubs.uk/item/set-availability",
     ];
 
     for (String proxyUrl in fallbackProxies) {
@@ -620,7 +620,7 @@ class ApiService {
     String? orderType,
   }) async {
     const String proxy = "https://corsproxy.io/?";
-    const String backend = "https://api.dallasandgioschicken.uk";
+    const String backend = " https://api.supersubs.uk";
     const String endpoint = "/admin/sales-report/today";
 
     final Map<String, String> queryParams = {};
@@ -679,7 +679,7 @@ class ApiService {
     String? orderType,
   }) async {
     const String proxy = "https://corsproxy.io/?";
-    const String backend = "https://api.dallasandgioschicken.uk";
+    const String backend = " https://api.supersubs.uk";
     final String dateStr =
         "${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
     final String endpoint = "/admin/sales-report/daily2/$dateStr";
@@ -728,7 +728,7 @@ class ApiService {
     String? orderType,
   }) async {
     const String proxy = "https://corsproxy.io/?";
-    const String backend = "https://api.dallasandgioschicken.uk";
+    const String backend = " https://api.supersubs.uk";
     final String dateStr =
         "${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
     final String endpoint =
@@ -781,7 +781,7 @@ class ApiService {
     String? orderType,
   }) async {
     const String proxy = "https://corsproxy.io/?";
-    const String backend = "https://api.dallasandgioschicken.uk";
+    const String backend = " https://api.supersubs.uk";
     final String endpoint = "/admin/sales-report/monthly2/$year/$month";
 
     final Map<String, String> queryParams = {};
@@ -860,7 +860,7 @@ class ApiService {
 
   static Future<Map<String, dynamic>> getDriverReport(DateTime date) async {
     const String proxy = "https://corsproxy.io/?";
-    const String backend = "https://api.dallasandgioschicken.uk";
+    const String backend = " https://api.supersubs.uk";
     final String dateStr =
         "${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
     final String endpoint = "/admin/driver-report/$dateStr";

@@ -6,9 +6,9 @@ import 'package:http/http.dart' as http;
 
 class DriverApiService {
   static const String baseUrl =
-      "https://corsproxy.io/?https://api.dallasandgioschicken.uk";
+      "https://corsproxy.io/?https://api.supersubs.uk";
   static const String alternativeProxy =
-      "https://corsproxy.io/?https://api.dallasandgioschicken.uk";
+      "https://corsproxy.io/?https://api.supersubs.uk";
 
   // Create Driver
   static Future<Map<String, dynamic>> createDriver({
@@ -21,7 +21,10 @@ class DriverApiService {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/drivers/create'),
-        headers: {'Content-Type': 'application/json', 'x-client-id': 'Dallas'},
+        headers: {
+          'Content-Type': 'application/json',
+          'x-client-id': 'SuperSub',
+        },
         body: jsonEncode({
           'name': name,
           'email': email,
@@ -56,7 +59,10 @@ class DriverApiService {
     try {
       final response = await http.put(
         Uri.parse('$baseUrl/drivers/deactivate/$username'),
-        headers: {'Content-Type': 'application/json', 'x-client-id': 'Dallas'},
+        headers: {
+          'Content-Type': 'application/json',
+          'x-client-id': 'SuperSub',
+        },
       );
 
       print('Deactivate Driver Response Status: ${response.statusCode}');
@@ -85,7 +91,10 @@ class DriverApiService {
     try {
       final response = await http.get(
         Uri.parse('$baseUrl/drivers/orders-with-driver/$date'),
-        headers: {'Content-Type': 'application/json', 'x-client-id': 'Dallas'},
+        headers: {
+          'Content-Type': 'application/json',
+          'x-client-id': 'SuperSub',
+        },
       );
 
       print('Get Orders with Driver Response Status: ${response.statusCode}');
