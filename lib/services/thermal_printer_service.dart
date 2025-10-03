@@ -501,7 +501,7 @@ class ThermalPrinterService {
   }) async {
     switch (method) {
       case 'USB':
-        return await _printUSBSuperFast(receiptData);
+        return await _printUSBSuperFast(receiptData, receiptContent);
       case 'Thermal Bluetooth':
         return await _printBluetoothSuperFast(receiptContent);
       default:
@@ -509,7 +509,10 @@ class ThermalPrinterService {
     }
   }
 
-  Future<bool> _printUSBSuperFast(List<int> receiptData) async {
+  Future<bool> _printUSBSuperFast(
+    List<int> receiptData,
+    String receiptContent,
+  ) async {
     if (kIsWeb ||
         (!Platform.isAndroid && !Platform.isWindows && !Platform.isLinux)) {
       throw Exception('USB printing not supported on this platform');
@@ -527,13 +530,10 @@ class ThermalPrinterService {
       try {
         print('🎯 Using Xprinter SDK for USB printing...');
 
-        // CRITICAL FIX: Send raw string without double encoding
-        // The Java layer now handles all encoding fixes properly
-        String receiptString = String.fromCharCodes(receiptData);
-
-        // Do NOT apply encoding fixes here - they're now handled in Java
-        // This prevents double encoding which corrupts the pound sign
-        bool success = await _xprinterService.printReceipt(receiptString);
+        // CRITICAL FIX: Use plain text receiptContent, NOT ESC/POS bytes
+        // The Xprinter SDK expects plain text and handles its own formatting
+        // Converting ESC/POS bytes to string causes corrupted text at the start
+        bool success = await _xprinterService.printReceipt(receiptContent);
 
         if (success) {
           print(
@@ -751,6 +751,10 @@ class ThermalPrinterService {
     Generator generator,
   ) async {
     List<int> bytes = [];
+
+    // Initialize printer first to clear any previous state/corrupted data
+    bytes += generator.reset();
+
     bytes += generator.setGlobalCodeTable('CP1252');
 
     List<String> lines = content.split('\n');
@@ -758,10 +762,10 @@ class ThermalPrinterService {
     for (String line in lines) {
       if (line.contains('**') && line.contains('**')) {
         // Handle ONLY the specific bold elements we want
-        if (line.contains('Dallas') && line.trim() == '**Dallas**') {
+        if (line.contains('SuperSub') && line.trim() == '**SuperSub**') {
           // Restaurant name - large and bold
           bytes += generator.text(
-            'Dallas',
+            'SuperSub',
             styles: const PosStyles(
               align: PosAlign.center,
               height: PosTextSize.size3,
@@ -2278,7 +2282,7 @@ class ThermalPrinterService {
 
     // Use full 80mm paper width (48 characters)
     receipt.writeln('================================================');
-    receipt.writeln('                   **Dallas**'); // Bold restaurant name
+    receipt.writeln('                   **SuperSub**'); // Bold restaurant name
     receipt.writeln('================================================');
     DateTime displayDateTime = orderDateTime ?? UKTimeService.now();
     receipt.writeln(
@@ -2324,11 +2328,8 @@ class ThermalPrinterService {
     receipt.writeln('------------------------------------------------');
 
     for (CartItem item in cartItems) {
-      double itemPricePerUnit = 0.0;
-      if (item.foodItem.price.isNotEmpty) {
-        var firstKey = item.foodItem.price.keys.first;
-        itemPricePerUnit = item.foodItem.price[firstKey] ?? 0.0;
-      }
+      // Use the actual pricePerUnit from cart item (includes options/customizations)
+      double itemPricePerUnit = item.pricePerUnit;
       double itemTotal = itemPricePerUnit * item.quantity;
 
       // Format item line with name and price on same line
@@ -2385,18 +2386,30 @@ class ThermalPrinterService {
     if (orderType.toLowerCase() == 'delivery' &&
         deliveryCharge != null &&
         deliveryCharge > 0) {
-      String deliveryText =
-          'Delivery Charges:             ${deliveryCharge.toStringAsFixed(2)}';
-      receipt.writeln(deliveryText);
+      String label = 'Delivery Charges:';
+      String amount = deliveryCharge.toStringAsFixed(2);
+      int padding = 48 - label.length - amount.length;
+      if (padding < 1) padding = 1;
+      receipt.writeln('$label${' ' * padding}$amount');
     }
 
-    String subtotalText =
-        'Subtotal:                     ${subtotal.toStringAsFixed(2)}';
-    receipt.writeln(subtotalText);
+    // Right-align subtotal
+    String subtotalLabel = 'Subtotal:';
+    String subtotalAmount = subtotal.toStringAsFixed(2);
+    int subtotalPadding = 48 - subtotalLabel.length - subtotalAmount.length;
+    if (subtotalPadding < 1) subtotalPadding = 1;
+    receipt.writeln('$subtotalLabel${' ' * subtotalPadding}$subtotalAmount');
+
     receipt.writeln('================================================');
-    String totalText =
-        '**TOTAL:                      GBP ${totalCharge.toStringAsFixed(2)}**';
-    receipt.writeln(totalText);
+
+    // Right-align total (accounting for ** markers and GBP prefix)
+    String totalLabel = '**TOTAL:';
+    String totalAmount = 'GBP ${totalCharge.toStringAsFixed(2)}**';
+    int totalPadding =
+        48 - totalLabel.length - totalAmount.length + 4; // +4 for ** markers
+    if (totalPadding < 1) totalPadding = 1;
+    receipt.writeln('$totalLabel${' ' * totalPadding}$totalAmount');
+
     receipt.writeln('================================================');
 
     // Payment Status Section
@@ -2464,11 +2477,14 @@ class ThermalPrinterService {
     final generator = Generator(PaperSize.mm80, profile); // 80mm paper width
     List<int> bytes = [];
 
+    // Initialize printer first to clear any previous state/corrupted data
+    bytes += generator.reset();
+
     bytes += generator.setGlobalCodeTable('CP1252');
 
     // Bold restaurant name
     bytes += generator.text(
-      'Dallas',
+      'SuperSub',
       styles: const PosStyles(
         align: PosAlign.center,
         height: PosTextSize.size3,
@@ -2476,7 +2492,7 @@ class ThermalPrinterService {
         bold: true,
       ),
     );
-    // Add gap between Dallas and separator line
+    // Add gap between TEST and separator line
     bytes += generator.emptyLines(1);
     bytes += generator.text(
       '================================================',
@@ -2588,11 +2604,8 @@ class ThermalPrinterService {
     bytes += generator.text('------------------------------------------------');
 
     for (CartItem item in cartItems) {
-      double itemPricePerUnit = 0.0;
-      if (item.foodItem.price.isNotEmpty) {
-        var firstKey = item.foodItem.price.keys.first;
-        itemPricePerUnit = item.foodItem.price[firstKey] ?? 0.0;
-      }
+      // Use the actual pricePerUnit from cart item (includes options/customizations)
+      double itemPricePerUnit = item.pricePerUnit;
       double itemTotal = itemPricePerUnit * item.quantity;
 
       // Item name and price on same line - using established 42-char format
@@ -3101,7 +3114,7 @@ class ThermalPrinterService {
 
     // Header
     report.writeln('================================');
-    report.writeln('             Dallas');
+    report.writeln('             TEST');
     report.writeln('================================');
     report.writeln();
 
@@ -3272,11 +3285,14 @@ class ThermalPrinterService {
     ); // 80mm paper width // 80mm paper
     List<int> bytes = [];
 
+    // Initialize printer first to clear any previous state/corrupted data
+    bytes += generator.reset();
+
     bytes += generator.setGlobalCodeTable('CP1252');
 
     // Header
     bytes += generator.text(
-      'Dallas',
+      'SuperSub',
       styles: const PosStyles(
         align: PosAlign.center,
         height: PosTextSize.size3,

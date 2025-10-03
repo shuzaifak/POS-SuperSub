@@ -160,56 +160,18 @@ public class XprinterPlugin implements FlutterPlugin, MethodCallHandler {
     private void clearPrinterMemory() {
         try {
             if (posPrinter == null) return;
-            
-            Log.d(TAG, "Clearing all printer memory and stored settings...");
-            
-            // Build comprehensive memory clear command sequence
-            StringBuilder clearCmd = new StringBuilder();
-            
-            // 1. Full hardware reset
-            clearCmd.append((char) 0x1B).append((char) 0x40); // ESC @ - Initialize printer
-            
-            // 2. Clear stored NV graphics/logos (most common cause of auto-printing)
-            clearCmd.append((char) 0x1D).append((char) 0x2A).append((char) 0x00).append((char) 0x00); // GS * 0 0
-            
-            // 3. Clear NV bit image memory
-            for (int i = 0; i < 255; i++) {
-                clearCmd.append((char) 0x1C).append((char) 0x71).append((char) i).append((char) 0x00); // FS q n 0
-            }
-            
-            // 4. Disable all auto-print modes
-            clearCmd.append((char) 0x1F).append((char) 0x11); // US DC1 - Cancel user settings
-            clearCmd.append((char) 0x1B).append((char) 0x25).append((char) 0x00); // ESC % 0 - Cancel user-defined
-            
-            // 5. Clear barcode settings that might auto-print
-            clearCmd.append((char) 0x1D).append((char) 0x48).append((char) 0x00); // GS H 0 - HRI position off
-            clearCmd.append((char) 0x1D).append((char) 0x77).append((char) 0x02); // GS w 2 - Barcode width default
-            
-            // 6. Reset character set
-            clearCmd.append((char) 0x1B).append((char) 0x74).append((char) 0x00); // ESC t 0 - CP437
-            clearCmd.append((char) 0x1C).append((char) 0x2E); // FS . - Cancel Chinese mode
-            clearCmd.append((char) 0x1B).append((char) 0x52).append((char) 0x00); // ESC R 0 - International
-            
-            // 7. Reset all text formatting
-            clearCmd.append((char) 0x1B).append((char) 0x21).append((char) 0x00); // ESC ! 0 - Reset all
-            clearCmd.append((char) 0x1B).append((char) 0x45).append((char) 0x00); // ESC E 0 - Cancel bold
-            clearCmd.append((char) 0x1B).append((char) 0x47).append((char) 0x00); // ESC G 0 - Cancel double-strike
-            clearCmd.append((char) 0x1D).append((char) 0x42).append((char) 0x00); // GS B 0 - Cancel reverse
-            
-            // 8. Reset alignment
-            clearCmd.append((char) 0x1B).append((char) 0x61).append((char) 0x00); // ESC a 0 - Left align
-            
-            // 9. Clear any pending data in buffer
-            clearCmd.append((char) 0x18); // CAN - Cancel data in buffer
-            
-            // Send all clear commands
-            posPrinter.printString(clearCmd.toString());
-            
-            // Wait for commands to process
-            Thread.sleep(300);
-            
-            Log.d(TAG, "Printer memory cleared successfully");
-            
+
+            Log.d(TAG, "Clearing printer memory using SDK initialization...");
+
+            // Use the SDK's built-in initialization method
+            // This properly sends ESC/POS commands without converting them to text
+            posPrinter.initializePrinter();
+
+            // Wait for initialization to complete
+            Thread.sleep(200);
+
+            Log.d(TAG, "Printer initialized successfully");
+
         } catch (Exception e) {
             Log.e(TAG, "Error clearing printer memory: " + e.getMessage(), e);
         }
@@ -232,6 +194,53 @@ public class XprinterPlugin implements FlutterPlugin, MethodCallHandler {
         });
     }
 
+    /**
+     * Process receipt text and convert **bold** markers to ESC/POS bold commands
+     */
+    private void processBoldMarkersAndPrint(String receiptData) throws Exception {
+        if (posPrinter == null) return;
+
+        String[] lines = receiptData.split("\n");
+
+        for (String line : lines) {
+            if (line.contains("**")) {
+                // Line contains bold markers - process them
+                StringBuilder processedLine = new StringBuilder();
+                int i = 0;
+                boolean inBold = false;
+
+                while (i < line.length()) {
+                    if (i <= line.length() - 2 && line.substring(i, i + 2).equals("**")) {
+                        // Toggle bold on/off
+                        if (!inBold) {
+                            // Start bold
+                            processedLine.append((char) 0x1B).append((char) 0x45).append((char) 0x01); // ESC E 1
+                            inBold = true;
+                        } else {
+                            // End bold
+                            processedLine.append((char) 0x1B).append((char) 0x45).append((char) 0x00); // ESC E 0
+                            inBold = false;
+                        }
+                        i += 2; // Skip **
+                    } else {
+                        processedLine.append(line.charAt(i));
+                        i++;
+                    }
+                }
+
+                // Ensure bold is turned off at end of line
+                if (inBold) {
+                    processedLine.append((char) 0x1B).append((char) 0x45).append((char) 0x00);
+                }
+
+                posPrinter.printString(processedLine.toString() + "\n");
+            } else {
+                // No bold markers - print as is
+                posPrinter.printString(line + "\n");
+            }
+        }
+    }
+
     private void printReceipt(String receiptData, Result result) {
         executor.execute(() -> {
             try {
@@ -240,33 +249,15 @@ public class XprinterPlugin implements FlutterPlugin, MethodCallHandler {
                     return;
                 }
 
-                Log.d(TAG, "Starting receipt print with anti-auto-header protection");
+                Log.d(TAG, "Starting receipt print with proper initialization");
 
-                // STEP 1: Pre-print initialization to prevent auto-headers
-                StringBuilder initCmd = new StringBuilder();
+                // STEP 1: Initialize printer using SDK method (not string commands)
+                // This prevents control codes from being printed as text
+                posPrinter.initializePrinter();
+                Thread.sleep(100);
                 
-                // Full reset
-                initCmd.append((char) 0x1B).append((char) 0x40); // ESC @
-                
-                // Cancel any stored auto-print content
-                initCmd.append((char) 0x18); // CAN - Cancel buffer
-                initCmd.append((char) 0x1F).append((char) 0x11); // US DC1 - Cancel stored
-                
-                // Set character set
-                initCmd.append((char) 0x1B).append((char) 0x74).append((char) 0x00); // ESC t 0
-                initCmd.append((char) 0x1C).append((char) 0x2E); // FS .
-                initCmd.append((char) 0x1B).append((char) 0x52).append((char) 0x00); // ESC R 0
-                
-                // Reset formatting
-                initCmd.append((char) 0x1B).append((char) 0x21).append((char) 0x00); // ESC ! 0
-                initCmd.append((char) 0x1B).append((char) 0x61).append((char) 0x00); // ESC a 0
-                
-                // Send initialization
-                posPrinter.printString(initCmd.toString());
-                Thread.sleep(150);
-                
-                // STEP 2: Print receipt
-                posPrinter.printString(receiptData);
+                // STEP 2: Process and print receipt with bold formatting
+                processBoldMarkersAndPrint(receiptData);
                 
                 // STEP 3: Feed and cut
                 posPrinter.feedLine(3).cutPaper();

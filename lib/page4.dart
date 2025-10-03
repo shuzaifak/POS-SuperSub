@@ -90,19 +90,6 @@ class _Page4State extends State<Page4> {
       TextEditingController();
   final GlobalKey<FormState> _editFormKey = GlobalKey<FormState>();
   final TextEditingController _pinController = TextEditingController();
-  int _selectedShawarmaSubcategory = 0;
-  final List<String> _shawarmaSubcategories = [
-    'Donner & Shawarma kebab',
-    'Shawarma & kebab trays',
-  ];
-
-  // Deals subcategories
-  int _selectedDealsSubcategory = 0;
-  List<String> _dealsSubcategories = [];
-
-  // Wings subcategories
-  int _selectedWingsSubcategory = 0;
-  List<String> _wingsSubcategories = [];
 
   bool _showAddItemModal = false;
   void _scrollCategoriesLeft() {
@@ -570,60 +557,17 @@ class _Page4State extends State<Page4> {
   Widget _buildItemDescription(FoodItem item, Color textColor) {
     final description = item.description!;
 
-    // Check if this is a Shawarma & kebab tray item that contains "Tray" text
-    if (item.subType == 'Shawarma & kebab trays' &&
-        description.toLowerCase().contains('tray')) {
-      // Split the description to find "Tray" word and make it bold and larger
-      final words = description.split(' ');
-      List<TextSpan> spans = [];
-
-      for (String word in words) {
-        if (word.toLowerCase().contains('tray')) {
-          // Make "Tray" word bold and larger
-          spans.add(
-            TextSpan(
-              text: '$word ',
-              style: TextStyle(
-                fontSize: 18, // Increased from 14
-                fontWeight: FontWeight.bold, // Made bold
-                color: textColor.withOpacity(0.9), // Slightly more visible
-                fontFamily: 'Poppins',
-              ),
-            ),
-          );
-        } else {
-          // Regular styling for other words
-          spans.add(
-            TextSpan(
-              text: '$word ',
-              style: TextStyle(
-                fontSize: 14,
-                color: textColor.withOpacity(0.7),
-                fontFamily: 'Poppins',
-              ),
-            ),
-          );
-        }
-      }
-
-      return RichText(
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        text: TextSpan(children: spans),
-      );
-    } else {
-      // Default description styling for other items
-      return Text(
-        description,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: 14,
-          color: textColor.withOpacity(0.7),
-          fontFamily: 'Poppins',
-        ),
-      );
-    }
+    // Default description styling for all items
+    return Text(
+      description,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        fontSize: 14,
+        color: textColor.withOpacity(0.7),
+        fontFamily: 'Poppins',
+      ),
+    );
   }
 
   @override
@@ -1658,9 +1602,6 @@ class _Page4State extends State<Page4> {
                                       borderRadius: BorderRadius.circular(30),
                                     ),
                                   ),
-                                  _buildShawarmaSubcategoryTabs(),
-                                  _buildDealsSubcategoryTabs(),
-                                  _buildWingsSubcategoryTabs(),
                                   Expanded(child: _buildItemGrid()),
                                 ],
                               ),
@@ -1797,44 +1738,32 @@ class _Page4State extends State<Page4> {
   }
 
   String _getCategoryIcon(String categoryName) {
+    // Map category names to their respective icon paths for SuperSub
     switch (categoryName.toUpperCase()) {
-      case 'DEALS':
-        return 'assets/images/deals.png';
-      case 'PIZZA':
-        return 'assets/images/PizzasS.png';
-      case 'SHAWARMAS':
-      case 'SHAWARMA':
-        return 'assets/images/ShawarmaS.png';
-      case 'BURGERS':
-        return 'assets/images/BurgersS.png';
-      case 'CALZONES':
-        return 'assets/images/CalzonesS.png';
-      case 'GARLICBREAD':
-        return 'assets/images/GarlicBreadS.png';
+      case 'BREAKFAST':
+        return 'assets/images/breakfast.png';
+      case 'SANDWICHES':
+        return 'assets/images/sandwiches.png';
       case 'WRAPS':
         return 'assets/images/WrapsS.png';
-      case 'KIDSMEAL':
-        return 'assets/images/KidsMealS.png';
+      case 'SALADS':
+        return 'assets/images/salads.png';
+      case 'BOWLS':
+        return 'assets/images/bowls.png';
       case 'SIDES':
         return 'assets/images/SidesS.png';
-      case 'DRINKS':
+      case 'SOFTDRINKS':
         return 'assets/images/DrinksS.png';
-      case 'MILKSHAKE':
-        return 'assets/images/MilkshakeS.png';
-      case 'DIPS':
-        return 'assets/images/DipsS.png';
+      case 'HOTDRINKS':
+        return 'assets/images/hotdrinks.png';
       case 'DESSERTS':
         return 'assets/images/Desserts.png';
-      case 'CHICKEN':
-        return 'assets/images/Chicken.png';
-      case 'KEBABS':
-        return 'assets/images/Kebabs.png';
-      case 'WINGS':
-        return 'assets/images/Wings.png';
-      case 'STRIPS':
-        return 'assets/images/Wings.png';
+      case 'CRISPS':
+        return 'assets/images/crisps.png';
+      case 'REDBULLENERGY':
+        return 'assets/images/DrinksS.png';
       default:
-        return 'assets/images/deals.png'; // Use deals.png as fallback instead of non-existent default.png
+        return 'assets/images/breakfast.png'; // Default fallback to breakfast icon
     }
   }
 
@@ -2131,53 +2060,6 @@ class _Page4State extends State<Page4> {
     });
   }
 
-  // Method to extract unique subcategories for deals from backend data
-  void _updateDealsSubcategories(List<FoodItem> allFoodItems) {
-    final Set<String> uniqueSubcategories = {};
-
-    for (final item in allFoodItems) {
-      if (item.category.toLowerCase() == 'deals' &&
-          item.subType != null &&
-          item.subType!.trim().isNotEmpty) {
-        uniqueSubcategories.add(item.subType!.trim());
-      }
-    }
-
-    final List<String> sortedSubcategories =
-        uniqueSubcategories.toList()..sort();
-
-    // Only update if subcategories have changed to avoid unnecessary rebuilds
-    if (!_listsEqual(_dealsSubcategories, sortedSubcategories)) {
-      setState(() {
-        _dealsSubcategories = sortedSubcategories;
-        _selectedDealsSubcategory = 0; // Reset to first subcategory
-      });
-    }
-  }
-
-  void _updateWingsSubcategories(List<FoodItem> allFoodItems) {
-    final Set<String> uniqueSubcategories = {};
-
-    for (final item in allFoodItems) {
-      if (item.category.toLowerCase() == 'wings' &&
-          item.subType != null &&
-          item.subType!.trim().isNotEmpty) {
-        uniqueSubcategories.add(item.subType!.trim());
-      }
-    }
-
-    final List<String> sortedSubcategories =
-        uniqueSubcategories.toList()..sort();
-
-    // Only update if subcategories have changed to avoid unnecessary rebuilds
-    if (!_listsEqual(_wingsSubcategories, sortedSubcategories)) {
-      setState(() {
-        _wingsSubcategories = sortedSubcategories;
-        _selectedWingsSubcategory = 0; // Reset to first subcategory
-      });
-    }
-  }
-
   // Helper method to compare two lists
   bool _listsEqual<T>(List<T> a, List<T> b) {
     if (a.length != b.length) return false;
@@ -2185,209 +2067,6 @@ class _Page4State extends State<Page4> {
       if (a[i] != b[i]) return false;
     }
     return true;
-  }
-
-  Widget _buildShawarmaSubcategoryTabs() {
-    if (selectedCategory >= 0 &&
-        selectedCategory < categories.length &&
-        categories[selectedCategory].name.toLowerCase() == 'shawarmas') {
-      return Container(
-        padding: const EdgeInsets.only(
-          left: 80,
-          right: 80,
-          top: 15,
-          bottom: 15,
-        ),
-        child: Row(
-          children: [
-            for (int i = 0; i < _shawarmaSubcategories.length; i++)
-              Padding(
-                padding: EdgeInsets.only(
-                  right: i < _shawarmaSubcategories.length - 1 ? 20 : 0,
-                ),
-                child: GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _selectedShawarmaSubcategory = i;
-                    });
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color:
-                          _selectedShawarmaSubcategory == i
-                              ? const Color(0xFFCB6CE6)
-                              : Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color:
-                            _selectedShawarmaSubcategory == i
-                                ? const Color(0xFFCB6CE6)
-                                : Colors.grey.shade300,
-                        width: 2,
-                      ),
-                    ),
-                    child: Text(
-                      _shawarmaSubcategories[i],
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontFamily: 'Poppins',
-                        color:
-                            _selectedShawarmaSubcategory == i
-                                ? Colors.white
-                                : Colors.black,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      );
-    }
-    return const SizedBox.shrink();
-  }
-
-  Widget _buildDealsSubcategoryTabs() {
-    if (selectedCategory >= 0 &&
-        selectedCategory < categories.length &&
-        categories[selectedCategory].name.toLowerCase() == 'deals' &&
-        _dealsSubcategories.isNotEmpty) {
-      return Container(
-        padding: const EdgeInsets.only(
-          left: 80,
-          right: 80,
-          top: 15,
-          bottom: 15,
-        ),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              for (int i = 0; i < _dealsSubcategories.length; i++)
-                Padding(
-                  padding: EdgeInsets.only(
-                    right: i < _dealsSubcategories.length - 1 ? 20 : 0,
-                  ),
-                  child: GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _selectedDealsSubcategory = i;
-                      });
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color:
-                            _selectedDealsSubcategory == i
-                                ? const Color(0xFFCB6CE6)
-                                : Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color:
-                              _selectedDealsSubcategory == i
-                                  ? const Color(0xFFCB6CE6)
-                                  : Colors.grey.shade300,
-                          width: 2,
-                        ),
-                      ),
-                      child: Text(
-                        _dealsSubcategories[i],
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontFamily: 'Poppins',
-                          color:
-                              _selectedDealsSubcategory == i
-                                  ? Colors.white
-                                  : Colors.black,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      );
-    }
-    return const SizedBox.shrink();
-  }
-
-  Widget _buildWingsSubcategoryTabs() {
-    if (selectedCategory >= 0 &&
-        selectedCategory < categories.length &&
-        categories[selectedCategory].name.toLowerCase() == 'wings' &&
-        _wingsSubcategories.isNotEmpty) {
-      return Container(
-        padding: const EdgeInsets.only(
-          left: 80,
-          right: 80,
-          top: 15,
-          bottom: 10,
-        ),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              for (int i = 0; i < _wingsSubcategories.length; i++)
-                Padding(
-                  padding: EdgeInsets.only(
-                    right: i < _wingsSubcategories.length - 1 ? 20 : 0,
-                  ),
-                  child: GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _selectedWingsSubcategory = i;
-                      });
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color:
-                            _selectedWingsSubcategory == i
-                                ? const Color(0xFFCB6CE6)
-                                : Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color:
-                              _selectedWingsSubcategory == i
-                                  ? const Color(0xFFCB6CE6)
-                                  : Colors.grey.shade300,
-                          width: 2,
-                        ),
-                      ),
-                      child: Text(
-                        _wingsSubcategories[i],
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontFamily: 'Poppins',
-                          color:
-                              _selectedWingsSubcategory == i
-                                  ? Colors.white
-                                  : Colors.black,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      );
-    }
-    return const SizedBox.shrink();
   }
 
   Widget _buildItemGrid() {
@@ -2401,12 +2080,6 @@ class _Page4State extends State<Page4> {
             providerItems.isNotEmpty
                 ? providerItems
                 : (widget.foodItems.isNotEmpty ? widget.foodItems : foodItems);
-
-        // Update deals subcategories whenever food items change
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _updateDealsSubcategories(allFoodItems);
-          _updateWingsSubcategories(allFoodItems);
-        });
 
         // Production-safe logging
         if (providerItems.isEmpty && widget.foodItems.isNotEmpty) {
@@ -2459,58 +2132,12 @@ class _Page4State extends State<Page4> {
 
         final selectedCategoryName = categories[selectedCategory].name;
 
-        String mappedCategoryKey;
-        if (selectedCategoryName.toLowerCase() == 'deals') {
-          mappedCategoryKey = 'Deals';
-        } else if (selectedCategoryName.toLowerCase() == 'calzones') {
-          mappedCategoryKey = 'Calzones';
-        } else if (selectedCategoryName.toLowerCase() == 'shawarmas') {
-          mappedCategoryKey = 'Shawarma';
-        } else if (selectedCategoryName.toLowerCase() == 'kids meal') {
-          mappedCategoryKey = 'KidsMeal';
-        } else if (selectedCategoryName.toLowerCase() == 'garlic bread') {
-          mappedCategoryKey = 'GarlicBread';
-        } else {
-          mappedCategoryKey = selectedCategoryName.toLowerCase();
-        }
+        String mappedCategoryKey = selectedCategoryName.toLowerCase();
 
         Iterable<FoodItem> currentItems = allFoodItems.where(
           (item) =>
               item.category.toLowerCase() == mappedCategoryKey.toLowerCase(),
         );
-
-        // Filter by subcategory for Shawarma items
-        if (selectedCategoryName.toLowerCase() == 'shawarmas') {
-          final selectedSubcategory =
-              _shawarmaSubcategories[_selectedShawarmaSubcategory];
-          currentItems = currentItems.where(
-            (item) => item.subType?.trim() == selectedSubcategory.trim(),
-          );
-        }
-
-        // Filter by subcategory for Deals items
-        if (selectedCategoryName.toLowerCase() == 'deals' &&
-            _dealsSubcategories.isNotEmpty) {
-          final selectedSubcategory =
-              _dealsSubcategories[_selectedDealsSubcategory];
-          currentItems = currentItems.where(
-            (item) =>
-                item.subType?.trim().toLowerCase() ==
-                selectedSubcategory.trim().toLowerCase(),
-          );
-        }
-
-        // Filter by subcategory for Wings items
-        if (selectedCategoryName.toLowerCase() == 'wings' &&
-            _wingsSubcategories.isNotEmpty) {
-          final selectedSubcategory =
-              _wingsSubcategories[_selectedWingsSubcategory];
-          currentItems = currentItems.where(
-            (item) =>
-                item.subType?.trim().toLowerCase() ==
-                selectedSubcategory.trim().toLowerCase(),
-          );
-        }
 
         if (_searchQuery.isNotEmpty) {
           final lowerCaseQuery = _searchQuery.toLowerCase();
@@ -3053,6 +2680,12 @@ class _Page4State extends State<Page4> {
                     String? selectedSeasoning;
                     bool hasOptions = false;
 
+                    // SuperSub specific options
+                    String? selectedBread;
+                    String? selectedMeat;
+                    bool doubleMeat = false;
+                    bool goLarge = false;
+
                     if (item.selectedOptions?.isNotEmpty ?? false) {
                       hasOptions = true;
                       for (var option in item.selectedOptions!) {
@@ -3172,6 +2805,18 @@ class _Page4State extends State<Page4> {
                             lowerOption == 'no sauce' ||
                             lowerOption == 'no cream') {
                           toppings.add(option);
+                        } else if (lowerOption.contains('bread:')) {
+                          selectedBread = option.split(':').last.trim();
+                          hasOptions = true;
+                        } else if (lowerOption.contains('meat:')) {
+                          selectedMeat = option.split(':').last.trim();
+                          hasOptions = true;
+                        } else if (lowerOption == 'double meat') {
+                          doubleMeat = true;
+                          hasOptions = true;
+                        } else if (lowerOption == 'go large') {
+                          goLarge = true;
+                          hasOptions = true;
                         }
                       }
                     }
@@ -3250,9 +2895,47 @@ class _Page4State extends State<Page4> {
                                                           TextOverflow.ellipsis,
                                                     ),
                                                   if (hasOptions) ...[
+                                                    // Item name always shown first
+                                                    Text(
+                                                      item.foodItem.name
+                                                          .toUpperCase(),
+                                                      style: const TextStyle(
+                                                        fontSize: 15,
+                                                        fontFamily: 'Poppins',
+                                                        color: Colors.black,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                      ),
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                    ),
                                                     if (selectedSize != null)
                                                       Text(
                                                         'Size: $selectedSize',
+                                                        style: const TextStyle(
+                                                          fontSize: 15,
+                                                          fontFamily: 'Poppins',
+                                                          color: Colors.black,
+                                                        ),
+                                                        overflow:
+                                                            TextOverflow
+                                                                .ellipsis,
+                                                      ),
+                                                    if (selectedBread != null)
+                                                      Text(
+                                                        'Bread: $selectedBread',
+                                                        style: const TextStyle(
+                                                          fontSize: 15,
+                                                          fontFamily: 'Poppins',
+                                                          color: Colors.black,
+                                                        ),
+                                                        overflow:
+                                                            TextOverflow
+                                                                .ellipsis,
+                                                      ),
+                                                    if (selectedMeat != null)
+                                                      Text(
+                                                        'Meat: $selectedMeat',
                                                         style: const TextStyle(
                                                           fontSize: 15,
                                                           fontFamily: 'Poppins',
@@ -3288,7 +2971,7 @@ class _Page4State extends State<Page4> {
                                                       ),
                                                     if (toppings.isNotEmpty)
                                                       Text(
-                                                        'Extra Toppings: ${toppings.join(', ')}',
+                                                        'Toppings: ${toppings.join(', ')}',
                                                         style: const TextStyle(
                                                           fontSize: 15,
                                                           fontFamily: 'Poppins',
@@ -3301,11 +2984,7 @@ class _Page4State extends State<Page4> {
                                                       ),
                                                     if (sauceDips.isNotEmpty)
                                                       Text(
-                                                        '${(item.foodItem.category == 'Pizza' || item.foodItem.category == 'GarlicBread' || item.foodItem.category == 'Chicken' || item.foodItem.category == 'Wings' || item.foodItem.category == 'Strips' || item.foodItem.category == 'Kebabs')
-                                                            ? 'Sauce Dip'
-                                                            : (item.foodItem.category == 'Burgers' || item.foodItem.category == 'Wraps')
-                                                            ? 'Sauces'
-                                                            : 'Sauce'}: ${sauceDips.join(', ')}',
+                                                        'Sauces: ${sauceDips.join(', ')}',
                                                         style: const TextStyle(
                                                           fontSize: 15,
                                                           fontFamily: 'Poppins',
@@ -3344,6 +3023,30 @@ class _Page4State extends State<Page4> {
                                                           color: Colors.black,
                                                         ),
                                                         maxLines: 2,
+                                                        overflow:
+                                                            TextOverflow
+                                                                .ellipsis,
+                                                      ),
+                                                    if (goLarge)
+                                                      const Text(
+                                                        'Go Large',
+                                                        style: TextStyle(
+                                                          fontSize: 15,
+                                                          fontFamily: 'Poppins',
+                                                          color: Colors.black,
+                                                        ),
+                                                        overflow:
+                                                            TextOverflow
+                                                                .ellipsis,
+                                                      ),
+                                                    if (doubleMeat)
+                                                      const Text(
+                                                        'Double Meat',
+                                                        style: TextStyle(
+                                                          fontSize: 15,
+                                                          fontFamily: 'Poppins',
+                                                          color: Colors.black,
+                                                        ),
                                                         overflow:
                                                             TextOverflow
                                                                 .ellipsis,
@@ -4042,34 +3745,6 @@ class _Page4State extends State<Page4> {
     });
   }
 
-  // Widget _buildCartSummary() {
-  //   return Column(
-  //     children: [
-  //       Row(
-  //         mainAxisAlignment: MainAxisAlignment.spaceAround,
-  //         children: [
-  //           _buildServiceHighlight('takeaway', 'TakeAway.png'),
-  //           _buildServiceHighlight('dinein', 'DineIn.png'),
-  //           _buildServiceHighlight('delivery', 'Delivery.png'),
-  //         ],
-  //       ),
-  //       const SizedBox(height: 20),
-  //       Padding(
-  //         padding: const EdgeInsets.symmetric(horizontal: 60.0),
-  //         child: Divider(
-  //           height: 0,
-  //           thickness: 3,
-  //           color: const Color(0xFFB2B2B2),
-  //         ),
-  //       ),
-  //       const SizedBox(height: 20),
-  //       Expanded(
-  //         child: _buildCartSummaryContent(),
-  //       ),
-  //     ],
-  //   );
-  // }
-
   Future<void> _handleOrderCompletion({
     required CustomerDetails customerDetails,
     required PaymentDetails paymentDetails,
@@ -4184,29 +3859,6 @@ class _Page4State extends State<Page4> {
       List<CartItem> formattedCartItems = _formatCartItemsForReceipt(
         _cartItems,
       );
-
-      // Show receipt preview dialog before printing
-      // await ReceiptPreviewDialog.show(
-      //   context,
-      //   transactionId: id1,
-      //   orderType: _actualOrderType,
-      //   cartItems: formattedCartItems,
-      //   subtotal: originalSubtotal,
-      //   totalCharge: finalTotalCharge,
-      //   extraNotes: extraNotes,
-      //   changeDue: finalChangeDue,
-      //   customerName: customerDetails.name,
-      //   customerEmail: customerDetails.email,
-      //   phoneNumber: customerDetails.phoneNumber,
-      //   streetAddress: customerDetails.streetAddress,
-      //   city: customerDetails.city,
-      //   postalCode: customerDetails.postalCode,
-      //   paymentType: paymentDetails.paymentType,
-      //   paidStatus: paymentDetails.paidStatus,
-      //   orderId: backendOrderId != null ? int.tryParse(backendOrderId) : null,
-      //   deliveryCharge: 0.0, // Add delivery charge if needed
-      //   orderDateTime: orderCreationTime,
-      // );
 
       // Then print receipt with the order ID
       await _printReceiptWithOrderId(
@@ -4403,200 +4055,6 @@ class _Page4State extends State<Page4> {
       _clearOrderState();
     }
   }
-
-  // Future<void> _handlePrintingAndOrderDirect({
-  //   required Map<String, dynamic> orderData,
-  //   required String id1,
-  //   required double subtotal,
-  //   required double totalCharge,
-  //   required String extraNotes,
-  //   required double changeDue,
-  //   required bool paidStatus,
-  // }) async {
-  //   if (!mounted) return;
-
-  //   try {
-  //     // Extract customer details from orderData
-  //     final guestData = orderData['guest'] as Map<String, dynamic>?;
-
-  //     await ThermalPrinterService().printReceiptWithUserInteraction(
-  //       transactionId: id1,
-  //       orderType: _actualOrderType,
-  //       cartItems: _cartItems,
-  //       subtotal: subtotal,
-  //       totalCharge: totalCharge,
-  //       extraNotes: extraNotes.isNotEmpty ? extraNotes : null,
-  //       changeDue: changeDue,
-  //       // Add customer details
-  //       customerName: guestData?['name'] as String?,
-  //       customerEmail: guestData?['email'] as String?,
-  //       phoneNumber: guestData?['phone_number'] as String?,
-  //       streetAddress: guestData?['street_address'] as String?,
-  //       city: guestData?['city'] as String?,
-  //       postalCode: guestData?['postal_code'] as String?,
-  //       paymentType: _selectedPaymentType,
-  //       paidStatus: paidStatus,
-  //       onShowMethodSelection: (availableMethods) {
-  //         if (mounted) {
-  //           CustomPopupService.show(
-  //             context,
-  //             "Available printing methods: ${availableMethods.join(', ')}. Please check printer connections.",
-  //             type: PopupType.success,
-  //           );
-  //         }
-  //       },
-  //     );
-  //   } catch (e) {
-  //     print('Background printing failed: $e');
-  //     if (mounted) {
-  //       CustomPopupService.show(
-  //         context,
-  //         "Printing failed !",
-  //         type: PopupType.failure,
-  //       );
-  //     }
-  //   }
-
-  //   await _placeOrderDirectly(orderData);
-  // }
-
-  // Future<void> _placeOrderDirectly(Map<String, dynamic> orderData) async {
-  //   if (!mounted) return;
-
-  //   final offlineProvider = Provider.of<OfflineProvider>(
-  //     context,
-  //     listen: false,
-  //   );
-  //   final eposOrdersProvider = Provider.of<EposOrdersProvider>(
-  //     context,
-  //     listen: false,
-  //   );
-
-  //   // Check if we're online
-  //   print(
-  //     '🌐 DEBUG: Page4 order placement - OfflineProvider.isOnline: ${offlineProvider.isOnline}',
-  //   );
-  //   print(
-  //     '🌐 DEBUG: Page4 order placement - ConnectivityService.isOnline: ${ConnectivityService().isOnline}',
-  //   );
-  //   if (!offlineProvider.isOnline) {
-  //     // OFFLINE MODE: Create local order that appears in orders list immediately
-  //     try {
-  //       final offlineOrder = await OfflineOrderManager.createOfflineOrder(
-  //         cartItems: _cartItems,
-  //         paymentType: _selectedPaymentType,
-  //         orderType: _actualOrderType,
-  //         orderTotalPrice: orderData['total_price'] as double,
-  //         orderExtraNotes: orderData['order_extra_notes'] as String?,
-  //         customerName: _customerDetails?.name ?? "Unknown Customer",
-  //         customerEmail: _customerDetails?.email,
-  //         phoneNumber: _customerDetails?.phoneNumber,
-  //         streetAddress: _customerDetails?.streetAddress,
-  //         city: _customerDetails?.city,
-  //         postalCode: _customerDetails?.postalCode,
-  //         changeDue: orderData['change_due'] as double? ?? 0.0,
-  //       );
-
-  //       // Show success popup immediately
-  //       if (mounted) {
-  //         CustomPopupService.show(
-  //           context,
-  //           "Order saved offline: ${offlineOrder.transactionId}\nWill appear in orders list and be processed when connection is restored",
-  //           type: PopupType.success,
-  //         );
-
-  //         // Clear cart like successful order
-  //         _clearOrderState();
-  //       }
-
-  //       // Add offline order to the orders list in background
-  //       eposOrdersProvider.addOfflineOrder(offlineOrder).catchError((error) {
-  //         print('⚠️ Background addOfflineOrder failed: $error');
-  //       });
-  //       return;
-  //     } catch (e) {
-  //       print('❌ Failed to create offline order: $e');
-  //       if (mounted) {
-  //         CustomPopupService.show(
-  //           context,
-  //           "Failed to save order offline: $e",
-  //           type: PopupType.failure,
-  //         );
-  //       }
-  //       return;
-  //     }
-  //   }
-
-  //   // ONLINE MODE: Try normal processing first, fallback to offline
-  //   try {
-  //     final orderId = await ApiService.createOrderFromMap(orderData);
-
-  //     print(
-  //       '✅ Order placed successfully online: $orderId for type: $_actualOrderType',
-  //     );
-
-  //     // Show success popup immediately after order placement
-  //     if (mounted) {
-  //       CustomPopupService.show(
-  //         context,
-  //         "Order placed successfully",
-  //         type: PopupType.success,
-  //       );
-  //       _clearOrderState();
-  //     }
-
-  //     // Refresh provider in background (don't await to avoid UI delay)
-  //     eposOrdersProvider.refresh().catchError((error) {
-  //       print('⚠️ Background refresh failed after order placement: $error');
-  //     });
-  //   } catch (e) {
-  //     print('❌ Online order placement failed: $e');
-
-  //     // FALLBACK: Try to save offline if online fails
-  //     try {
-  //       print('🔄 Attempting to save order offline as fallback...');
-
-  //       final offlineOrder = await OfflineOrderManager.createOfflineOrder(
-  //         cartItems: _cartItems,
-  //         paymentType: _selectedPaymentType,
-  //         orderType: _actualOrderType,
-  //         orderTotalPrice: orderData['total_price'] as double,
-  //         orderExtraNotes: orderData['order_extra_notes'] as String?,
-  //         customerName: _customerDetails?.name ?? "Unknown Customer",
-  //         customerEmail: _customerDetails?.email,
-  //         phoneNumber: _customerDetails?.phoneNumber,
-  //         streetAddress: _customerDetails?.streetAddress,
-  //         city: _customerDetails?.city,
-  //         postalCode: _customerDetails?.postalCode,
-  //         changeDue: orderData['change_due'] as double? ?? 0.0,
-  //       );
-
-  //       // Show success popup immediately
-  //       if (mounted) {
-  //         CustomPopupService.show(
-  //           context,
-  //           "Connection failed, order saved offline: ${offlineOrder.transactionId}\nWill be processed when connection is restored",
-  //           type: PopupType.success,
-  //         );
-  //         _clearOrderState();
-  //       }
-
-  //       // Add offline order to the orders list in background
-  //       eposOrdersProvider.addOfflineOrder(offlineOrder).catchError((error) {
-  //         print('⚠️ Background addOfflineOrder failed: $error');
-  //       });
-  //     } catch (offlineError) {
-  //       print('❌ Failed to save order offline: $offlineError');
-  //       if (mounted) {
-  //         CustomPopupService.show(
-  //           context,
-  //           "Failed to place order: $e",
-  //           type: PopupType.failure,
-  //         );
-  //       }
-  //     }
-  //   }
-  // }
 
   void _clearOrderState() {
     setState(() {
@@ -4834,9 +4292,6 @@ class _Page4State extends State<Page4> {
                         setState(() {
                           selectedCategory = index;
                           _searchQuery = '';
-                          _selectedShawarmaSubcategory = 0;
-                          _selectedDealsSubcategory = 0;
-                          _selectedWingsSubcategory = 0;
                         });
                       },
                       child: Column(
