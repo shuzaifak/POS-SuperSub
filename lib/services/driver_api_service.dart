@@ -1,14 +1,14 @@
-// lib/services/driver_api_service.dart
-
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 
 class DriverApiService {
-  static const String baseUrl =
-      "https://corsproxy.io/?https://api.supersubs.uk";
-  static const String alternativeProxy =
-      "https://corsproxy.io/?https://api.supersubs.uk";
+  static const String _apiBase = "https://api.surgechain.co.uk";
+
+  // Helper method to build full URLs
+  static String _buildUrl(String path) {
+    return '$_apiBase$path';
+  }
 
   // Create Driver
   static Future<Map<String, dynamic>> createDriver({
@@ -20,11 +20,8 @@ class DriverApiService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/drivers/create'),
-        headers: {
-          'Content-Type': 'application/json',
-          'x-client-id': 'SuperSub',
-        },
+        Uri.parse(_buildUrl('/drivers/create')),
+        headers: {'Content-Type': 'application/json', 'x-client-id': 'TVP'},
         body: jsonEncode({
           'name': name,
           'email': email,
@@ -58,11 +55,8 @@ class DriverApiService {
   static Future<Map<String, dynamic>> deactivateDriver(String username) async {
     try {
       final response = await http.put(
-        Uri.parse('$baseUrl/drivers/deactivate/$username'),
-        headers: {
-          'Content-Type': 'application/json',
-          'x-client-id': 'SuperSub',
-        },
+        Uri.parse(_buildUrl('/drivers/deactivate/$username')),
+        headers: {'Content-Type': 'application/json', 'x-client-id': 'TVP'},
       );
 
       print('Deactivate Driver Response Status: ${response.statusCode}');
@@ -90,11 +84,8 @@ class DriverApiService {
   ) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/drivers/orders-with-driver/$date'),
-        headers: {
-          'Content-Type': 'application/json',
-          'x-client-id': 'SuperSub',
-        },
+        Uri.parse(_buildUrl('/drivers/orders-with-driver/$date')),
+        headers: {'Content-Type': 'application/json', 'x-client-id': 'TVP'},
       );
 
       print('Get Orders with Driver Response Status: ${response.statusCode}');

@@ -47,12 +47,14 @@ class _CircularTimerState extends State<CircularTimer> {
 
   void _updateElapsedTime() {
     setState(() {
-      // Get current UK time
-      final currentUKTime = UKTimeService.now();
+      // WORKAROUND: Backend sends UK time with Z suffix (should be UTC but isn't)
+      // So we need to compare UK times, not UTC times
+      final DateTime currentUKTime = UKTimeService.now();
 
-      // FIXED: Treat order time as UK local time (ignore the Z suffix)
-      // Database stores UK local time but incorrectly marks it as UTC
-      final orderStartAsUKLocal = DateTime(
+      // The backend incorrectly stores UK local time as UTC
+      // So we need to treat widget.startTime as UK time, not UTC
+      // Extract the time components and create a UK DateTime
+      final DateTime startTimeAsUK = DateTime(
         widget.startTime.year,
         widget.startTime.month,
         widget.startTime.day,
@@ -60,10 +62,20 @@ class _CircularTimerState extends State<CircularTimer> {
         widget.startTime.minute,
         widget.startTime.second,
         widget.startTime.millisecond,
+        widget.startTime.microsecond,
       );
 
-      // Calculate difference using UK local times
-      _elapsed = currentUKTime.difference(orderStartAsUKLocal);
+      // Calculate difference using UK timestamps
+      _elapsed = currentUKTime.difference(startTimeAsUK);
+
+      // Debug logging to verify time calculation
+      print('⏰ CircularTimer Time Check:');
+      print('   Order CreatedAt (from backend): ${widget.startTime}');
+      print('   StartTime as UK local: $startTimeAsUK');
+      print('   Current UK Time: $currentUKTime');
+      print('   Calculated Elapsed: $_elapsed');
+      print('   Elapsed in Minutes: ${_elapsed.inMinutes} minutes');
+      print('   Elapsed in Seconds: ${_elapsed.inSeconds} seconds');
     });
   }
 

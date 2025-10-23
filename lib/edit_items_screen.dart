@@ -18,14 +18,19 @@ class _EditItemsScreenState extends State<EditItemsScreen> {
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
   bool _showAddItemModal = false;
+  bool _isEditMode = false; // Track if we're in edit mode
+  FoodItem? _editingItem; // Store the item being edited
+  bool _isSubmitting = false; // Track if form is being submitted
 
   // Add item form variables
   final TextEditingController _itemNameController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
-  String _addItemSelectedCategory = 'Pizza';
+  String _addItemSelectedCategory = '';
   String? _addItemSelectedSubtype;
   bool _websiteEnabled = false;
   Map<String, double> _priceOptions = {};
+  Map<String, TextEditingController> _priceControllers =
+      {}; // Controllers for price fields
   Set<String> _selectedToppings = {};
 
   // Available toppings from food_item_details_model.dart
@@ -82,6 +87,10 @@ class _EditItemsScreenState extends State<EditItemsScreen> {
     _searchController.dispose();
     _itemNameController.dispose();
     _descriptionController.dispose();
+    // Dispose all price controllers
+    for (var controller in _priceControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -97,40 +106,32 @@ class _EditItemsScreenState extends State<EditItemsScreen> {
   }
 
   String _getCategoryIcon(String categoryName) {
+    // Map category names to their respective icon paths for SuperSub
     switch (categoryName.toUpperCase()) {
-      case 'DEALS':
-        return 'assets/images/deals.png';
-      case 'PIZZA':
-        return 'assets/images/PizzasS.png';
-      case 'SHAWARMAS':
-      case 'SHAWARMA':
-        return 'assets/images/ShawarmaS.png';
-      case 'BURGERS':
-        return 'assets/images/BurgersS.png';
-      case 'CALZONES':
-        return 'assets/images/CalzonesS.png';
-      case 'GARLICBREAD':
-        return 'assets/images/GarlicBreadS.png';
+      case 'BREAKFAST':
+        return 'assets/images/breakfast.png';
+      case 'SANDWICHES':
+        return 'assets/images/sandwiches.png';
       case 'WRAPS':
         return 'assets/images/WrapsS.png';
-      case 'KIDSMEAL':
-        return 'assets/images/KidsMealS.png';
+      case 'SALADS':
+        return 'assets/images/salads.png';
+      case 'BOWLS':
+        return 'assets/images/bowls.png';
       case 'SIDES':
         return 'assets/images/SidesS.png';
-      case 'DRINKS':
+      case 'SOFTDRINKS':
         return 'assets/images/DrinksS.png';
-      case 'MILKSHAKE':
-        return 'assets/images/MilkshakeS.png';
-      case 'DIPS':
-        return 'assets/images/DipsS.png';
-      case 'COFFEE':
-        return 'assets/images/Coffee.png';
-      case 'CAKE':
-      case 'CAKES':
+      case 'HOTDRINKS':
+        return 'assets/images/hotdrinks.png';
       case 'DESSERTS':
         return 'assets/images/Desserts.png';
+      case 'CRISPS':
+        return 'assets/images/crisps.png';
+      case 'REDBULLENERGY':
+        return 'assets/images/DrinksS.png';
       default:
-        return 'assets/images/default.png';
+        return 'assets/images/breakfast.png'; // Default fallback to breakfast icon
     }
   }
 
@@ -639,6 +640,61 @@ class _EditItemsScreenState extends State<EditItemsScreen> {
                                                     ],
                                                   ),
                                                 ),
+                                                // Delete button
+                                                GestureDetector(
+                                                  onTap: () {
+                                                    _deleteItem(item);
+                                                  },
+                                                  child: Container(
+                                                    padding:
+                                                        const EdgeInsets.all(8),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.red.shade50,
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            8,
+                                                          ),
+                                                      border: Border.all(
+                                                        color: Colors.red,
+                                                        width: 1,
+                                                      ),
+                                                    ),
+                                                    child: Icon(
+                                                      Icons.delete,
+                                                      color: Colors.red,
+                                                      size: 20,
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                // Edit button
+                                                GestureDetector(
+                                                  onTap: () {
+                                                    _openEditModal(item);
+                                                  },
+                                                  child: Container(
+                                                    padding:
+                                                        const EdgeInsets.all(8),
+                                                    decoration: BoxDecoration(
+                                                      color:
+                                                          Colors.grey.shade100,
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            8,
+                                                          ),
+                                                      border: Border.all(
+                                                        color: Colors.black,
+                                                        width: 1,
+                                                      ),
+                                                    ),
+                                                    child: Icon(
+                                                      Icons.edit,
+                                                      color: Colors.black,
+                                                      size: 20,
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 12),
                                                 // Availability toggle
                                                 Column(
                                                   children: [
@@ -702,20 +758,63 @@ class _EditItemsScreenState extends State<EditItemsScreen> {
                   color: Colors.black.withOpacity(0.5),
                   child: SafeArea(
                     child: Center(
-                      child: Container(
-                        width: MediaQuery.of(context).size.width * 0.9,
-                        height: MediaQuery.of(context).size.height * 0.8,
-                        constraints: BoxConstraints(maxWidth: 600),
-                        margin: EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 50,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.black, width: 1),
-                        ),
-                        child: _buildAddItemModal(),
+                      child: Stack(
+                        children: [
+                          Container(
+                            width: MediaQuery.of(context).size.width * 0.9,
+                            height: MediaQuery.of(context).size.height * 0.8,
+                            constraints: BoxConstraints(maxWidth: 600),
+                            margin: EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 50,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.black, width: 1),
+                            ),
+                            child: _buildAddItemModal(),
+                          ),
+                          // Loading overlay
+                          if (_isSubmitting)
+                            Positioned.fill(
+                              child: Container(
+                                margin: EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 50,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.6),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Center(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      CircularProgressIndicator(
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                              Colors.white,
+                                            ),
+                                        strokeWidth: 3,
+                                      ),
+                                      SizedBox(height: 16),
+                                      Text(
+                                        _isEditMode
+                                            ? 'Updating item...'
+                                            : 'Adding item...',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   ),
@@ -725,6 +824,62 @@ class _EditItemsScreenState extends State<EditItemsScreen> {
         ),
       ),
     );
+  }
+
+  void _deleteItem(FoodItem item) {
+    // Show confirmation dialog
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Delete Item'),
+          content: Text(
+            'Are you sure you want to delete "${item.name}"?\n\nThis action cannot be undone.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close dialog
+              },
+              child: Text(
+                'Cancel',
+                style: TextStyle(color: Colors.grey.shade700),
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close dialog
+                _performDelete(item);
+              },
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: Text(
+                'Delete',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _performDelete(FoodItem item) async {
+    print('🗑️ Delete item requested: ${item.name} (ID: ${item.id})');
+
+    try {
+      // Call the provider's delete method
+      final itemProvider = Provider.of<ItemAvailabilityProvider>(
+        context,
+        listen: false,
+      );
+      await itemProvider.deleteItem(context, item.id);
+
+      // Success message is already shown by the provider
+      print('🗑️ Item ${item.name} successfully removed from POS');
+    } catch (e) {
+      print('🗑️ Failed to delete item ${item.name}: $e');
+      // Error message is already shown by the provider
+    }
   }
 
   Widget _buildHeader() {
@@ -778,11 +933,7 @@ class _EditItemsScreenState extends State<EditItemsScreen> {
           const SizedBox(width: 16),
           // Add Item button
           GestureDetector(
-            onTap: () {
-              setState(() {
-                _showAddItemModal = true;
-              });
-            },
+            onTap: _openAddModal,
             child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -799,6 +950,23 @@ class _EditItemsScreenState extends State<EditItemsScreen> {
 
   Widget _buildAddItemModal() {
     final availableCategories = _getAvailableCategoriesForAddItem();
+    final fallbackCategory =
+        availableCategories.isNotEmpty ? availableCategories.first : '';
+
+    if ((_addItemSelectedCategory.isEmpty && fallbackCategory.isNotEmpty) ||
+        (fallbackCategory.isNotEmpty &&
+            _addItemSelectedCategory != fallbackCategory &&
+            !availableCategories.contains(_addItemSelectedCategory))) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() {
+          _addItemSelectedCategory = fallbackCategory;
+          _addItemSelectedSubtype = null;
+          _priceOptions.clear();
+          _selectedToppings.clear();
+        });
+      });
+    }
 
     return Column(
       children: [
@@ -812,10 +980,14 @@ class _EditItemsScreenState extends State<EditItemsScreen> {
           ),
           child: Row(
             children: [
-              Icon(Icons.add_circle, color: Colors.black, size: 24),
+              Icon(
+                _isEditMode ? Icons.edit : Icons.add_circle,
+                color: Colors.black,
+                size: 24,
+              ),
               SizedBox(width: 8),
               Text(
-                'Add New Item',
+                _isEditMode ? 'Edit Item' : 'Add New Item',
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
@@ -827,6 +999,8 @@ class _EditItemsScreenState extends State<EditItemsScreen> {
                 onTap: () {
                   setState(() {
                     _showAddItemModal = false;
+                    _isEditMode = false;
+                    _editingItem = null;
                     _resetAddItemForm();
                   });
                 },
@@ -916,17 +1090,64 @@ class _EditItemsScreenState extends State<EditItemsScreen> {
   void _resetAddItemForm() {
     _itemNameController.clear();
     _descriptionController.clear();
-    _addItemSelectedCategory = 'Pizza';
+    final availableCategories = _getAvailableCategoriesForAddItem();
+    if (availableCategories.isNotEmpty) {
+      _addItemSelectedCategory = availableCategories.first;
+    } else {
+      _addItemSelectedCategory = '';
+    }
     _addItemSelectedSubtype = null;
     _websiteEnabled = false;
     _priceOptions.clear();
     _selectedToppings.clear();
+    // Clear all price controllers
+    for (var controller in _priceControllers.values) {
+      controller.clear();
+    }
+  }
+
+  void _openEditModal(FoodItem item) {
+    setState(() {
+      _isEditMode = true;
+      _editingItem = item;
+      _showAddItemModal = true;
+
+      // Pre-fill form with item data
+      _itemNameController.text = item.name;
+      _descriptionController.text = item.description ?? '';
+      _addItemSelectedCategory = item.category;
+      _addItemSelectedSubtype = item.subType;
+      // Note: FoodItem model doesn't include 'website' field, defaulting to true
+      // The backend stores this but Flutter model doesn't expose it
+      _websiteEnabled = true;
+      _priceOptions = Map<String, double>.from(item.price);
+      _selectedToppings = Set<String>.from(item.defaultToppings ?? []);
+
+      // Initialize price controllers with existing prices from the item
+      // Clear existing controllers first
+      for (var controller in _priceControllers.values) {
+        controller.dispose();
+      }
+      _priceControllers.clear();
+
+      // Create and populate controllers for each price option from the item
+      item.price.forEach((key, value) {
+        _priceControllers[key] = TextEditingController(text: value.toString());
+      });
+    });
+  }
+
+  void _openAddModal() {
+    setState(() {
+      _isEditMode = false;
+      _editingItem = null;
+      _showAddItemModal = true;
+      _resetAddItemForm();
+    });
   }
 
   bool _shouldShowSubtype() {
-    return _addItemSelectedCategory == 'Pizza' ||
-        _addItemSelectedCategory == 'Shawarma' ||
-        _addItemSelectedCategory == 'Wings';
+    return _getSubtypesForCategory(_addItemSelectedCategory).isNotEmpty;
   }
 
   bool _shouldShowToppings() {
@@ -1017,6 +1238,17 @@ class _EditItemsScreenState extends State<EditItemsScreen> {
   Widget _buildSubtypeSection() {
     List<String> subtypes = _getSubtypesForCategory(_addItemSelectedCategory);
 
+    if (_addItemSelectedSubtype != null &&
+        !subtypes.contains(_addItemSelectedSubtype)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() {
+          _addItemSelectedSubtype = null;
+          _priceOptions.clear();
+        });
+      });
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1036,7 +1268,10 @@ class _EditItemsScreenState extends State<EditItemsScreen> {
             border: Border.all(color: Colors.black, width: 1),
           ),
           child: DropdownButtonFormField<String>(
-            value: _addItemSelectedSubtype,
+            value:
+                subtypes.contains(_addItemSelectedSubtype)
+                    ? _addItemSelectedSubtype
+                    : null,
             decoration: InputDecoration(
               border: InputBorder.none,
               contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1063,22 +1298,27 @@ class _EditItemsScreenState extends State<EditItemsScreen> {
   }
 
   List<String> _getSubtypesForCategory(String category) {
-    switch (category) {
-      case 'Pizza':
-        return [
-          'Pizza',
-          'Pizze speciali',
-          'Pizze le saporite',
-          'BBQ Pizza',
-          'Fish Pizza',
-        ];
-      case 'Shawarma':
-        return ['Donner & Shawarma kebab', 'Shawarma & kebab tray'];
-      case 'Wings':
-        return ['Wings', 'BBQ Wings'];
-      default:
-        return [];
+    if (category.isEmpty) {
+      return [];
     }
+
+    final provider = Provider.of<ItemAvailabilityProvider>(
+      context,
+      listen: false,
+    );
+    final uniqueSubtypes = <String>{};
+
+    for (final item in provider.allItems) {
+      if (item.category == category) {
+        final subtype = item.subType?.trim();
+        if (subtype != null && subtype.isNotEmpty) {
+          uniqueSubtypes.add(subtype);
+        }
+      }
+    }
+
+    final subtypeList = uniqueSubtypes.toList()..sort();
+    return subtypeList;
   }
 
   Widget _buildItemNameSection() {
@@ -1157,7 +1397,27 @@ class _EditItemsScreenState extends State<EditItemsScreen> {
   }
 
   Widget _buildPriceSection() {
-    Map<String, double> defaultPrices = _getDefaultPricesForCategory();
+    // Determine which price options to display
+    Map<String, double> pricesToDisplay;
+
+    if (_isEditMode && _priceOptions.isNotEmpty) {
+      // In edit mode, show the item's existing price options
+      pricesToDisplay = _priceOptions;
+    } else {
+      // In add mode, show default prices for the category
+      pricesToDisplay = _getDefaultPricesForCategory();
+    }
+
+    // Initialize controllers for any missing price options (for add mode)
+    for (var key in pricesToDisplay.keys) {
+      if (!_priceControllers.containsKey(key)) {
+        // Create new controller with existing value if available
+        final existingValue = _priceOptions[key];
+        _priceControllers[key] = TextEditingController(
+          text: existingValue != null ? existingValue.toString() : '',
+        );
+      }
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1181,7 +1441,7 @@ class _EditItemsScreenState extends State<EditItemsScreen> {
             padding: EdgeInsets.all(12),
             child: Column(
               children:
-                  defaultPrices.entries.map((entry) {
+                  pricesToDisplay.entries.map((entry) {
                     return Padding(
                       padding: EdgeInsets.only(bottom: 8),
                       child: Row(
@@ -1206,6 +1466,7 @@ class _EditItemsScreenState extends State<EditItemsScreen> {
                                 border: Border.all(color: Colors.grey.shade300),
                               ),
                               child: TextField(
+                                controller: _priceControllers[entry.key],
                                 keyboardType: TextInputType.numberWithOptions(
                                   decimal: true,
                                 ),
@@ -1257,6 +1518,8 @@ class _EditItemsScreenState extends State<EditItemsScreen> {
         "16 inch": 13.99,
         "18 inch": 18.99,
       };
+    } else if (_addItemSelectedCategory.toLowerCase() == 'sandwiches') {
+      return {"6 inch": 4.99, "12 inch": 6.99};
     } else if (_addItemSelectedCategory == 'Burgers') {
       return {"1/2 lb": 5.95, "1/4 lb": 3.99};
     } else if (_addItemSelectedCategory == 'Shawarma') {
@@ -1265,6 +1528,10 @@ class _EditItemsScreenState extends State<EditItemsScreen> {
       } else if (_addItemSelectedSubtype == 'Shawarma & kebab tray') {
         return {"Large": 5.49, "Small": 4.49};
       }
+    } else if (_addItemSelectedCategory == 'Shinwari Karahi' ||
+        _addItemSelectedCategory == 'Special Butt Karahi') {
+      // Karahi items come in 1 kg and 1/2 kg sizes
+      return {"1 kg": 24.99, "1/2 kg": 14.99};
     }
     return {"default": 0.0}; // For other categories - single price as "default"
   }
@@ -1372,6 +1639,8 @@ class _EditItemsScreenState extends State<EditItemsScreen> {
             onTap: () {
               setState(() {
                 _showAddItemModal = false;
+                _isEditMode = false;
+                _editingItem = null;
                 _resetAddItemForm();
               });
             },
@@ -1396,7 +1665,7 @@ class _EditItemsScreenState extends State<EditItemsScreen> {
         SizedBox(width: 16),
         Expanded(
           child: GestureDetector(
-            onTap: _submitAddItem,
+            onTap: _isEditMode ? _submitEditItem : _submitAddItem,
             child: Container(
               padding: EdgeInsets.symmetric(vertical: 12),
               decoration: BoxDecoration(
@@ -1404,7 +1673,7 @@ class _EditItemsScreenState extends State<EditItemsScreen> {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                'Add Item',
+                _isEditMode ? 'Update Item' : 'Add Item',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
@@ -1447,6 +1716,11 @@ class _EditItemsScreenState extends State<EditItemsScreen> {
       return;
     }
 
+    // Show loading
+    setState(() {
+      _isSubmitting = true;
+    });
+
     try {
       final provider = Provider.of<ItemAvailabilityProvider>(
         context,
@@ -1478,7 +1752,10 @@ class _EditItemsScreenState extends State<EditItemsScreen> {
 
       // Close modal and reset form
       setState(() {
+        _isSubmitting = false;
         _showAddItemModal = false;
+        _isEditMode = false;
+        _editingItem = null;
         _resetAddItemForm();
       });
 
@@ -1488,9 +1765,112 @@ class _EditItemsScreenState extends State<EditItemsScreen> {
         type: PopupType.success,
       );
     } catch (e) {
+      setState(() {
+        _isSubmitting = false;
+      });
       CustomPopupService.show(
         context,
         'Failed to add item: $e',
+        type: PopupType.failure,
+      );
+    }
+  }
+
+  void _submitEditItem() async {
+    // Validation
+    if (_itemNameController.text.trim().isEmpty) {
+      CustomPopupService.show(
+        context,
+        'Please enter item name',
+        type: PopupType.failure,
+      );
+      return;
+    }
+
+    if (_shouldShowSubtype() && _addItemSelectedSubtype == null) {
+      CustomPopupService.show(
+        context,
+        'Please select a subtype',
+        type: PopupType.failure,
+      );
+      return;
+    }
+
+    if (_priceOptions.isEmpty) {
+      CustomPopupService.show(
+        context,
+        'Please enter at least one price option',
+        type: PopupType.failure,
+      );
+      return;
+    }
+
+    if (_editingItem == null) {
+      CustomPopupService.show(
+        context,
+        'Error: No item selected for editing',
+        type: PopupType.failure,
+      );
+      return;
+    }
+
+    // Show loading
+    setState(() {
+      _isSubmitting = true;
+    });
+
+    try {
+      final provider = Provider.of<ItemAvailabilityProvider>(
+        context,
+        listen: false,
+      );
+
+      // Transform price options for single-price items
+      Map<String, double> finalPriceOptions;
+      if (_priceOptions.length == 1 &&
+          _priceOptions.keys.first.toLowerCase() == 'default') {
+        // For single price items, use "default" key
+        finalPriceOptions = {"default": _priceOptions.values.first};
+      } else {
+        // For multi-price items, use as-is
+        finalPriceOptions = _priceOptions;
+      }
+
+      // Call the provider method to update the item
+      await provider.updateItem(
+        context: context,
+        itemId: _editingItem!.id,
+        itemName: _itemNameController.text.trim(),
+        type: _addItemSelectedCategory, // Category as type
+        description: _descriptionController.text.trim(),
+        priceOptions: finalPriceOptions,
+        toppings: _selectedToppings.toList(),
+        website: _websiteEnabled,
+        availability: _editingItem!.availability,
+        subtype: _addItemSelectedSubtype,
+      );
+
+      // Close modal and reset form
+      setState(() {
+        _isSubmitting = false;
+        _showAddItemModal = false;
+        _isEditMode = false;
+        _editingItem = null;
+        _resetAddItemForm();
+      });
+
+      CustomPopupService.show(
+        context,
+        'Item updated successfully!',
+        type: PopupType.success,
+      );
+    } catch (e) {
+      setState(() {
+        _isSubmitting = false;
+      });
+      CustomPopupService.show(
+        context,
+        'Failed to update item: $e',
         type: PopupType.failure,
       );
     }

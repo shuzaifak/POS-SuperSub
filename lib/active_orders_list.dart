@@ -139,41 +139,32 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
   }
 
   String _getCategoryIcon(String categoryName) {
+    // Map category names to their respective icon paths for SuperSub
     switch (categoryName.toUpperCase()) {
-      case 'DEALS':
-        return 'assets/images/deals.png';
-      case 'PIZZA':
-        return 'assets/images/PizzasS.png';
-      case 'SHAWARMAS':
-        return 'assets/images/ShawarmaS.png';
-      case 'BURGERS':
-        return 'assets/images/BurgersS.png';
-      case 'CALZONES':
-        return 'assets/images/CalzonesS.png';
-      case 'GARLICBREAD':
-        return 'assets/images/GarlicBreadS.png';
+      case 'BREAKFAST':
+        return 'assets/images/breakfast.png';
+      case 'SANDWICHES':
+        return 'assets/images/sandwiches.png';
       case 'WRAPS':
         return 'assets/images/WrapsS.png';
-      case 'KIDSMEAL':
-        return 'assets/images/KidsMealS.png';
+      case 'SALADS':
+        return 'assets/images/salads.png';
+      case 'BOWLS':
+        return 'assets/images/bowls.png';
       case 'SIDES':
         return 'assets/images/SidesS.png';
-      case 'DRINKS':
+      case 'SOFTDRINKS':
         return 'assets/images/DrinksS.png';
-      case 'MILKSHAKE':
-        return 'assets/images/MilkshakeS.png';
-      case 'DIPS':
-        return 'assets/images/DipsS.png';
+      case 'HOTDRINKS':
+        return 'assets/images/hotdrinks.png';
       case 'DESSERTS':
         return 'assets/images/Desserts.png';
-      case 'CHICKEN':
-        return 'assets/images/Chicken.png';
-      case 'KEBABS':
-        return 'assets/images/Kebabs.png';
-      case 'WINGS':
-        return 'assets/images/Wings.png';
+      case 'CRISPS':
+        return 'assets/images/crisps.png';
+      case 'REDBULLENERGY':
+        return 'assets/images/DrinksS.png';
       default:
-        return 'assets/images/default.png';
+        return 'assets/images/breakfast.png'; // Default fallback to breakfast icon
     }
   }
 

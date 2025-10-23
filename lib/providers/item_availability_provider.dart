@@ -23,7 +23,8 @@ class ItemAvailabilityProvider with ChangeNotifier {
     fetchItems();
   }
 
-  List<FoodItem> get allItems => _allItems;
+  // Filter to show only items where pos is true
+  List<FoodItem> get allItems => _allItems.where((item) => item.pos).toList();
   bool get isLoading => _isLoading;
   String? get error => _error;
 
@@ -214,6 +215,139 @@ class ItemAvailabilityProvider with ChangeNotifier {
       }
 
       // Re-throw the error so the UI can handle it appropriately
+      rethrow;
+    }
+  }
+
+  // Method to update an existing item
+  Future<void> updateItem({
+    required BuildContext context,
+    required int itemId,
+    required String itemName,
+    required String type,
+    required String description,
+    required Map<String, double> priceOptions,
+    required List<String> toppings,
+    required bool website,
+    required bool availability,
+    String? subtype,
+  }) async {
+    try {
+      // Call the API service to update the item
+      final response = await ApiService.updateItem(
+        itemId: itemId,
+        itemName: itemName,
+        type: type,
+        description: description,
+        price: priceOptions, // Send as JSONB field
+        toppings: toppings,
+        website: website,
+        availability: availability,
+        subtype: subtype,
+      );
+
+      print('ItemAvailabilityProvider: Item updated successfully: $response');
+
+      // Refresh the items list to reflect the changes
+      await fetchItems();
+
+      if (context.mounted) {
+        CustomPopupService.show(
+          context,
+          'Item "$itemName" updated successfully!',
+          type: PopupType.success,
+        );
+      }
+    } catch (e) {
+      print('ItemAvailabilityProvider: Failed to update item: $e');
+
+      if (context.mounted) {
+        CustomPopupService.show(
+          context,
+          'Failed to update item: ${e.toString()}',
+          type: PopupType.failure,
+        );
+      }
+
+      // Re-throw the error so the UI can handle it appropriately
+      rethrow;
+    }
+  }
+
+  // Method to delete/disable item from POS
+  Future<void> deleteItem(BuildContext context, int itemId) async {
+    try {
+      final int itemIndex = _allItems.indexWhere((item) => item.id == itemId);
+      if (itemIndex == -1) {
+        if (context.mounted) {
+          CustomPopupService.show(
+            context,
+            'Item not found in list.',
+            type: PopupType.failure,
+          );
+        }
+        return;
+      }
+
+      // Store original item for potential rollback
+      final FoodItem originalItem = _allItems[itemIndex];
+
+      // Optimistically update item to pos: false (hide from POS)
+      final FoodItem updatedItem = originalItem.copyWith(pos: false);
+      _allItems[itemIndex] = updatedItem;
+      notifyListeners(); // This will trigger the filter and hide the item
+
+      print(
+        'ItemAvailabilityProvider: Optimistically disabled ${originalItem.name} from POS',
+      );
+
+      try {
+        // Make API call to disable item from POS
+        await ApiService.disableItemFromPOS(
+          itemId,
+        ).timeout(const Duration(seconds: 15));
+
+        print(
+          'ItemAvailabilityProvider: Server confirmed ${originalItem.name} disabled from POS',
+        );
+
+        if (context.mounted) {
+          CustomPopupService.show(
+            context,
+            '${originalItem.name} removed from POS!',
+            type: PopupType.success,
+          );
+        }
+      } catch (e) {
+        // Rollback on failure - restore original item
+        _allItems[itemIndex] = originalItem;
+        notifyListeners();
+
+        print(
+          'ItemAvailabilityProvider: Failed to disable ${originalItem.name} from POS: $e',
+        );
+
+        if (context.mounted) {
+          CustomPopupService.show(
+            context,
+            'Failed to remove item from POS: ${e.toString()}',
+            type: PopupType.failure,
+          );
+        }
+
+        rethrow;
+      }
+    } catch (e) {
+      print('ItemAvailabilityProvider: Delete operation failed: $e');
+
+      if (context.mounted) {
+        CustomPopupService.show(
+          context,
+          'Failed to delete item: ${e.toString()}',
+          type: PopupType.failure,
+        );
+      }
+
       rethrow;
     }
   }

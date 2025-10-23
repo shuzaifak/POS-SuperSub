@@ -18,6 +18,7 @@ import 'package:epos/customer_details_widget.dart';
 import 'package:epos/payment_details_widget.dart';
 import 'package:epos/settings_screen.dart';
 import 'package:epos/models/order_models.dart';
+import 'package:epos/models/order.dart' as order_model;
 import 'package:provider/provider.dart';
 import 'package:epos/providers/order_counts_provider.dart';
 import 'package:epos/providers/epos_orders_provider.dart';
@@ -26,6 +27,7 @@ import 'package:epos/discount_page.dart';
 import 'package:epos/services/custom_popup_service.dart';
 import 'package:epos/providers/item_availability_provider.dart';
 import 'package:epos/providers/offline_provider.dart';
+import 'package:epos/providers/payment_link_provider.dart';
 import 'package:epos/services/offline_order_manager.dart';
 import 'package:epos/services/uk_time_service.dart';
 
@@ -33,12 +35,18 @@ class Page4 extends StatefulWidget {
   final String? initialSelectedServiceImage;
   final List<FoodItem> foodItems;
   final String selectedOrderType;
+  final bool editMode;
+  final int? orderId;
+  final order_model.Order? existingOrder;
 
   const Page4({
     super.key,
     this.initialSelectedServiceImage,
     required this.foodItems,
     required this.selectedOrderType,
+    this.editMode = false,
+    this.orderId,
+    this.existingOrder,
   });
 
   @override
@@ -51,6 +59,11 @@ class _Page4State extends State<Page4> {
   String _takeawaySubType = 'takeaway';
   bool isLoading = false;
   bool _isProcessingPayment = false;
+  bool _isSendingPaymentLink = false;
+  bool _isEditMode = false;
+  int? _editingOrderId;
+  order_model.Order? _existingOrder;
+  String? _currentOrderStatus;
   final List<CartItem> _cartItems = [];
   bool _isModalOpen = false;
   FoodItem? _modalFoodItem;
@@ -90,6 +103,20 @@ class _Page4State extends State<Page4> {
       TextEditingController();
   final GlobalKey<FormState> _editFormKey = GlobalKey<FormState>();
   final TextEditingController _pinController = TextEditingController();
+  int _selectedShawarmaSubcategory = 0;
+  final List<String> _shawarmaSubcategories = [
+    'Donner & Shawarma kebab',
+    'Shawarma & kebab trays',
+  ];
+
+  int _selectedWingsSubcategory = 0;
+  List<String> _wingsSubcategories = [];
+
+  int _selectedDealsSubcategory = 0;
+  List<String> _dealsSubcategories = [];
+
+  int _selectedPizzaSubcategory = 0;
+  List<String> _pizzaSubcategories = [];
 
   bool _showAddItemModal = false;
   void _scrollCategoriesLeft() {
@@ -531,12 +558,12 @@ class _Page4State extends State<Page4> {
     Category(name: 'WRAPS', image: 'assets/images/WrapsS.png'),
     Category(name: 'SALADS', image: 'assets/images/salads.png'),
     Category(name: 'BOWLS', image: 'assets/images/bowls.png'),
+    Category(name: 'JACKEDPOTATO', image: 'assets/images/potato.png'),
     Category(name: 'SIDES', image: 'assets/images/SidesS.png'),
     Category(name: 'SOFTDRINKS', image: 'assets/images/DrinksS.png'),
     Category(name: 'HOTDRINKS', image: 'assets/images/hotdrinks.png'),
     Category(name: 'DESSERTS', image: 'assets/images/dessert.png'),
     Category(name: 'CRISPS', image: 'assets/images/crisps.png'),
-    Category(name: 'REDBULLENERGY', image: 'assets/images/DrinksS.png'),
   ];
 
   String _toTitleCase(String text) {
@@ -557,22 +584,77 @@ class _Page4State extends State<Page4> {
   Widget _buildItemDescription(FoodItem item, Color textColor) {
     final description = item.description!;
 
-    // Default description styling for all items
-    return Text(
-      description,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: TextStyle(
-        fontSize: 14,
-        color: textColor.withOpacity(0.7),
-        fontFamily: 'Poppins',
-      ),
-    );
+    // Check if this is a Shawarma & kebab tray item that contains "Tray" text
+    if (item.subType == 'Shawarma & kebab trays' &&
+        description.toLowerCase().contains('tray')) {
+      // Split the description to find "Tray" word and make it bold and larger
+      final words = description.split(' ');
+      List<TextSpan> spans = [];
+
+      for (String word in words) {
+        if (word.toLowerCase().contains('tray')) {
+          // Make "Tray" word bold and larger
+          spans.add(
+            TextSpan(
+              text: '$word ',
+              style: TextStyle(
+                fontSize: 18, // Increased from 14
+                fontWeight: FontWeight.bold, // Made bold
+                color: textColor.withOpacity(0.9), // Slightly more visible
+                fontFamily: 'Poppins',
+              ),
+            ),
+          );
+        } else {
+          // Regular styling for other words
+          spans.add(
+            TextSpan(
+              text: '$word ',
+              style: TextStyle(
+                fontSize: 14,
+                color: textColor.withOpacity(0.7),
+                fontFamily: 'Poppins',
+              ),
+            ),
+          );
+        }
+      }
+
+      return RichText(
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        text: TextSpan(children: spans),
+      );
+    } else {
+      // Default description styling for other items
+      return Text(
+        description,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 14,
+          color: textColor.withOpacity(0.7),
+          fontFamily: 'Poppins',
+        ),
+      );
+    }
   }
 
   @override
   void initState() {
     super.initState();
+
+    _isEditMode = widget.editMode;
+    _editingOrderId = widget.orderId;
+    _existingOrder = widget.existingOrder;
+    _currentOrderStatus = _existingOrder?.status;
+    if (_isEditMode) {
+      print(
+        "Page4: Edit mode enabled"
+        "${_editingOrderId != null ? ' for order $_editingOrderId' : ''}"
+        "${_existingOrder != null ? ' (existing order data supplied)' : ''}",
+      );
+    }
 
     // Add automatic recovery mechanism - check for empty items periodically
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -622,30 +704,53 @@ class _Page4State extends State<Page4> {
 
     // Load current state from the provider for the current order type
     _cartItems.clear(); // Clear first to avoid duplicates
-    _cartItems.addAll(stateProvider.cartItems);
-    _customerDetails = stateProvider.customerDetails;
-    _selectedPaymentType = stateProvider.selectedPaymentType;
-    _hasProcessedFirstStep = stateProvider.hasProcessedFirstStep;
-    _showPayment = stateProvider.showPayment;
-    _appliedDiscountPercentage = stateProvider.appliedDiscountPercentage;
-    _discountAmount = stateProvider.discountAmount;
-    _showDiscountPage = stateProvider.showDiscountPage;
-    _wasDiscountPageShown = stateProvider.wasDiscountPageShown;
-    selectedCategory = stateProvider.selectedCategory;
-    _searchQuery = stateProvider.searchQuery;
-    _searchController.text = _searchQuery;
-    _isSearchBarExpanded = stateProvider.isSearchBarExpanded;
+    if (_isEditMode) {
+      _customerDetails = null;
+      _selectedPaymentType = '';
+      _hasProcessedFirstStep = false;
+      _showPayment = false;
+      _appliedDiscountPercentage = 0.0;
+      _discountAmount = 0.0;
+      _showDiscountPage = false;
+      _wasDiscountPageShown = false;
+      selectedCategory = 0;
+      _searchQuery = '';
+      _searchController.text = '';
+      _isSearchBarExpanded = false;
+      _isModalOpen = false;
+      _modalFoodItem = null;
+      _editingCartIndex = null;
+      _editingCommentIndex = null;
+      _commentEditingController.clear();
+    } else {
+      _cartItems.addAll(stateProvider.cartItems);
+      _customerDetails = stateProvider.customerDetails;
+      _selectedPaymentType = stateProvider.selectedPaymentType;
+      _hasProcessedFirstStep = stateProvider.hasProcessedFirstStep;
+      _showPayment = stateProvider.showPayment;
+      _appliedDiscountPercentage = stateProvider.appliedDiscountPercentage;
+      _discountAmount = stateProvider.discountAmount;
+      _showDiscountPage = stateProvider.showDiscountPage;
+      _wasDiscountPageShown = stateProvider.wasDiscountPageShown;
+      selectedCategory = stateProvider.selectedCategory;
+      _searchQuery = stateProvider.searchQuery;
+      _searchController.text = _searchQuery;
+      _isSearchBarExpanded = stateProvider.isSearchBarExpanded;
 
-    // NEW: Load modal state
-    _isModalOpen = stateProvider.isModalOpen;
-    _modalFoodItem = stateProvider.modalFoodItem;
-    _editingCartIndex = stateProvider.editingCartIndex;
+      // NEW: Load modal state
+      _isModalOpen = stateProvider.isModalOpen;
+      _modalFoodItem = stateProvider.modalFoodItem;
+      _editingCartIndex = stateProvider.editingCartIndex;
 
-    // NEW: Load comment editing state
-    _editingCommentIndex = stateProvider.editingCommentIndex;
-    _commentEditingController.text = stateProvider.commentEditingText;
+      // NEW: Load comment editing state
+      _editingCommentIndex = stateProvider.editingCommentIndex;
+      _commentEditingController.text = stateProvider.commentEditingText;
+    }
 
     foodItems = widget.foodItems;
+
+    // Populate Wings and Deals subcategories from food items
+    _populateSubcategories();
 
     print("Page4 initialized with ${foodItems.length} food items");
     print("Page4 Actual Order Type: $_actualOrderType");
@@ -679,6 +784,26 @@ class _Page4State extends State<Page4> {
         _stopEditingComment();
       }
     });
+
+    if (_isEditMode) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_existingOrder != null) {
+          _loadOrderFromExisting(_existingOrder!);
+        } else if (_editingOrderId != null) {
+          _loadOrderForEditing(_editingOrderId!);
+        } else {
+          print(
+            'Page4: Edit mode enabled but no order data or order ID provided.',
+          );
+          CustomPopupService.show(
+            context,
+            'Unable to load order for editing. Missing order ID.',
+            type: PopupType.failure,
+          );
+        }
+      });
+    }
   }
 
   void _saveCurrentState() {
@@ -732,6 +857,512 @@ class _Page4State extends State<Page4> {
     debugPrint('   - Has processed first step: $_hasProcessedFirstStep');
     debugPrint('   - Modal open: $_isModalOpen');
     debugPrint('   - Search query: "$_searchQuery"');
+  }
+
+  void _applyLoadedOrderData({
+    required List<CartItem> items,
+    CustomerDetails? customerDetails,
+    required String paymentType,
+    double? discountPercentage,
+    double? discountAmount,
+    String? status,
+  }) {
+    setState(() {
+      _cartItems
+        ..clear()
+        ..addAll(items);
+      _customerDetails = customerDetails;
+      _selectedPaymentType = paymentType;
+      if (discountPercentage != null) {
+        _appliedDiscountPercentage = discountPercentage;
+      } else {
+        _appliedDiscountPercentage = 0.0;
+      }
+      if (discountAmount != null) {
+        _discountAmount = discountAmount;
+      } else {
+        _discountAmount = 0.0;
+      }
+      // In edit mode, don't set hasProcessedFirstStep to true - show cart first
+      // User must explicitly select payment to see customer details form
+      _hasProcessedFirstStep = _isEditMode ? false : true;
+      _showPayment = false;
+      _showDiscountPage = false;
+      _wasDiscountPageShown =
+          discountPercentage != null && discountPercentage > 0;
+      if (status != null && status.isNotEmpty) {
+        _currentOrderStatus = status;
+      }
+    });
+
+    final stateProvider = Provider.of<Page4StateProvider>(
+      context,
+      listen: false,
+    );
+    stateProvider.updateCartItems(_cartItems);
+    stateProvider.updateCustomerDetails(_customerDetails);
+    stateProvider.updatePaymentType(_selectedPaymentType);
+    // In edit mode, don't mark as processed - user must select payment first
+    stateProvider.updateProcessedFirstStep(_isEditMode ? false : true);
+    stateProvider.updateDiscountState(
+      percentage: discountPercentage,
+      amount: discountAmount,
+    );
+    stateProvider.updateUIState(editMode: true);
+  }
+
+  void _loadOrderFromExisting(order_model.Order order) {
+    print('Page4: Applying existing order data for order ${order.orderId}');
+    print('🔍 DEBUG: Order has ${order.items.length} items');
+    _existingOrder = order;
+    _editingOrderId ??= order.orderId;
+
+    final List<CartItem> loadedItems =
+        order.items.asMap().entries.map((entry) {
+          final int index = entry.key;
+          final orderItem = entry.value;
+
+          print(
+            '🔍 DEBUG: Item $index - description: "${orderItem.description}"',
+          );
+          print(
+            '🔍 DEBUG: Item $index - itemId from OrderItem: ${orderItem.itemId}',
+          );
+          print('🔍 DEBUG: Item $index - itemName: "${orderItem.itemName}"');
+          print(
+            '🔍 DEBUG: Item $index - has nested foodItem: ${orderItem.foodItem != null}',
+          );
+
+          if (orderItem.foodItem != null) {
+            print(
+              '🔍 DEBUG: Item $index - nested foodItem.id: ${orderItem.foodItem!.id}',
+            );
+            print(
+              '🔍 DEBUG: Item $index - nested foodItem.name: "${orderItem.foodItem!.name}"',
+            );
+          }
+
+          final int quantity = orderItem.quantity == 0 ? 1 : orderItem.quantity;
+          final double pricePerUnit =
+              quantity > 0
+                  ? double.parse(
+                    (orderItem.totalPrice / quantity).toStringAsFixed(2),
+                  )
+                  : double.parse(orderItem.totalPrice.toStringAsFixed(2));
+
+          // CRITICAL FIX: Try multiple ways to find the food item
+          FoodItem? resolvedFoodItem = orderItem.foodItem;
+
+          // Try by ID if available
+          if (resolvedFoodItem == null && orderItem.itemId != null) {
+            resolvedFoodItem = _findFoodItemById(orderItem.itemId!);
+            print(
+              '🔍 DEBUG: Item $index - found by ID: ${resolvedFoodItem != null}',
+            );
+          }
+
+          // CRITICAL FIX: If still not found, try by name
+          if (resolvedFoodItem == null && orderItem.itemName.isNotEmpty) {
+            resolvedFoodItem = _findFoodItemByName(orderItem.itemName);
+            print(
+              '🔍 DEBUG: Item $index - found by name "${orderItem.itemName}": ${resolvedFoodItem != null}',
+            );
+            if (resolvedFoodItem != null) {
+              print(
+                '🔍 DEBUG: Item $index - matched to menu item: "${resolvedFoodItem.name}" (id: ${resolvedFoodItem.id})',
+              );
+            }
+          }
+
+          print(
+            '🔍 DEBUG: Item $index - resolvedFoodItem after lookup: ${resolvedFoodItem != null}',
+          );
+          if (resolvedFoodItem != null) {
+            print(
+              '🔍 DEBUG: Item $index - resolvedFoodItem.id: ${resolvedFoodItem.id}',
+            );
+          }
+
+          resolvedFoodItem ??= _createFallbackFoodItemFromOrderItem(
+            orderItem,
+            pricePerUnit,
+          );
+
+          print(
+            '🔍 DEBUG: Item $index - FINAL resolvedFoodItem.id: ${resolvedFoodItem.id}',
+          );
+
+          final List<String> options = _extractOptionsFromDescription(
+            orderItem.description,
+            resolvedFoodItem.name,
+          );
+
+          return CartItem(
+            foodItem: resolvedFoodItem,
+            quantity: quantity,
+            selectedOptions: options.isNotEmpty ? options : null,
+            comment: orderItem.comment,
+            pricePerUnit: pricePerUnit,
+          );
+        }).toList();
+
+    final String customerName =
+        order.customerName.trim().isNotEmpty
+            ? order.customerName.trim()
+            : 'N/A';
+    final String phoneNumber = (order.phoneNumber ?? '').trim();
+
+    final CustomerDetails customerDetails = CustomerDetails(
+      name: customerName,
+      phoneNumber: phoneNumber,
+      email: order.customerEmail,
+      streetAddress: order.streetAddress,
+      city: order.city ?? order.county,
+      postalCode: order.postalCode,
+    );
+
+    _applyLoadedOrderData(
+      items: loadedItems,
+      customerDetails: customerDetails,
+      paymentType: order.paymentType,
+      discountPercentage: null,
+      discountAmount: null,
+      status: order.status,
+    );
+
+    _existingOrder = order;
+
+    if (mounted) {
+      CustomPopupService.show(
+        context,
+        'Order loaded for editing',
+        type: PopupType.success,
+      );
+    }
+  }
+
+  Future<void> _loadOrderForEditing(int orderId) async {
+    print('Page4: Loading order $orderId for editing');
+    final apiService = ApiService();
+
+    try {
+      final orderData = await apiService.fetchOrderById(orderId);
+      if (!mounted) return;
+
+      if (orderData == null) {
+        throw Exception('Order not found');
+      }
+
+      print('🔍 DEBUG: Full order data structure: $orderData');
+
+      final List<CartItem> loadedItems = [];
+      final dynamic rawItems = orderData['items'] ?? orderData['order_items'];
+
+      print('🔍 DEBUG: rawItems type: ${rawItems.runtimeType}');
+      print('🔍 DEBUG: rawItems content: $rawItems');
+
+      if (rawItems is List) {
+        for (int i = 0; i < rawItems.length; i++) {
+          final dynamic rawItem = rawItems[i];
+          print('🔍 DEBUG: Item $i raw data: $rawItem');
+
+          if (rawItem is! Map) continue;
+
+          final Map<String, dynamic> itemMap = Map<String, dynamic>.from(
+            rawItem,
+          );
+
+          print('🔍 DEBUG: Item $i itemMap keys: ${itemMap.keys.toList()}');
+          print(
+            '🔍 DEBUG: Item $i item_id value: ${itemMap['item_id']} (type: ${itemMap['item_id'].runtimeType})',
+          );
+
+          // CRITICAL FIX: Preserve the actual item_id from the order
+          // Try to parse item_id from multiple possible locations
+          int? itemId = _tryParseInt(itemMap['item_id']);
+          print('🔍 DEBUG: Item $i parsed itemId from item_id: $itemId');
+
+          // If not found, try the nested food_item object
+          if (itemId == null && itemMap['food_item'] is Map) {
+            final Map<String, dynamic> nestedFood = Map<String, dynamic>.from(
+              itemMap['food_item'] as Map,
+            );
+            itemId = _tryParseInt(nestedFood['id'] ?? nestedFood['item_id']);
+            print(
+              '🔍 DEBUG: Item $i parsed itemId from nested food_item: $itemId',
+            );
+          }
+
+          // IMPORTANT: Store the original item_id to preserve it
+          final int originalItemId = itemId ?? -1;
+          print('🔍 DEBUG: Item $i final originalItemId: $originalItemId');
+
+          // Try to find matching food item in current menu
+          final FoodItem? matchedFoodItem =
+              itemId != null ? _findFoodItemById(itemId) : null;
+          print(
+            '🔍 DEBUG: Item $i matchedFoodItem found: ${matchedFoodItem != null}',
+          );
+
+          final double totalPrice = _parseToDouble(
+            itemMap['total_price'] ?? itemMap['item_total_price'],
+          );
+          final int quantity = _tryParseInt(itemMap['quantity']) ?? 1;
+          final double pricePerUnit =
+              quantity > 0 ? totalPrice / quantity : totalPrice;
+
+          FoodItem? effectiveFoodItem = matchedFoodItem;
+          if (effectiveFoodItem == null && itemMap['food_item'] is Map) {
+            print(
+              '🔍 DEBUG: Item $i has nested food_item, attempting to parse',
+            );
+            print(
+              '🔍 DEBUG: Item $i nested food_item data: ${itemMap['food_item']}',
+            );
+            try {
+              effectiveFoodItem = FoodItem.fromJson(
+                Map<String, dynamic>.from(itemMap['food_item'] as Map),
+              );
+              print(
+                '🔍 DEBUG: Item $i created FoodItem from nested food_item, id: ${effectiveFoodItem.id}',
+              );
+            } catch (e) {
+              print('🔍 DEBUG: Item $i FAILED to parse nested food_item: $e');
+            }
+          }
+
+          // CRITICAL FIX: Always use originalItemId to preserve the actual item ID
+          final FoodItem resolvedFoodItem =
+              effectiveFoodItem ??
+              _createFallbackFoodItem(itemMap, originalItemId, pricePerUnit);
+
+          print(
+            '🔍 DEBUG: Item $i FINAL resolvedFoodItem.id: ${resolvedFoodItem.id}',
+          );
+          print(
+            '🔍 DEBUG: Item $i FINAL resolvedFoodItem.name: ${resolvedFoodItem.name}',
+          );
+
+          final String description =
+              itemMap['description']?.toString() ??
+              itemMap['item_description']?.toString() ??
+              resolvedFoodItem.name;
+
+          final List<String> options = _extractOptionsFromDescription(
+            description,
+            resolvedFoodItem.name,
+          );
+
+          loadedItems.add(
+            CartItem(
+              foodItem: resolvedFoodItem,
+              quantity: quantity,
+              selectedOptions: options.isNotEmpty ? options : null,
+              comment: itemMap['comment']?.toString(),
+              pricePerUnit: double.parse(pricePerUnit.toStringAsFixed(2)),
+            ),
+          );
+        }
+      }
+
+      final CustomerDetails? loadedCustomerDetails =
+          _buildCustomerDetailsFromOrder(orderData);
+      final double? discountPercentage = _parseNullableDouble(
+        orderData['discount_percentage'],
+      );
+      final double? discountAmount = _parseNullableDouble(
+        orderData['discount_amount'] ?? orderData['discount'],
+      );
+      final String paymentType = orderData['payment_type']?.toString() ?? '';
+
+      _applyLoadedOrderData(
+        items: loadedItems,
+        customerDetails: loadedCustomerDetails,
+        paymentType: paymentType,
+        discountPercentage: discountPercentage,
+        discountAmount: discountAmount,
+        status: orderData['status']?.toString(),
+      );
+
+      if (mounted) {
+        CustomPopupService.show(
+          context,
+          'Order loaded for editing',
+          type: PopupType.success,
+        );
+      }
+    } catch (e) {
+      print('Page4: Error loading order for editing: $e');
+      if (mounted) {
+        CustomPopupService.show(
+          context,
+          'Failed to load order for editing',
+          type: PopupType.failure,
+        );
+      }
+    }
+  }
+
+  Future<void> _updateExistingOrder(PaymentDetails paymentDetails) async {
+    if (_editingOrderId == null) {
+      if (mounted) {
+        CustomPopupService.show(
+          context,
+          'Unable to update order: missing order ID',
+          type: PopupType.failure,
+        );
+      }
+      return;
+    }
+
+    try {
+      print(
+        'Page4: Updating existing order $_editingOrderId with payment type ${paymentDetails.paymentType}',
+      );
+
+      final List<Map<String, dynamic>> itemsPayload =
+          _cartItems.map((cartItem) {
+            final String description = _buildDescriptionForCartItem(cartItem);
+            final double itemTotalPrice = double.parse(
+              (cartItem.pricePerUnit * cartItem.quantity).toStringAsFixed(2),
+            );
+
+            // CRITICAL WARNING: Check if item_id is -1 (invalid)
+            if (cartItem.foodItem.id == -1) {
+              print(
+                '⚠️⚠️⚠️ WARNING: Cart item "${cartItem.foodItem.name}" has invalid item_id = -1!',
+              );
+              print(
+                '⚠️ This will cause the update to fail. Item should have a valid menu item ID.',
+              );
+              print('⚠️ Cart item details: ${cartItem.foodItem.toJson()}');
+            }
+
+            return {
+              "item_id": cartItem.foodItem.id.toString(),
+              "quantity": cartItem.quantity,
+              "description": description,
+              "total_price": itemTotalPrice,
+              if ((cartItem.comment ?? '').isNotEmpty)
+                "comment": cartItem.comment,
+            };
+          }).toList();
+
+      final double itemsSubtotal = itemsPayload.fold<double>(
+        0.0,
+        (sum, item) => sum + (item['total_price'] as double),
+      );
+      final double deliveryChargeAmount =
+          _shouldApplyDeliveryCharge(_actualOrderType, _selectedPaymentType)
+              ? 1.50
+              : 0.0;
+      final double totalBeforeDiscount = double.parse(
+        (itemsSubtotal + deliveryChargeAmount).toStringAsFixed(2),
+      );
+      final double discountAmount = double.parse(
+        _calculateDiscountAmount().toStringAsFixed(2),
+      );
+
+      print('🔄 Updating order $_editingOrderId:');
+      print('   Payment Type: ${paymentDetails.paymentType}');
+      print('   Paid Status: ${paymentDetails.paidStatus}');
+      print('   Total Price: $totalBeforeDiscount');
+
+      final apiService = ApiService();
+      final bool success = await apiService.updateOrderCart(
+        orderId: _editingOrderId!,
+        items: itemsPayload,
+        totalPrice: totalBeforeDiscount,
+        discount: discountAmount,
+        currentStatus: _currentOrderStatus,
+      );
+
+      if (!mounted) return;
+
+      if (success) {
+        // Also update payment status separately using existing API
+        final bool paymentUpdated = await ApiService.markOrderAsPaid(
+          _editingOrderId!,
+          paymentType: paymentDetails.paymentType,
+        );
+
+        if (!mounted) return;
+
+        if (!paymentUpdated) {
+          print('⚠️ Warning: Cart updated but payment status update failed');
+        }
+
+        final stateProvider = Provider.of<Page4StateProvider>(
+          context,
+          listen: false,
+        );
+        stateProvider.resetCurrentOrderType();
+        Navigator.pop(context, true);
+      } else {
+        CustomPopupService.show(
+          context,
+          'Failed to update order',
+          type: PopupType.failure,
+        );
+      }
+    } catch (e) {
+      print('Page4: Error updating order $_editingOrderId: $e');
+      if (mounted) {
+        CustomPopupService.show(
+          context,
+          'Failed to update order',
+          type: PopupType.failure,
+        );
+      }
+    }
+  }
+
+  void _populateSubcategories() {
+    // Extract unique subtypes for Wings category
+    final wingsItems = foodItems.where(
+      (item) => item.category.toLowerCase() == 'wings',
+    );
+    final wingsSubtypes =
+        wingsItems
+            .map((item) => item.subType)
+            .where((subType) => subType != null && subType.trim().isNotEmpty)
+            .map((subType) => subType!.trim())
+            .toSet()
+            .toList();
+    wingsSubtypes.sort(); // Sort alphabetically
+    _wingsSubcategories = wingsSubtypes;
+
+    // Extract unique subtypes for Deals category
+    final dealsItems = foodItems.where(
+      (item) => item.category.toLowerCase() == 'deals',
+    );
+    final dealsSubtypes =
+        dealsItems
+            .map((item) => item.subType)
+            .where((subType) => subType != null && subType.trim().isNotEmpty)
+            .map((subType) => subType!.trim())
+            .toSet()
+            .toList();
+    dealsSubtypes.sort(); // Sort alphabetically
+    _dealsSubcategories = dealsSubtypes;
+
+    // Extract unique subtypes for Pizza category
+    final pizzaItems = foodItems.where(
+      (item) => item.category.toLowerCase() == 'pizza',
+    );
+    final pizzaSubtypes =
+        pizzaItems
+            .map((item) => item.subType)
+            .where((subType) => subType != null && subType.trim().isNotEmpty)
+            .map((subType) => subType!.trim())
+            .toSet()
+            .toList();
+    pizzaSubtypes.sort(); // Sort alphabetically
+    _pizzaSubcategories = pizzaSubtypes;
+
+    print("Page4: Wings subcategories: $_wingsSubcategories");
+    print("Page4: Deals subcategories: $_dealsSubcategories");
+    print("Page4: Pizza subcategories: $_pizzaSubcategories");
   }
 
   void _getLeftPanelDimensions() {
@@ -893,7 +1524,8 @@ class _Page4State extends State<Page4> {
   double _calculateCartItemsTotal() {
     double total = 0.0;
     for (var item in _cartItems) {
-      total += item.pricePerUnit * item.quantity;
+      // Use item.totalPrice to include extraAmount (e.g., rush fees)
+      total += item.totalPrice;
     }
     return total;
   }
@@ -920,6 +1552,268 @@ class _Page4State extends State<Page4> {
   //  Method to get final total after discount
   double _getFinalTotal() {
     return _calculateTotalPrice() - _calculateDiscountAmount();
+  }
+
+  FoodItem? _findFoodItemById(int itemId) {
+    try {
+      return foodItems.firstWhere((item) => item.id == itemId);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  FoodItem? _findFoodItemByName(String itemName) {
+    try {
+      // Try exact match first
+      final exactMatch = foodItems.firstWhere(
+        (item) => item.name.toLowerCase() == itemName.toLowerCase(),
+      );
+      return exactMatch;
+    } catch (_) {
+      // Try partial match (contains)
+      try {
+        final partialMatch = foodItems.firstWhere(
+          (item) =>
+              item.name.toLowerCase().contains(itemName.toLowerCase()) ||
+              itemName.toLowerCase().contains(item.name.toLowerCase()),
+        );
+        return partialMatch;
+      } catch (_) {
+        return null;
+      }
+    }
+  }
+
+  FoodItem _createFallbackFoodItem(
+    Map<String, dynamic> itemMap,
+    int itemId,
+    double pricePerUnit,
+  ) {
+    final String rawDescription =
+        itemMap['description']?.toString() ??
+        itemMap['item_name']?.toString() ??
+        '';
+    final List<String> descriptionLines =
+        rawDescription
+            .split('\n')
+            .map((line) => line.trim())
+            .where((line) => line.isNotEmpty)
+            .toList();
+
+    final String candidateName =
+        itemMap['item_name']?.toString() ??
+        (descriptionLines.isNotEmpty ? descriptionLines.first : rawDescription);
+    final String name =
+        candidateName.isNotEmpty ? candidateName : 'Unknown Item';
+    final String category =
+        itemMap['item_type']?.toString() ??
+        itemMap['type']?.toString() ??
+        'OTHER';
+
+    return FoodItem(
+      id: itemId,
+      name: name,
+      category: category,
+      price: {'default': double.parse(pricePerUnit.toStringAsFixed(2))},
+      image: '',
+      availability: true,
+    );
+  }
+
+  FoodItem _createFallbackFoodItemFromOrderItem(
+    order_model.OrderItem orderItem,
+    double pricePerUnit,
+  ) {
+    final List<String> descriptionLines =
+        orderItem.description
+            .split('\n')
+            .map((line) => line.trim())
+            .where((line) => line.isNotEmpty)
+            .toList();
+
+    final String fallbackFromDescription =
+        descriptionLines.isNotEmpty
+            ? descriptionLines.first
+            : orderItem.description;
+
+    final String candidateName =
+        orderItem.itemName.isNotEmpty
+            ? orderItem.itemName
+            : fallbackFromDescription;
+
+    final String name =
+        candidateName.isNotEmpty ? candidateName : 'Unknown Item';
+
+    final String category =
+        orderItem.itemType.isNotEmpty ? orderItem.itemType : 'OTHER';
+
+    return FoodItem(
+      id: orderItem.itemId ?? -1,
+      name: name,
+      category: category,
+      price: {'default': double.parse(pricePerUnit.toStringAsFixed(2))},
+      image: orderItem.imageUrl ?? '',
+      availability: true,
+    );
+  }
+
+  List<String> _extractOptionsFromDescription(
+    String description,
+    String itemName,
+  ) {
+    final String trimmed = description.trim();
+    if (trimmed.isEmpty) {
+      return [];
+    }
+
+    final List<String> lines =
+        trimmed
+            .split('\n')
+            .map((line) => line.trim())
+            .where((line) => line.isNotEmpty)
+            .toList();
+
+    if (lines.length > 1) {
+      final String normalizedItemName = itemName.trim().toLowerCase();
+      return lines
+          .skip(1)
+          .where((line) => line.trim().toLowerCase() != normalizedItemName)
+          .toList();
+    }
+
+    final int start = trimmed.indexOf('(');
+    final int end = trimmed.lastIndexOf(')');
+    if (start != -1 && end != -1 && end > start) {
+      final String inside = trimmed.substring(start + 1, end);
+      return inside
+          .split(',')
+          .map((option) => option.trim())
+          .where((option) => option.isNotEmpty)
+          .toList();
+    }
+
+    return [];
+  }
+
+  String _buildDescriptionForCartItem(CartItem cartItem) {
+    final List<String> options =
+        cartItem.selectedOptions
+            ?.map((option) => option.trim())
+            .where((option) => option.isNotEmpty)
+            .toList() ??
+        [];
+
+    // Start with item name
+    final StringBuffer buffer = StringBuffer(cartItem.foodItem.name);
+
+    // Add selected options
+    for (final option in options) {
+      buffer.writeln();
+      buffer.write(option);
+    }
+
+    // Add meal deal drink if present
+    if (cartItem.isMealDeal && cartItem.mealDealDrink != null) {
+      buffer.writeln();
+      buffer.write('Drink: ${cartItem.mealDealDrink!.name}');
+    }
+
+    // Add meal deal side if present
+    if (cartItem.isMealDeal && cartItem.mealDealSideType != null) {
+      buffer.writeln();
+      buffer.write('Side: ${cartItem.mealDealSideType}');
+    }
+
+    return buffer.toString();
+  }
+
+  double? _parseNullableDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    if (value is String) {
+      final sanitized = value.replaceAll(RegExp(r'[^0-9\.-]'), '');
+      if (sanitized.isEmpty) return null;
+      return double.tryParse(sanitized);
+    }
+    return null;
+  }
+
+  double _parseToDouble(dynamic value) {
+    return _parseNullableDouble(value) ?? 0.0;
+  }
+
+  int? _tryParseInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) {
+      final sanitized = value.replaceAll(RegExp(r'[^0-9-]'), '');
+      if (sanitized.isEmpty) return null;
+      return int.tryParse(sanitized);
+    }
+    return null;
+  }
+
+  CustomerDetails? _buildCustomerDetailsFromOrder(
+    Map<String, dynamic> orderData,
+  ) {
+    final Map<String, dynamic>? guest =
+        orderData['guest'] is Map
+            ? Map<String, dynamic>.from(orderData['guest'] as Map)
+            : null;
+
+    String name = orderData['customer_name']?.toString() ?? '';
+    if (name.isEmpty) {
+      name = guest?['name']?.toString() ?? '';
+    }
+
+    String phoneNumber = orderData['phone_number']?.toString() ?? '';
+    if (phoneNumber.isEmpty) {
+      phoneNumber =
+          guest?['phone_number']?.toString() ??
+          guest?['phone']?.toString() ??
+          '';
+    }
+
+    String? email = orderData['customer_email']?.toString();
+    email =
+        (email != null && email.isNotEmpty)
+            ? email
+            : guest?['email']?.toString();
+
+    String? streetAddress = orderData['street_address']?.toString();
+    streetAddress =
+        (streetAddress != null && streetAddress.isNotEmpty)
+            ? streetAddress
+            : guest?['street_address']?.toString();
+
+    String? city = orderData['city']?.toString();
+    city =
+        (city != null && city.isNotEmpty) ? city : guest?['city']?.toString();
+
+    String? postalCode = orderData['postal_code']?.toString();
+    postalCode =
+        (postalCode != null && postalCode.isNotEmpty)
+            ? postalCode
+            : guest?['postal_code']?.toString();
+
+    final bool hasBasicInfo =
+        name.isNotEmpty ||
+        phoneNumber.isNotEmpty ||
+        (email?.isNotEmpty ?? false);
+
+    if (!hasBasicInfo) {
+      return null;
+    }
+
+    return CustomerDetails(
+      name: name.isNotEmpty ? name : 'N/A',
+      phoneNumber: phoneNumber.isNotEmpty ? phoneNumber : 'N/A',
+      email: email?.isNotEmpty == true ? email : null,
+      streetAddress: streetAddress?.isNotEmpty == true ? streetAddress : null,
+      city: city?.isNotEmpty == true ? city : null,
+      postalCode: postalCode?.isNotEmpty == true ? postalCode : null,
+    );
   }
 
   String generateTransactionId() {
@@ -1557,182 +2451,246 @@ class _Page4State extends State<Page4> {
 
     return Scaffold(
       backgroundColor: Colors.white,
-      body: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onTap: () {
-          // Dismiss keyboard when tapping outside
-          FocusScope.of(context).unfocus();
-          _searchFocusNode.unfocus();
+      body: Stack(
+        children: [
+          GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: () {
+              // Dismiss keyboard when tapping outside
+              FocusScope.of(context).unfocus();
+              _searchFocusNode.unfocus();
 
-          // Collapse search bar if expanded
-          if (_isSearchBarExpanded) {
-            setState(() {
-              _isSearchBarExpanded = false;
-              _searchController.clear();
-              _searchQuery = '';
-            });
-          }
-        },
-        child: Column(
-          children: [
-            Expanded(
-              child: Stack(
-                children: [
-                  SafeArea(
-                    child: Row(
-                      children: [
-                        Expanded(
-                          key: _leftPanelKey,
-                          flex: 2,
-                          child: Stack(
-                            children: [
-                              Column(
+              // Collapse search bar if expanded
+              if (_isSearchBarExpanded) {
+                setState(() {
+                  _isSearchBarExpanded = false;
+                  _searchController.clear();
+                  _searchQuery = '';
+                });
+              }
+            },
+            child: Column(
+              children: [
+                Expanded(
+                  child: Stack(
+                    children: [
+                      SafeArea(
+                        child: Row(
+                          children: [
+                            Expanded(
+                              key: _leftPanelKey,
+                              flex: 2,
+                              child: Stack(
                                 children: [
-                                  _buildSearchBar(),
-                                  _buildCategoryTabs(),
-                                  const SizedBox(height: 20),
-                                  Container(
-                                    margin: const EdgeInsets.symmetric(
-                                      horizontal: 40,
-                                    ),
-                                    height: 13,
-                                    width: double.infinity,
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFF2D9F9),
-                                      borderRadius: BorderRadius.circular(30),
-                                    ),
+                                  Column(
+                                    children: [
+                                      _buildSearchBar(),
+                                      _buildCategoryTabs(),
+                                      const SizedBox(height: 20),
+                                      Container(
+                                        margin: const EdgeInsets.symmetric(
+                                          horizontal: 40,
+                                        ),
+                                        height: 13,
+                                        width: double.infinity,
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFF2D9F9),
+                                          borderRadius: BorderRadius.circular(
+                                            30,
+                                          ),
+                                        ),
+                                      ),
+                                      _buildShawarmaSubcategoryTabs(),
+                                      Expanded(child: _buildItemGrid()),
+                                    ],
                                   ),
-                                  Expanded(child: _buildItemGrid()),
+
+                                  if (_isModalOpen)
+                                    Positioned.fill(
+                                      child: BackdropFilter(
+                                        filter: ImageFilter.blur(
+                                          sigmaX: 10.0,
+                                          sigmaY: 10.0,
+                                        ),
+                                        child: Container(
+                                          color: Colors.black.withOpacity(0.3),
+                                        ),
+                                      ),
+                                    ),
                                 ],
                               ),
-
-                              if (_isModalOpen)
-                                Positioned.fill(
-                                  child: BackdropFilter(
-                                    filter: ImageFilter.blur(
-                                      sigmaX: 10.0,
-                                      sigmaY: 10.0,
-                                    ),
-                                    child: Container(
-                                      color: Colors.black.withOpacity(0.3),
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                        Padding(
-                          padding:
-                              _isModalOpen
-                                  ? EdgeInsets.zero
-                                  : const EdgeInsets.symmetric(vertical: 20.0),
-                          child: const VerticalDivider(
-                            width: 2.5,
-                            thickness: 2.5,
-                            color: Color(0xFFB2B2B2),
-                          ),
-                        ),
-
-                        Expanded(
-                          flex: 1,
-                          child: Container(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              children: [
-                                Expanded(child: _buildRightPanelContent()),
-                              ],
                             ),
-                          ),
+                            Padding(
+                              padding:
+                                  _isModalOpen
+                                      ? EdgeInsets.zero
+                                      : const EdgeInsets.symmetric(
+                                        vertical: 20.0,
+                                      ),
+                              child: const VerticalDivider(
+                                width: 2.5,
+                                thickness: 2.5,
+                                color: Color(0xFFB2B2B2),
+                              ),
+                            ),
+
+                            Expanded(
+                              flex: 1,
+                              child: Container(
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  children: [
+                                    Expanded(child: _buildRightPanelContent()),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                  ),
+                      ),
 
-                  // FoodItemDetailsModal (positioned over the whole screen but visually over left panel)
-                  if (_isModalOpen &&
-                      _modalFoodItem != null &&
-                      _leftPanelRect != Rect.zero)
-                    Positioned(
-                      left: modalLeftOffset,
-                      top: modalTopOffset,
-                      width: modalActualWidth,
-                      height: modalActualHeight,
-                      child: Consumer<ItemAvailabilityProvider>(
-                        builder: (context, itemProvider, child) {
-                          final List<FoodItem> providerItems =
-                              itemProvider.allItems;
-                          final List<FoodItem> allAvailableItems =
-                              providerItems.isNotEmpty
-                                  ? providerItems
-                                  : (widget.foodItems.isNotEmpty
-                                      ? widget.foodItems
-                                      : foodItems);
+                      // FoodItemDetailsModal (positioned over the whole screen but visually over left panel)
+                      if (_isModalOpen &&
+                          _modalFoodItem != null &&
+                          _leftPanelRect != Rect.zero)
+                        Positioned(
+                          left: modalLeftOffset,
+                          top: modalTopOffset,
+                          width: modalActualWidth,
+                          height: modalActualHeight,
+                          child: Consumer<ItemAvailabilityProvider>(
+                            builder: (context, itemProvider, child) {
+                              final List<FoodItem> providerItems =
+                                  itemProvider.allItems;
+                              final List<FoodItem> allAvailableItems =
+                                  providerItems.isNotEmpty
+                                      ? providerItems
+                                      : (widget.foodItems.isNotEmpty
+                                          ? widget.foodItems
+                                          : foodItems);
 
-                          return FoodItemDetailsModal(
-                            foodItem: _modalFoodItem!,
-                            allFoodItems: allAvailableItems,
-                            onAddToCart: _handleItemAdditionOrUpdate,
-                            onClose: () {
-                              setState(() {
-                                _isModalOpen = false;
-                                _modalFoodItem = null;
-                                _editingCartIndex = null;
-                              });
+                              return FoodItemDetailsModal(
+                                foodItem: _modalFoodItem!,
+                                allFoodItems: allAvailableItems,
+                                onAddToCart: _handleItemAdditionOrUpdate,
+                                onClose: () {
+                                  setState(() {
+                                    _isModalOpen = false;
+                                    _modalFoodItem = null;
+                                    _editingCartIndex = null;
+                                  });
 
-                              // NEW: Save modal state to provider
-                              final stateProvider =
-                                  Provider.of<Page4StateProvider>(
-                                    context,
-                                    listen: false,
+                                  // NEW: Save modal state to provider
+                                  final stateProvider =
+                                      Provider.of<Page4StateProvider>(
+                                        context,
+                                        listen: false,
+                                      );
+                                  stateProvider.updateModalState(
+                                    isOpen: false,
+                                    foodItem: null,
+                                    editingIndex: null,
                                   );
-                              stateProvider.updateModalState(
-                                isOpen: false,
-                                foodItem: null,
-                                editingIndex: null,
+                                },
+                                initialCartItem:
+                                    _editingCartIndex != null &&
+                                            _editingCartIndex! >= 0 &&
+                                            _editingCartIndex! <
+                                                _cartItems.length
+                                        ? _cartItems[_editingCartIndex!]
+                                        : null,
+                                isEditing: _editingCartIndex != null,
                               );
                             },
-                            initialCartItem:
-                                _editingCartIndex != null &&
-                                        _editingCartIndex! >= 0 &&
-                                        _editingCartIndex! < _cartItems.length
-                                    ? _cartItems[_editingCartIndex!]
-                                    : null,
-                            isEditing: _editingCartIndex != null,
-                          );
-                        },
-                      ),
-                    ),
+                          ),
+                        ),
 
-                  // Add Item Modal
-                  if (_showAddItemModal)
-                    Positioned.fill(
-                      child: Container(
-                        color: Colors.black.withOpacity(0.5),
-                        child: Center(
-                          child: SingleChildScrollView(
-                            child: Container(
-                              margin: EdgeInsets.all(20),
-                              constraints: BoxConstraints(
-                                maxWidth: 500,
-                                maxHeight:
-                                    MediaQuery.of(context).size.height * 0.8,
+                      // Add Item Modal
+                      if (_showAddItemModal)
+                        Positioned.fill(
+                          child: Container(
+                            color: Colors.black.withOpacity(0.5),
+                            child: Center(
+                              child: SingleChildScrollView(
+                                child: Container(
+                                  margin: EdgeInsets.all(20),
+                                  constraints: BoxConstraints(
+                                    maxWidth: 500,
+                                    maxHeight:
+                                        MediaQuery.of(context).size.height *
+                                        0.8,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
                         ),
+                    ],
+                  ),
+                ),
+
+                CustomBottomNavBar(
+                  selectedIndex: -1,
+                  onItemSelected: _onBottomNavItemSelected,
+                  showDivider: true,
+                ),
+              ],
+            ),
+          ),
+
+          // Blur overlay when sending payment link
+          if (_isSendingPaymentLink)
+            Positioned.fill(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 5.0, sigmaY: 5.0),
+                child: Container(
+                  color: Colors.black.withOpacity(0.3),
+                  child: Center(
+                    child: Card(
+                      elevation: 8,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(32.0),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const CircularProgressIndicator(
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Color(0xFFCB6CE6),
+                              ),
+                              strokeWidth: 3,
+                            ),
+                            const SizedBox(height: 24),
+                            Text(
+                              'Sending Payment Link...',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                fontFamily: 'Poppins',
+                                color: Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Please wait while we send the payment link to the customer',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontFamily: 'Poppins',
+                                color: Colors.black54,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                ],
+                  ),
+                ),
               ),
             ),
-
-            CustomBottomNavBar(
-              selectedIndex: -1,
-              onItemSelected: _onBottomNavItemSelected,
-              showDivider: true,
-            ),
-          ],
-        ),
+        ],
       ),
     );
   }
@@ -1767,23 +2725,235 @@ class _Page4State extends State<Page4> {
     }
   }
 
+  List<String> _formatDealOptions(List<String> selectedOptions) {
+    List<String> formattedOptions = [];
+
+    // Group options by type
+    List<String> dealFlavours = [];
+    Map<String, List<String>> itemGroups = {};
+    List<String> drinks = [];
+    List<String> sides = [];
+
+    for (String option in selectedOptions) {
+      String lowerOption = option.toLowerCase();
+
+      // Check if this is already a properly formatted Combo Meal or Pizza Offers item
+      if (option.startsWith('Pizza (12"): ') ||
+          option.startsWith('Shawarma: ') ||
+          option.startsWith('Burger: ') ||
+          (option.startsWith('Drink: ') && lowerOption.contains('1.5l')) ||
+          option.startsWith('Size: ') ||
+          option.startsWith('Selected Pizzas: ')) {
+        // Already formatted by Combo Meal or Pizza Offers logic - add as-is
+        formattedOptions.add(option);
+        continue;
+      }
+
+      if (lowerOption.contains('flavour') || lowerOption.contains('flavor')) {
+        dealFlavours.add(option);
+      } else if (lowerOption.contains('shawarma')) {
+        if (!itemGroups.containsKey('Shawarmas')) itemGroups['Shawarmas'] = [];
+        itemGroups['Shawarmas']!.add(option);
+      } else if (lowerOption.contains('pizza')) {
+        if (!itemGroups.containsKey('Pizzas')) itemGroups['Pizzas'] = [];
+        itemGroups['Pizzas']!.add(option);
+      } else if (lowerOption.contains('burger')) {
+        if (!itemGroups.containsKey('Burgers')) itemGroups['Burgers'] = [];
+        itemGroups['Burgers']!.add(option);
+      } else if (lowerOption.contains('drink') ||
+          lowerOption.contains('can') ||
+          lowerOption.contains('bottle') ||
+          lowerOption.contains('pepsi') ||
+          lowerOption.contains('coke') ||
+          lowerOption.contains('sprite') ||
+          lowerOption.contains('1.5l') ||
+          lowerOption.contains('330ml')) {
+        drinks.add(option);
+      } else if (lowerOption.contains('chips') ||
+          lowerOption.contains('fries') ||
+          lowerOption.contains('side')) {
+        sides.add(option);
+      } else {
+        // Add other options as-is for now
+        if (!lowerOption.contains('selected') &&
+            !lowerOption.contains('options')) {
+          if (!itemGroups.containsKey('Items')) itemGroups['Items'] = [];
+          itemGroups['Items']!.add(option);
+        }
+      }
+    }
+
+    // Add deal flavours first
+    formattedOptions.addAll(dealFlavours);
+
+    // Format each group
+    itemGroups.forEach((groupName, items) {
+      if (groupName == 'Shawarmas') {
+        formattedOptions.addAll(_formatShawarmaGroup(items));
+      } else if (groupName == 'Pizzas') {
+        formattedOptions.addAll(_formatPizzaGroup(items));
+      } else if (groupName == 'Burgers') {
+        formattedOptions.addAll(_formatBurgerGroup(items));
+      } else {
+        formattedOptions.addAll(items);
+      }
+    });
+
+    // Add drinks
+    for (String drink in drinks) {
+      // Avoid duplicate "Drink:" prefix if already present
+      if (drink.startsWith('Drink:')) {
+        formattedOptions.add(drink);
+      } else {
+        formattedOptions.add('Drink: $drink');
+      }
+    }
+
+    // Add sides without "Sides:" prefix
+    formattedOptions.addAll(sides);
+
+    return formattedOptions;
+  }
+
+  List<String> _formatShawarmaGroup(List<String> shawarmas) {
+    List<String> formattedItems = [];
+
+    for (int i = 0; i < shawarmas.length; i++) {
+      String shawarma = shawarmas[i];
+
+      // The cart items now come in the NEW format: "Shawarma 1 (Salad: Cucumber, Lettuce & Sauces: Ketchup, BBQ)"
+      // or "Shawarma 1 (No Salad & No Sauce)"
+      // Format them for receipt with proper line breaks for better readability
+      if (shawarma.startsWith('Shawarma ') && shawarma.contains('(')) {
+        // Format for receipt with line breaks
+        String formattedShawarma = _formatShawarmaForReceipt(shawarma);
+        formattedItems.add(formattedShawarma);
+      } else {
+        // Fallback for legacy format - extract salad and sauce info
+        List<String> itemDetails = [];
+
+        // Check for salad
+        if (shawarma.toLowerCase().contains('salad')) {
+          itemDetails.add('Salad');
+        } else {
+          itemDetails.add('No Salad');
+        }
+
+        // Check for sauces
+        List<String> sauces = _extractSauces(shawarma);
+        if (sauces.isNotEmpty) {
+          itemDetails.add('Sauce: ${sauces.join(', ')}');
+        } else {
+          itemDetails.add('No Sauce');
+        }
+
+        // Apply same receipt formatting logic for legacy format
+        String legacyFormatted =
+            'Shawarma ${i + 1} (${itemDetails.join(' & ')})';
+        formattedItems.add(_formatShawarmaForReceipt(legacyFormatted));
+      }
+    }
+
+    return formattedItems;
+  }
+
+  /// Formats a Shawarma item for receipt with proper line breaks for salads and sauces
+  String _formatShawarmaForReceipt(String shawarma) {
+    // Example input: "Shawarma 1 (Salad: Onions, Tomato & Sauces: Chilli Sauce, Sweet Chilli)"
+    // Example output: "Shawarma 1\n(Salad: Onions, Tomato &\nSauces: Chilli Sauce, Sweet Chilli);"
+
+    if (!shawarma.contains('(') || !shawarma.contains(')')) {
+      return '$shawarma;'; // Return as-is if no parentheses
+    }
+
+    // Extract the shawarma number and the details in parentheses
+    int openParenIndex = shawarma.indexOf('(');
+    String shawarmaName = shawarma.substring(0, openParenIndex).trim();
+    String details =
+        shawarma
+            .substring(openParenIndex + 1, shawarma.lastIndexOf(')'))
+            .trim();
+
+    // Check if it's "No Salad & No Sauce" - keep on same line
+    if (details.contains('No Salad & No Sauce')) {
+      return '$shawarma;';
+    }
+
+    // Check if it contains salads or sauces
+    bool hasSalad = details.contains('Salad:');
+    bool hasSauce = details.contains('Sauces:');
+
+    if (!hasSalad && !hasSauce) {
+      return '$shawarma;'; // No salads or sauces, keep as-is
+    }
+
+    // Start formatting with line breaks for receipt
+    if (hasSalad || hasSauce) {
+      // Split the details by '&' to separate salad and sauce sections
+      List<String> sections = details.split('&').map((s) => s.trim()).toList();
+
+      String formattedDetails = '(';
+      for (int i = 0; i < sections.length; i++) {
+        String section = sections[i].trim();
+
+        if (i == 0) {
+          // First section (usually salad)
+          formattedDetails += section;
+        } else {
+          // Subsequent sections (usually sauces) - add newline before
+          formattedDetails += '\n$section';
+        }
+
+        if (i < sections.length - 1) {
+          formattedDetails += ' &';
+        }
+      }
+      formattedDetails += ');';
+
+      // Add line break before the details if they contain salad or sauce info
+      return '$shawarmaName\n$formattedDetails';
+    }
+
+    return '$shawarma;';
+  }
+
+  /// Formats Family Meal and Combo Meal items with line breaks for Burger/Shawarma components
+  List<String> _formatFamilyComboMealOptions(List<String> selectedOptions) {
+    List<String> formattedOptions = [];
+
+    for (String option in selectedOptions) {
+      // Check if this is a Burger or Shawarma component with Salad/Sauces
+      if ((option.contains('Burger') || option.contains('Shawarma')) &&
+          option.contains('(') &&
+          option.contains(')') &&
+          (option.contains('Salad:') || option.contains('Sauces:'))) {
+        // Apply line break formatting using the same logic as Shawarma receipts
+        String formattedOption = _formatShawarmaForReceipt(option);
+        formattedOptions.add(formattedOption);
+      } else {
+        // For non-Burger/Shawarma items (Pizza, Drinks, etc.), keep as-is
+        formattedOptions.add(option);
+      }
+    }
+
+    return formattedOptions;
+  }
+
   /// Formats cart items for receipt preview by applying deal formatting
   List<CartItem> _formatCartItemsForReceipt(List<CartItem> cartItems) {
     return cartItems.map((item) {
       // Create a copy of the item with formatted options for deals
-      if (item.foodItem.category == 'Deals') {
-        // For Deals: Include the description first, then selectedOptions
-        List<String> formattedOptions = [];
-
-        // Add description if it exists
-        if (item.foodItem.description != null &&
-            item.foodItem.description!.isNotEmpty) {
-          formattedOptions.add(item.foodItem.description!);
-        }
-
-        // Add selectedOptions if they exist
-        if (item.selectedOptions != null && item.selectedOptions!.isNotEmpty) {
-          formattedOptions.addAll(item.selectedOptions!);
+      if (item.foodItem.category == 'Deals' &&
+          item.selectedOptions != null &&
+          item.selectedOptions!.isNotEmpty) {
+        List<String> formattedOptions;
+        if (item.foodItem.name.toLowerCase() == 'family meal' ||
+            item.foodItem.name.toLowerCase() == 'combo meal') {
+          formattedOptions = _formatFamilyComboMealOptions(
+            item.selectedOptions!,
+          );
+        } else {
+          formattedOptions = _formatDealOptions(item.selectedOptions!);
         }
 
         return CartItem(
@@ -1798,6 +2968,108 @@ class _Page4State extends State<Page4> {
       // Return original item if not a deal
       return item;
     }).toList();
+  }
+
+  List<String> _formatPizzaGroup(List<String> pizzas) {
+    List<String> formattedItems = [];
+
+    for (int i = 0; i < pizzas.length; i++) {
+      String pizza = pizzas[i];
+      String formattedItem = _extractItemName(pizza);
+
+      // Extract sauce info for Pizza
+      List<String> sauces = _extractSauces(pizza);
+      String sauceInfo;
+      if (sauces.isNotEmpty) {
+        sauceInfo =
+            sauces.length == 1
+                ? 'Sauce Dip: ${sauces[0]}'
+                : 'Sauce Dips: ${sauces.join(', ')}';
+      } else {
+        sauceInfo = 'No Sauce';
+      }
+
+      formattedItems.add('${formattedItem} (${sauceInfo});');
+    }
+
+    return formattedItems;
+  }
+
+  List<String> _formatBurgerGroup(List<String> burgers) {
+    List<String> formattedItems = [];
+
+    for (int i = 0; i < burgers.length; i++) {
+      String burger = burgers[i];
+
+      // Check if the burger already has the new format with parentheses and salad/sauce info
+      if (burger.contains('(') &&
+          burger.contains(')') &&
+          (burger.contains('Salad:') || burger.contains('Sauces:'))) {
+        // Format for receipt with line breaks using same logic as Shawarma
+        String formattedBurger = _formatShawarmaForReceipt(burger);
+        formattedItems.add(formattedBurger);
+      } else {
+        // Legacy format - extract item name and build format
+        String formattedItem = _extractItemName(burger);
+
+        // Extract salad and sauce info for Burger
+        List<String> itemDetails = [];
+
+        // Check for salad
+        if (burger.toLowerCase().contains('salad')) {
+          itemDetails.add('Salad');
+        } else {
+          itemDetails.add('No Salad');
+        }
+
+        // Check for sauces
+        List<String> sauces = _extractSauces(burger);
+        if (sauces.isNotEmpty) {
+          itemDetails.add('Sauces: ${sauces.join(', ')}');
+        } else {
+          itemDetails.add('No Sauce');
+        }
+
+        // Apply same receipt formatting logic for legacy format
+        String legacyFormatted =
+            '${formattedItem} (${itemDetails.join(' & ')})';
+        formattedItems.add(_formatShawarmaForReceipt(legacyFormatted));
+      }
+    }
+
+    return formattedItems;
+  }
+
+  String _extractItemName(String option) {
+    // Extract the main item name from the option string
+    if (option.contains(':')) {
+      return option.split(':')[0].trim();
+    }
+    return option.trim();
+  }
+
+  List<String> _extractSauces(String option) {
+    List<String> sauces = [];
+    String lowerOption = option.toLowerCase();
+
+    // Common sauce names
+    List<String> sauceNames = [
+      'ketchup',
+      'mint sauce',
+      'bbq',
+      'mayo',
+      'garlic',
+      'hot sauce',
+      'chili',
+    ];
+
+    for (String sauce in sauceNames) {
+      if (lowerOption.contains(sauce)) {
+        sauces.add(sauce);
+      }
+    }
+
+    return sauces;
   }
 
   Widget _buildSearchBar() {
@@ -1826,7 +3098,7 @@ class _Page4State extends State<Page4> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.only(left: 50, right: 120),
+            padding: const EdgeInsets.only(left: 50, right: 120, top: 20),
             child: Row(
               children: [
                 // Back Arrow Button
@@ -1978,9 +3250,6 @@ class _Page4State extends State<Page4> {
 
   //This method handles both adding new items and updating existing ones
   void _handleItemAdditionOrUpdate(CartItem newItem) {
-    print('🔍 PAGE4: Received CartItem for ${newItem.foodItem.name}');
-    print('🔍 PAGE4: CartItem selectedOptions = ${newItem.selectedOptions}');
-
     // FIXED: Only require customer details for delivery, takeaway, collection
     // NOT for dinein or takeout
     bool requiresCustomerDetails =
@@ -2040,13 +3309,8 @@ class _Page4State extends State<Page4> {
 
         if (existingIndex != -1) {
           _cartItems[existingIndex].incrementQuantity(newItem.quantity);
-          print('🔍 PAGE4: Incremented existing item quantity');
         } else {
           _cartItems.add(newItem);
-          print('🔍 PAGE4: Added new item to cart');
-          print(
-            '🔍 PAGE4: Cart item selectedOptions = ${newItem.selectedOptions}',
-          );
         }
         CustomPopupService.show(
           context,
@@ -2060,13 +3324,112 @@ class _Page4State extends State<Page4> {
     });
   }
 
-  // Helper method to compare two lists
-  bool _listsEqual<T>(List<T> a, List<T> b) {
-    if (a.length != b.length) return false;
-    for (int i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
+  Widget _buildShawarmaSubcategoryTabs() {
+    if (selectedCategory >= 0 &&
+        selectedCategory < categories.length &&
+        categories[selectedCategory].name.toLowerCase() == 'shawarmas') {
+      return _buildSubcategoryTabs(
+        subcategories: _shawarmaSubcategories,
+        selectedIndex: _selectedShawarmaSubcategory,
+        onTap: (index) {
+          setState(() {
+            _selectedShawarmaSubcategory = index;
+          });
+        },
+      );
+    } else if (selectedCategory >= 0 &&
+        selectedCategory < categories.length &&
+        categories[selectedCategory].name.toLowerCase() == 'wings' &&
+        _wingsSubcategories.isNotEmpty) {
+      return _buildSubcategoryTabs(
+        subcategories: _wingsSubcategories,
+        selectedIndex: _selectedWingsSubcategory,
+        onTap: (index) {
+          setState(() {
+            _selectedWingsSubcategory = index;
+          });
+        },
+      );
+    } else if (selectedCategory >= 0 &&
+        selectedCategory < categories.length &&
+        categories[selectedCategory].name.toLowerCase() == 'deals' &&
+        _dealsSubcategories.isNotEmpty) {
+      return _buildSubcategoryTabs(
+        subcategories: _dealsSubcategories,
+        selectedIndex: _selectedDealsSubcategory,
+        onTap: (index) {
+          setState(() {
+            _selectedDealsSubcategory = index;
+          });
+        },
+      );
+    } else if (selectedCategory >= 0 &&
+        selectedCategory < categories.length &&
+        categories[selectedCategory].name.toLowerCase() == 'pizza' &&
+        _pizzaSubcategories.isNotEmpty) {
+      return _buildSubcategoryTabs(
+        subcategories: _pizzaSubcategories,
+        selectedIndex: _selectedPizzaSubcategory,
+        onTap: (index) {
+          setState(() {
+            _selectedPizzaSubcategory = index;
+          });
+        },
+      );
     }
-    return true;
+    return const SizedBox.shrink();
+  }
+
+  Widget _buildSubcategoryTabs({
+    required List<String> subcategories,
+    required int selectedIndex,
+    required Function(int) onTap,
+  }) {
+    return Container(
+      padding: const EdgeInsets.only(left: 80, right: 80, top: 15, bottom: 15),
+      child: Row(
+        children: [
+          for (int i = 0; i < subcategories.length; i++)
+            Padding(
+              padding: EdgeInsets.only(
+                right: i < subcategories.length - 1 ? 20 : 0,
+              ),
+              child: GestureDetector(
+                onTap: () => onTap(i),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color:
+                        selectedIndex == i
+                            ? const Color(0xFFCB6CE6)
+                            : Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color:
+                          selectedIndex == i
+                              ? const Color(0xFFCB6CE6)
+                              : Colors.grey.shade300,
+                      width: 2,
+                    ),
+                  ),
+                  child: Text(
+                    subcategories[i],
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontFamily: 'Poppins',
+                      color: selectedIndex == i ? Colors.white : Colors.black,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   Widget _buildItemGrid() {
@@ -2132,12 +3495,64 @@ class _Page4State extends State<Page4> {
 
         final selectedCategoryName = categories[selectedCategory].name;
 
-        String mappedCategoryKey = selectedCategoryName.toLowerCase();
+        String mappedCategoryKey;
+        if (selectedCategoryName.toLowerCase() == 'deals') {
+          mappedCategoryKey = 'Deals';
+        } else if (selectedCategoryName.toLowerCase() == 'calzones') {
+          mappedCategoryKey = 'Calzones';
+        } else if (selectedCategoryName.toLowerCase() == 'shawarmas') {
+          mappedCategoryKey = 'Shawarma';
+        } else if (selectedCategoryName.toLowerCase() == 'kids meal') {
+          mappedCategoryKey = 'KidsMeal';
+        } else if (selectedCategoryName.toLowerCase() == 'garlic bread') {
+          mappedCategoryKey = 'GarlicBread';
+        } else {
+          mappedCategoryKey = selectedCategoryName.toLowerCase();
+        }
 
         Iterable<FoodItem> currentItems = allFoodItems.where(
           (item) =>
               item.category.toLowerCase() == mappedCategoryKey.toLowerCase(),
         );
+
+        // Filter by subcategory for Shawarma items
+        if (selectedCategoryName.toLowerCase() == 'shawarmas') {
+          final selectedSubcategory =
+              _shawarmaSubcategories[_selectedShawarmaSubcategory];
+          currentItems = currentItems.where(
+            (item) => item.subType?.trim() == selectedSubcategory.trim(),
+          );
+        }
+
+        // Filter by subcategory for Wings items
+        if (selectedCategoryName.toLowerCase() == 'wings' &&
+            _wingsSubcategories.isNotEmpty) {
+          final selectedSubcategory =
+              _wingsSubcategories[_selectedWingsSubcategory];
+          currentItems = currentItems.where(
+            (item) => item.subType?.trim() == selectedSubcategory.trim(),
+          );
+        }
+
+        // Filter by subcategory for Deals items
+        if (selectedCategoryName.toLowerCase() == 'deals' &&
+            _dealsSubcategories.isNotEmpty) {
+          final selectedSubcategory =
+              _dealsSubcategories[_selectedDealsSubcategory];
+          currentItems = currentItems.where(
+            (item) => item.subType?.trim() == selectedSubcategory.trim(),
+          );
+        }
+
+        // Filter by subcategory for Pizza items
+        if (selectedCategoryName.toLowerCase() == 'pizza' &&
+            _pizzaSubcategories.isNotEmpty) {
+          final selectedSubcategory =
+              _pizzaSubcategories[_selectedPizzaSubcategory];
+          currentItems = currentItems.where(
+            (item) => item.subType?.trim() == selectedSubcategory.trim(),
+          );
+        }
 
         if (_searchQuery.isNotEmpty) {
           final lowerCaseQuery = _searchQuery.toLowerCase();
@@ -2150,6 +3565,24 @@ class _Page4State extends State<Page4> {
         }
 
         final filteredItems = currentItems.toList();
+
+        // Sort items to put "Create Your Own" items at the top
+        filteredItems.sort((a, b) {
+          final aIsCreateYourOwn = a.name.toLowerCase().contains(
+            'create your own',
+          );
+          final bIsCreateYourOwn = b.name.toLowerCase().contains(
+            'create your own',
+          );
+
+          if (aIsCreateYourOwn && !bIsCreateYourOwn) {
+            return -1; // a comes first
+          } else if (!aIsCreateYourOwn && bIsCreateYourOwn) {
+            return 1; // b comes first
+          } else {
+            return 0; // maintain existing order
+          }
+        });
 
         if (filteredItems.isEmpty) {
           if (_searchQuery.isNotEmpty) {
@@ -2414,13 +3847,121 @@ class _Page4State extends State<Page4> {
             child: CustomerDetailsWidget(
               subtotal: 0.0,
               orderType: _actualOrderType,
-              onCustomerDetailsSubmitted: (CustomerDetails details) {
+              onCustomerDetailsSubmitted: (CustomerDetails details) async {
                 setState(() {
                   _customerDetails = details;
                   _hasProcessedFirstStep = true;
                 });
               },
               onBack: () {},
+            ),
+          ),
+        ],
+      );
+    }
+
+    // NEW: Show customer details form for delivery/takeaway/collection when card_through_link is selected
+    // Show only when cart has items AND payment type is selected AND email is missing
+    if ((_actualOrderType.toLowerCase() == 'delivery' ||
+            _actualOrderType.toLowerCase() == 'takeaway' ||
+            _actualOrderType.toLowerCase() == 'collection') &&
+        _hasProcessedFirstStep &&
+        !_showPayment &&
+        _selectedPaymentType == 'card_through_link' &&
+        _cartItems.isNotEmpty &&
+        (_customerDetails == null ||
+            _customerDetails!.email == null ||
+            _customerDetails!.email!.trim().isEmpty)) {
+      return Column(
+        children: [
+          // Service highlights row
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildServiceHighlight('takeaway', 'TakeAway.png'),
+              _buildServiceHighlight('dinein', 'DineIn.png'),
+              _buildServiceHighlight('delivery', 'Delivery.png'),
+            ],
+          ),
+
+          const SizedBox(height: 10),
+
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 60.0),
+            child: Divider(height: 0, thickness: 2.5, color: Colors.grey),
+          ),
+
+          const SizedBox(height: 20),
+
+          Expanded(
+            child: CustomerDetailsWidget(
+              subtotal: _calculateTotalPrice() - _calculateDiscountAmount(),
+              orderType: _actualOrderType,
+              isCardThroughLink: true, // NEW: Mark as card through link payment
+              initialCustomerData: _customerDetails, // Pre-fill existing data
+              onCustomerDetailsSubmitted: (CustomerDetails details) async {
+                // NEW: Call payment link API when Next is clicked
+                await _handleCardThroughLinkSubmission(details);
+              },
+              onBack: () {
+                setState(() {
+                  _hasProcessedFirstStep = false;
+                  _selectedPaymentType = '';
+                });
+              },
+            ),
+          ),
+        ],
+      );
+    }
+
+    // NEW: Show customer details form for dinein/takeout when card_through_link is selected
+    // Show only when cart has items AND payment type is selected AND email is missing
+    if ((_actualOrderType.toLowerCase() == 'dinein' ||
+            _actualOrderType.toLowerCase() == 'takeout') &&
+        _hasProcessedFirstStep &&
+        !_showPayment &&
+        _selectedPaymentType == 'card_through_link' &&
+        _cartItems.isNotEmpty &&
+        (_customerDetails == null ||
+            _customerDetails!.email == null ||
+            _customerDetails!.email!.trim().isEmpty)) {
+      return Column(
+        children: [
+          // Service highlights row
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildServiceHighlight('takeaway', 'TakeAway.png'),
+              _buildServiceHighlight('dinein', 'DineIn.png'),
+              _buildServiceHighlight('delivery', 'Delivery.png'),
+            ],
+          ),
+
+          const SizedBox(height: 10),
+
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 60.0),
+            child: Divider(height: 0, thickness: 2.5, color: Colors.grey),
+          ),
+
+          const SizedBox(height: 20),
+
+          Expanded(
+            child: CustomerDetailsWidget(
+              subtotal: _calculateTotalPrice() - _calculateDiscountAmount(),
+              orderType: _actualOrderType,
+              isCardThroughLink: true, // NEW: Mark as card through link payment
+              onCustomerDetailsSubmitted: (CustomerDetails details) async {
+                // NEW: Call payment link API when Next is clicked
+                await _handleCardThroughLinkSubmission(details);
+              },
+              onBack: () {
+                setState(() {
+                  _hasProcessedFirstStep = false;
+                  _selectedPaymentType = '';
+                });
+              },
             ),
           ),
         ],
@@ -2675,6 +4216,8 @@ class _Page4State extends State<Page4> {
                     String? selectedDrink;
                     bool isMeal = false;
                     List<String> toppings = [];
+                    List<String> extraToppings =
+                        []; // NEW: Separate list for extra toppings
                     List<String> sauceDips = [];
                     List<String> saladOptions = [];
                     String? selectedSeasoning;
@@ -2685,6 +4228,9 @@ class _Page4State extends State<Page4> {
                     String? selectedMeat;
                     bool doubleMeat = false;
                     bool goLarge = false;
+
+                    // JackedPotato specific options
+                    List<String> classicToppings = [];
 
                     if (item.selectedOptions?.isNotEmpty ?? false) {
                       hasOptions = true;
@@ -2698,7 +4244,10 @@ class _Page4State extends State<Page4> {
                         } else if (lowerOption.contains('drink:') &&
                             !(item.foodItem.category == 'Deals' &&
                                 item.foodItem.subType?.toLowerCase() ==
-                                    'family deals')) {
+                                    'family deals') &&
+                            !lowerOption.contains('meal drink:') &&
+                            !lowerOption.contains('meal side:')) {
+                          // Skip "Meal Drink:" and "Meal Side:" as they are now stored in CartItem properties
                           String drink = option.split(':').last.trim();
                           if (drink.isNotEmpty) {
                             selectedDrink = drink;
@@ -2731,9 +4280,46 @@ class _Page4State extends State<Page4> {
                             selectedBase = base;
                             hasOptions = true;
                           }
-                        } else if ((lowerOption.contains('toppings:') ||
-                                lowerOption.contains('extra toppings:')) &&
+                        } else if (lowerOption.contains('classic toppings:')) {
+                          // Handle Classic Toppings for JackedPotato
+                          String classicToppingsValue =
+                              option.split(':').last.trim();
+                          if (classicToppingsValue.isNotEmpty &&
+                              classicToppingsValue.toLowerCase() != 'none') {
+                            List<String> classicToppingsList =
+                                classicToppingsValue
+                                    .split(',')
+                                    .map((t) => t.trim())
+                                    .where((t) => t.isNotEmpty)
+                                    .toList();
+
+                            if (classicToppingsList.isNotEmpty) {
+                              classicToppings.addAll(classicToppingsList);
+                              hasOptions = true;
+                            }
+                          }
+                        } else if (lowerOption.contains('extra toppings:') &&
                             item.foodItem.category != 'Deals') {
+                          // Handle Extra Toppings separately
+                          String extraToppingsValue =
+                              option.split(':').last.trim();
+                          if (extraToppingsValue.isNotEmpty &&
+                              extraToppingsValue.toLowerCase() != 'none') {
+                            List<String> extraToppingsList =
+                                extraToppingsValue
+                                    .split(',')
+                                    .map((t) => t.trim())
+                                    .where((t) => t.isNotEmpty)
+                                    .toList();
+
+                            if (extraToppingsList.isNotEmpty) {
+                              extraToppings.addAll(extraToppingsList);
+                              hasOptions = true;
+                            }
+                          }
+                        } else if (lowerOption.contains('toppings:') &&
+                            item.foodItem.category != 'Deals') {
+                          // Handle regular Toppings
                           String toppingsValue = option.split(':').last.trim();
                           if (toppingsValue.isNotEmpty &&
                               toppingsValue.toLowerCase() != 'none' &&
@@ -2969,9 +4555,37 @@ class _Page4State extends State<Page4> {
                                                             TextOverflow
                                                                 .ellipsis,
                                                       ),
+                                                    if (classicToppings
+                                                        .isNotEmpty)
+                                                      Text(
+                                                        'Classic Toppings: ${classicToppings.join(', ')}',
+                                                        style: const TextStyle(
+                                                          fontSize: 15,
+                                                          fontFamily: 'Poppins',
+                                                          color: Colors.black,
+                                                        ),
+                                                        maxLines: 3,
+                                                        overflow:
+                                                            TextOverflow
+                                                                .ellipsis,
+                                                      ),
                                                     if (toppings.isNotEmpty)
                                                       Text(
                                                         'Toppings: ${toppings.join(', ')}',
+                                                        style: const TextStyle(
+                                                          fontSize: 15,
+                                                          fontFamily: 'Poppins',
+                                                          color: Colors.black,
+                                                        ),
+                                                        maxLines: 3,
+                                                        overflow:
+                                                            TextOverflow
+                                                                .ellipsis,
+                                                      ),
+                                                    if (extraToppings
+                                                        .isNotEmpty)
+                                                      Text(
+                                                        'Extra Toppings: ${extraToppings.join(', ')}',
                                                         style: const TextStyle(
                                                           fontSize: 15,
                                                           fontFamily: 'Poppins',
@@ -3089,14 +4703,14 @@ class _Page4State extends State<Page4> {
                                                             ),
                                                           )
                                                           .toList(),
-                                                    // Display meal information (including Kids Meal drinks but NOT Deal drinks to prevent duplication)
+                                                    // Display meal information for old system (including Kids Meal drinks but NOT new meal deals)
                                                     if ((isMeal ||
                                                             item
                                                                     .foodItem
                                                                     .category ==
                                                                 'KidsMeal') &&
-                                                        selectedDrink !=
-                                                            null) ...[
+                                                        selectedDrink != null &&
+                                                        !item.isMealDeal) ...[
                                                       Text(
                                                         'Drink: $selectedDrink',
                                                         style: const TextStyle(
@@ -3108,6 +4722,53 @@ class _Page4State extends State<Page4> {
                                                             TextOverflow
                                                                 .ellipsis,
                                                       ),
+                                                    ],
+                                                    // Display meal deal items from CartItem (new system)
+                                                    if (item.isMealDeal) ...[
+                                                      const Text(
+                                                        'Meal',
+                                                        style: TextStyle(
+                                                          fontSize: 15,
+                                                          fontFamily: 'Poppins',
+                                                          color: Colors.black,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                        ),
+                                                      ),
+                                                      if (item.mealDealDrink !=
+                                                          null)
+                                                        Text(
+                                                          'Drink: ${item.mealDealDrink!.name}',
+                                                          style:
+                                                              const TextStyle(
+                                                                fontSize: 15,
+                                                                fontFamily:
+                                                                    'Poppins',
+                                                                color:
+                                                                    Colors
+                                                                        .black,
+                                                              ),
+                                                          overflow:
+                                                              TextOverflow
+                                                                  .ellipsis,
+                                                        ),
+                                                      if (item.mealDealSideType !=
+                                                          null)
+                                                        Text(
+                                                          'Side: ${item.mealDealSideType}',
+                                                          style:
+                                                              const TextStyle(
+                                                                fontSize: 15,
+                                                                fontFamily:
+                                                                    'Poppins',
+                                                                color:
+                                                                    Colors
+                                                                        .black,
+                                                              ),
+                                                          overflow:
+                                                              TextOverflow
+                                                                  .ellipsis,
+                                                        ),
                                                     ],
                                                   ],
                                                 ],
@@ -3745,6 +5406,179 @@ class _Page4State extends State<Page4> {
     });
   }
 
+  // Widget _buildCartSummary() {
+  //   return Column(
+  //     children: [
+  //       Row(
+  //         mainAxisAlignment: MainAxisAlignment.spaceAround,
+  //         children: [
+  //           _buildServiceHighlight('takeaway', 'TakeAway.png'),
+  //           _buildServiceHighlight('dinein', 'DineIn.png'),
+  //           _buildServiceHighlight('delivery', 'Delivery.png'),
+  //         ],
+  //       ),
+  //       const SizedBox(height: 20),
+  //       Padding(
+  //         padding: const EdgeInsets.symmetric(horizontal: 60.0),
+  //         child: Divider(
+  //           height: 0,
+  //           thickness: 3,
+  //           color: const Color(0xFFB2B2B2),
+  //         ),
+  //       ),
+  //       const SizedBox(height: 20),
+  //       Expanded(
+  //         child: _buildCartSummaryContent(),
+  //       ),
+  //     ],
+  //   );
+  // }
+
+  /// NEW: Handle card through link submission
+  /// Calls payment link API immediately when customer details are submitted
+  /// Handles differential payment for order updates
+  Future<void> _handleCardThroughLinkSubmission(CustomerDetails details) async {
+    // Save customer details and set loading state
+    setState(() {
+      _customerDetails = details;
+      _isSendingPaymentLink = true;
+    });
+
+    try {
+      // Get payment link provider
+      final paymentLinkProvider = Provider.of<PaymentLinkProvider>(
+        context,
+        listen: false,
+      );
+
+      // Calculate new total
+      final double originalSubtotal = _calculateTotalPrice();
+      final double dynamicDiscountAmount = _calculateDiscountAmount();
+      final double newTotalCharge = originalSubtotal - dynamicDiscountAmount;
+
+      // Determine payment link amount based on edit mode and paid status
+      double paymentLinkAmount = newTotalCharge;
+
+      if (_isEditMode && _existingOrder != null) {
+        // IN EDIT MODE: Check if order was already paid
+        final bool wasAlreadyPaid = _existingOrder!.paidStatus == true;
+        final double originalTotal = _existingOrder!.orderTotalPrice;
+
+        print(
+          '💳 Edit Mode: wasAlreadyPaid=$wasAlreadyPaid, originalTotal=$originalTotal, newTotal=$newTotalCharge',
+        );
+
+        if (wasAlreadyPaid) {
+          // Order was already paid - send only the difference
+          final double difference = newTotalCharge - originalTotal;
+
+          if (difference > 0) {
+            // Price increased - send only the additional amount
+            paymentLinkAmount = difference;
+            print(
+              '💳 Sending payment link for additional amount: £${difference.toStringAsFixed(2)}',
+            );
+          } else {
+            // Price decreased or stayed same - no payment link needed
+            print(
+              '💳 No additional payment needed (difference: £${difference.toStringAsFixed(2)})',
+            );
+
+            if (mounted) {
+              CustomPopupService.show(
+                context,
+                difference < 0
+                    ? 'Order total decreased. No additional payment required.'
+                    : 'Order total unchanged. No additional payment required.',
+                type: PopupType.success,
+              );
+            }
+
+            // Proceed to payment screen without sending link
+            setState(() {
+              _showPayment = true;
+            });
+            return;
+          }
+        } else {
+          // Order was not paid - send complete new total
+          paymentLinkAmount = newTotalCharge;
+          print(
+            '💳 Order was unpaid - sending complete amount: £${newTotalCharge.toStringAsFixed(2)}',
+          );
+        }
+      } else {
+        // NEW ORDER: Send complete total
+        paymentLinkAmount = newTotalCharge;
+        print(
+          '💳 New order - sending complete amount: £${newTotalCharge.toStringAsFixed(2)}',
+        );
+      }
+
+      // Show loading popup
+      if (mounted) {
+        CustomPopupService.show(
+          context,
+          _isEditMode && _existingOrder?.paidStatus == true
+              ? 'Sending payment link for additional £${paymentLinkAmount.toStringAsFixed(2)}...'
+              : 'Sending payment link to customer...',
+          type: PopupType.success,
+          duration: const Duration(seconds: 2),
+        );
+      }
+
+      // Send payment link via provider
+      final bool success = await paymentLinkProvider.sendPaymentLink(
+        customerName: details.name,
+        customerEmail: details.email ?? '',
+        customerPhone: details.phoneNumber,
+        cartItems: _cartItems,
+        totalPrice:
+            paymentLinkAmount, // Send calculated amount (full or differential)
+      );
+
+      if (!mounted) return;
+
+      if (success) {
+        // Success - show payment screen
+        CustomPopupService.show(
+          context,
+          _isEditMode && _existingOrder?.paidStatus == true
+              ? 'Payment link sent for additional £${paymentLinkAmount.toStringAsFixed(2)}!'
+              : 'Payment link sent successfully!',
+          type: PopupType.success,
+        );
+
+        setState(() {
+          _showPayment = true;
+          _isSendingPaymentLink = false;
+        });
+      } else {
+        // Failed - show error
+        setState(() {
+          _isSendingPaymentLink = false;
+        });
+        CustomPopupService.show(
+          context,
+          'Failed to send payment link: ${paymentLinkProvider.errorMessage}',
+          type: PopupType.failure,
+        );
+      }
+    } catch (e) {
+      print('Error in _handleCardThroughLinkSubmission: $e');
+      if (mounted) {
+        setState(() {
+          _isSendingPaymentLink = false;
+        });
+        CustomPopupService.show(
+          context,
+          'Error sending payment link: $e',
+          type: PopupType.failure,
+        );
+      }
+    }
+  }
+
   Future<void> _handleOrderCompletion({
     required CustomerDetails customerDetails,
     required PaymentDetails paymentDetails,
@@ -3765,105 +5599,109 @@ class _Page4State extends State<Page4> {
       _isProcessingPayment = true;
     });
 
-    String id1 = generateTransactionId();
-    print("Generated Transaction ID: $id1");
+    try {
+      if (_isEditMode && _editingOrderId != null) {
+        await _updateExistingOrder(paymentDetails);
+        return;
+      }
 
-    // Calculate totals with dynamic discount
-    double originalSubtotal = _calculateTotalPrice();
-    double dynamicDiscountAmount =
-        _calculateDiscountAmount(); // Dynamic calculation
-    double finalTotalCharge = originalSubtotal - dynamicDiscountAmount;
+      final String transactionId = generateTransactionId();
+      print("Generated Transaction ID: $transactionId");
 
-    // Use the discount percentage from state
-    final double finalDiscountPercentage = _appliedDiscountPercentage;
-    final double finalChangeDue = paymentDetails.changeDue;
-    final double finalAmountReceived = paymentDetails.amountReceived ?? 0.0;
+      // Calculate totals with dynamic discount
+      final double originalSubtotal = _calculateTotalPrice();
+      final double dynamicDiscountAmount =
+          _calculateDiscountAmount(); // Dynamic calculation
+      final double finalTotalCharge = originalSubtotal - dynamicDiscountAmount;
 
-    final orderData = {
-      "guest": {
-        "name": customerDetails.name,
-        "email": customerDetails.email ?? "N/A",
-        "phone_number": customerDetails.phoneNumber,
-        "street_address": customerDetails.streetAddress ?? "N/A",
-        "city": customerDetails.city ?? "N/A",
-        "county": customerDetails.city ?? "N/A",
-        "postal_code": customerDetails.postalCode ?? "N/A",
-      },
-      "transaction_id": id1,
-      "payment_type": _selectedPaymentType,
-      "amount_received": finalAmountReceived,
-      "discount_percentage": finalDiscountPercentage,
-      "order_type":
-          _actualOrderType.toLowerCase() == 'collection'
-              ? 'takeaway'
-              : _actualOrderType,
-      "total_price": finalTotalCharge,
-      // This is the discounted total
-      "original_total_price": originalSubtotal,
-      // Add original total for reference
-      "discount_amount": dynamicDiscountAmount,
-      // Add discount amount for reference
-      "order_extra_notes":
+      // Use the discount percentage from state
+      final double finalDiscountPercentage = _appliedDiscountPercentage;
+      final double finalChangeDue = paymentDetails.changeDue;
+      final double finalAmountReceived = paymentDetails.amountReceived ?? 0.0;
+
+      final Map<String, dynamic> orderData = {
+        "guest": {
+          "name": customerDetails.name,
+          "email": customerDetails.email ?? "N/A",
+          "phone_number": customerDetails.phoneNumber,
+          "street_address": customerDetails.streetAddress ?? "N/A",
+          "city": customerDetails.city ?? "N/A",
+          "county": customerDetails.city ?? "N/A",
+          "postal_code": customerDetails.postalCode ?? "N/A",
+        },
+        "transaction_id": transactionId,
+        "payment_type": _selectedPaymentType,
+        "amount_received": finalAmountReceived,
+        "discount_percentage": finalDiscountPercentage,
+        "order_type":
+            _actualOrderType.toLowerCase() == 'collection'
+                ? 'takeaway'
+                : _actualOrderType,
+        "total_price": finalTotalCharge,
+        "original_total_price": originalSubtotal,
+        "discount_amount": dynamicDiscountAmount,
+        "order_extra_notes":
+            _cartItems
+                .map((item) => item.comment ?? '')
+                .where((c) => c.isNotEmpty)
+                .join(', ')
+                .trim(),
+        "status": "yellow",
+        "change_due": finalChangeDue,
+        "order_source": "EPOS",
+        "paid_status": paymentDetails.paidStatus,
+        "items":
+            _cartItems.map((cartItem) {
+              final String description = _buildDescriptionForCartItem(cartItem);
+              final double pricePerUnit = double.parse(
+                cartItem.pricePerUnit.toStringAsFixed(2),
+              );
+              // Use cartItem.totalPrice to include extraAmount (e.g., rush fees)
+              final double itemTotalPrice = double.parse(
+                cartItem.totalPrice.toStringAsFixed(2),
+              );
+              return {
+                "item_id": cartItem.foodItem.id,
+                "quantity": cartItem.quantity,
+                "description": description,
+                "price_per_unit": pricePerUnit,
+                "total_price": itemTotalPrice,
+                "comment": cartItem.comment,
+                "extra_amount": cartItem.extraAmount,
+                "extra_reason": cartItem.extraReason,
+              };
+            }).toList(),
+      };
+
+      print("Attempting to submit order with order_type: $_actualOrderType");
+      print("Payment Details: ${paymentDetails.paymentType}");
+      print("Order Data being sent: $orderData");
+
+      // NOTE: Payment link is now sent earlier when customer details are submitted
+      // via _handleCardThroughLinkSubmission for card_through_link payment type
+
+      final String extraNotes =
           _cartItems
               .map((item) => item.comment ?? '')
               .where((c) => c.isNotEmpty)
               .join(', ')
-              .trim(),
-      "status": "yellow",
-      "change_due": finalChangeDue,
-      "order_source": "EPOS",
-      "paid_status": paymentDetails.paidStatus,
-      "items":
-          _cartItems.map((cartItem) {
-            String description = cartItem.foodItem.name;
-            if (cartItem.selectedOptions != null &&
-                cartItem.selectedOptions!.isNotEmpty) {
-              description += ' (${cartItem.selectedOptions!.join(', ')})';
-            }
+              .trim();
 
-            double itemTotalPrice = double.parse(
-              (cartItem.pricePerUnit * cartItem.quantity).toStringAsFixed(2),
-            );
-            return {
-              "item_id": cartItem.foodItem.id,
-              "quantity": cartItem.quantity,
-              "description": description,
-              "price_per_unit": double.parse(
-                cartItem.pricePerUnit.toStringAsFixed(2),
-              ),
-              "total_price": itemTotalPrice,
-              "comment": cartItem.comment,
-            };
-          }).toList(),
-    };
-
-    print("Attempting to submit order with order_type: $_actualOrderType");
-    print("Payment Details: ${paymentDetails.paymentType}");
-    print("Order Data being sent: $orderData");
-
-    String extraNotes =
-        _cartItems
-            .map((item) => item.comment ?? '')
-            .where((c) => c.isNotEmpty)
-            .join(', ')
-            .trim();
-
-    try {
       // First submit order to backend and get order ID
-      String? backendOrderId = await _submitOrderAndGetId(orderData);
+      final String? backendOrderId = await _submitOrderAndGetId(orderData);
 
       // Always use UK time for receipts and dialogs
-      DateTime orderCreationTime = UKTimeService.now();
+      final DateTime orderCreationTime = UKTimeService.now();
 
       // Format cart items for receipt preview (same as printing)
-      List<CartItem> formattedCartItems = _formatCartItemsForReceipt(
+      final List<CartItem> formattedCartItems = _formatCartItemsForReceipt(
         _cartItems,
       );
 
       // Then print receipt with the order ID
       await _printReceiptWithOrderId(
         orderData: orderData,
-        transactionId: id1,
+        transactionId: transactionId,
         subtotal: originalSubtotal,
         totalCharge: finalTotalCharge,
         extraNotes: extraNotes,
@@ -3871,6 +5709,7 @@ class _Page4State extends State<Page4> {
         paidStatus: paymentDetails.paidStatus,
         orderId: backendOrderId,
         orderDateTime: orderCreationTime,
+        orderSource: 'EPOS', // POS orders from page4
         formattedCartItems: formattedCartItems,
       );
     } catch (e) {
@@ -3992,6 +5831,7 @@ class _Page4State extends State<Page4> {
     required bool paidStatus,
     String? orderId,
     DateTime? orderDateTime,
+    String? orderSource,
     List<CartItem>? formattedCartItems,
   }) async {
     try {
@@ -4055,6 +5895,200 @@ class _Page4State extends State<Page4> {
       _clearOrderState();
     }
   }
+
+  // Future<void> _handlePrintingAndOrderDirect({
+  //   required Map<String, dynamic> orderData,
+  //   required String id1,
+  //   required double subtotal,
+  //   required double totalCharge,
+  //   required String extraNotes,
+  //   required double changeDue,
+  //   required bool paidStatus,
+  // }) async {
+  //   if (!mounted) return;
+
+  //   try {
+  //     // Extract customer details from orderData
+  //     final guestData = orderData['guest'] as Map<String, dynamic>?;
+
+  //     await ThermalPrinterService().printReceiptWithUserInteraction(
+  //       transactionId: id1,
+  //       orderType: _actualOrderType,
+  //       cartItems: _cartItems,
+  //       subtotal: subtotal,
+  //       totalCharge: totalCharge,
+  //       extraNotes: extraNotes.isNotEmpty ? extraNotes : null,
+  //       changeDue: changeDue,
+  //       // Add customer details
+  //       customerName: guestData?['name'] as String?,
+  //       customerEmail: guestData?['email'] as String?,
+  //       phoneNumber: guestData?['phone_number'] as String?,
+  //       streetAddress: guestData?['street_address'] as String?,
+  //       city: guestData?['city'] as String?,
+  //       postalCode: guestData?['postal_code'] as String?,
+  //       paymentType: _selectedPaymentType,
+  //       paidStatus: paidStatus,
+  //       onShowMethodSelection: (availableMethods) {
+  //         if (mounted) {
+  //           CustomPopupService.show(
+  //             context,
+  //             "Available printing methods: ${availableMethods.join(', ')}. Please check printer connections.",
+  //             type: PopupType.success,
+  //           );
+  //         }
+  //       },
+  //     );
+  //   } catch (e) {
+  //     print('Background printing failed: $e');
+  //     if (mounted) {
+  //       CustomPopupService.show(
+  //         context,
+  //         "Printing failed !",
+  //         type: PopupType.failure,
+  //       );
+  //     }
+  //   }
+
+  //   await _placeOrderDirectly(orderData);
+  // }
+
+  // Future<void> _placeOrderDirectly(Map<String, dynamic> orderData) async {
+  //   if (!mounted) return;
+
+  //   final offlineProvider = Provider.of<OfflineProvider>(
+  //     context,
+  //     listen: false,
+  //   );
+  //   final eposOrdersProvider = Provider.of<EposOrdersProvider>(
+  //     context,
+  //     listen: false,
+  //   );
+
+  //   // Check if we're online
+  //   print(
+  //     '🌐 DEBUG: Page4 order placement - OfflineProvider.isOnline: ${offlineProvider.isOnline}',
+  //   );
+  //   print(
+  //     '🌐 DEBUG: Page4 order placement - ConnectivityService.isOnline: ${ConnectivityService().isOnline}',
+  //   );
+  //   if (!offlineProvider.isOnline) {
+  //     // OFFLINE MODE: Create local order that appears in orders list immediately
+  //     try {
+  //       final offlineOrder = await OfflineOrderManager.createOfflineOrder(
+  //         cartItems: _cartItems,
+  //         paymentType: _selectedPaymentType,
+  //         orderType: _actualOrderType,
+  //         orderTotalPrice: orderData['total_price'] as double,
+  //         orderExtraNotes: orderData['order_extra_notes'] as String?,
+  //         customerName: _customerDetails?.name ?? "Unknown Customer",
+  //         customerEmail: _customerDetails?.email,
+  //         phoneNumber: _customerDetails?.phoneNumber,
+  //         streetAddress: _customerDetails?.streetAddress,
+  //         city: _customerDetails?.city,
+  //         postalCode: _customerDetails?.postalCode,
+  //         changeDue: orderData['change_due'] as double? ?? 0.0,
+  //       );
+
+  //       // Show success popup immediately
+  //       if (mounted) {
+  //         CustomPopupService.show(
+  //           context,
+  //           "Order saved offline: ${offlineOrder.transactionId}\nWill appear in orders list and be processed when connection is restored",
+  //           type: PopupType.success,
+  //         );
+
+  //         // Clear cart like successful order
+  //         _clearOrderState();
+  //       }
+
+  //       // Add offline order to the orders list in background
+  //       eposOrdersProvider.addOfflineOrder(offlineOrder).catchError((error) {
+  //         print('⚠️ Background addOfflineOrder failed: $error');
+  //       });
+  //       return;
+  //     } catch (e) {
+  //       print('❌ Failed to create offline order: $e');
+  //       if (mounted) {
+  //         CustomPopupService.show(
+  //           context,
+  //           "Failed to save order offline: $e",
+  //           type: PopupType.failure,
+  //         );
+  //       }
+  //       return;
+  //     }
+  //   }
+
+  //   // ONLINE MODE: Try normal processing first, fallback to offline
+  //   try {
+  //     final orderId = await ApiService.createOrderFromMap(orderData);
+
+  //     print(
+  //       '✅ Order placed successfully online: $orderId for type: $_actualOrderType',
+  //     );
+
+  //     // Show success popup immediately after order placement
+  //     if (mounted) {
+  //       CustomPopupService.show(
+  //         context,
+  //         "Order placed successfully",
+  //         type: PopupType.success,
+  //       );
+  //       _clearOrderState();
+  //     }
+
+  //     // Refresh provider in background (don't await to avoid UI delay)
+  //     eposOrdersProvider.refresh().catchError((error) {
+  //       print('⚠️ Background refresh failed after order placement: $error');
+  //     });
+  //   } catch (e) {
+  //     print('❌ Online order placement failed: $e');
+
+  //     // FALLBACK: Try to save offline if online fails
+  //     try {
+  //       print('🔄 Attempting to save order offline as fallback...');
+
+  //       final offlineOrder = await OfflineOrderManager.createOfflineOrder(
+  //         cartItems: _cartItems,
+  //         paymentType: _selectedPaymentType,
+  //         orderType: _actualOrderType,
+  //         orderTotalPrice: orderData['total_price'] as double,
+  //         orderExtraNotes: orderData['order_extra_notes'] as String?,
+  //         customerName: _customerDetails?.name ?? "Unknown Customer",
+  //         customerEmail: _customerDetails?.email,
+  //         phoneNumber: _customerDetails?.phoneNumber,
+  //         streetAddress: _customerDetails?.streetAddress,
+  //         city: _customerDetails?.city,
+  //         postalCode: _customerDetails?.postalCode,
+  //         changeDue: orderData['change_due'] as double? ?? 0.0,
+  //       );
+
+  //       // Show success popup immediately
+  //       if (mounted) {
+  //         CustomPopupService.show(
+  //           context,
+  //           "Connection failed, order saved offline: ${offlineOrder.transactionId}\nWill be processed when connection is restored",
+  //           type: PopupType.success,
+  //         );
+  //         _clearOrderState();
+  //       }
+
+  //       // Add offline order to the orders list in background
+  //       eposOrdersProvider.addOfflineOrder(offlineOrder).catchError((error) {
+  //         print('⚠️ Background addOfflineOrder failed: $error');
+  //       });
+  //     } catch (offlineError) {
+  //       print('❌ Failed to save order offline: $offlineError');
+  //       if (mounted) {
+  //         CustomPopupService.show(
+  //           context,
+  //           "Failed to place order: $e",
+  //           type: PopupType.failure,
+  //         );
+  //       }
+  //     }
+  //   }
+  // }
 
   void _clearOrderState() {
     setState(() {
@@ -4139,6 +6173,51 @@ class _Page4State extends State<Page4> {
       _hasProcessedFirstStep = true;
     });
 
+    // For card_through_link payment, always require customer details with email
+    if (_selectedPaymentType == 'card_through_link') {
+      // In edit mode, always show customer details form to allow verification/updates
+      if (_isEditMode) {
+        setState(() {
+          _showPayment = false; // Stay on customer details screen
+          _hasProcessedFirstStep = true; // Mark as processed to show form
+        });
+        return;
+      }
+
+      // In new order mode: If customer details already exist and have email, send payment link
+      if (_customerDetails != null &&
+          _customerDetails!.email != null &&
+          _customerDetails!.email!.trim().isNotEmpty) {
+        // Customer details exist with email - send payment link API call
+        print(
+          '💳 Customer details exist with email - calling payment link API',
+        );
+        _handleCardThroughLinkSubmission(_customerDetails!);
+        return;
+      }
+
+      // Customer details missing or email missing - need to collect/re-collect
+      // Check if we need to validate existing customer details
+      if (_customerDetails != null &&
+          (_customerDetails!.email == null ||
+              _customerDetails!.email!.trim().isEmpty)) {
+        // Customer details exist but email is missing
+        CustomPopupService.show(
+          context,
+          'Email is required for Card Through Link payment. Please update customer details.',
+          type: PopupType.failure,
+        );
+      }
+
+      // Show customer details form (will populate existing data if available)
+      setState(() {
+        _showPayment = false; // Stay on customer details screen
+        _hasProcessedFirstStep = true; // Mark as processed to show form
+      });
+      return;
+    }
+
+    // For other payment types, use existing logic
     if (_actualOrderType.toLowerCase() == 'dinein' ||
         _actualOrderType.toLowerCase() == 'takeout') {
       setState(() {
@@ -4292,6 +6371,9 @@ class _Page4State extends State<Page4> {
                         setState(() {
                           selectedCategory = index;
                           _searchQuery = '';
+                          _selectedShawarmaSubcategory = 0;
+                          _selectedWingsSubcategory = 0;
+                          _selectedDealsSubcategory = 0;
                         });
                       },
                       child: Column(

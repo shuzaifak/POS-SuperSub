@@ -8,6 +8,12 @@ class CartItem {
   final List<String>? selectedOptions;
   final String? comment;
   final double pricePerUnit;
+  final bool isMealDeal;
+  final FoodItem? mealDealDrink;
+  final FoodItem? mealDealSide; // This will be either a crisp or cookie
+  final String? mealDealSideType; // 'Crisp' or 'Cookie' - what to display
+  final double? extraAmount;
+  final String? extraReason;
 
   // Constructor
   CartItem({
@@ -16,6 +22,12 @@ class CartItem {
     this.selectedOptions,
     this.comment,
     required this.pricePerUnit,
+    this.isMealDeal = false,
+    this.mealDealDrink,
+    this.mealDealSide,
+    this.mealDealSideType,
+    this.extraAmount,
+    this.extraReason,
   });
 
   // Method to increment quantity
@@ -32,7 +44,11 @@ class CartItem {
     }
   }
 
-  double get totalPrice => pricePerUnit * quantity;
+  double get totalPrice {
+    final basePrice = pricePerUnit * quantity;
+    final extraPrice = (extraAmount ?? 0.0) * quantity;
+    return basePrice + extraPrice;
+  }
 
   // Optional: A string representation of selected options for display
   String get detailsString {

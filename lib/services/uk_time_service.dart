@@ -34,6 +34,33 @@ class UKTimeService {
       ukTime.minute,
       ukTime.second,
       ukTime.millisecond,
+      ukTime.microsecond,
+    );
+  }
+
+  /// Convert any [dateTime] to UK local time using the timezone database.
+  /// Works for UTC timestamps as well as local times and returns a plain
+  /// [DateTime] representing the same instant but in UK local time.
+  static DateTime toUkTime(DateTime dateTime) {
+    if (!_isInitialized) {
+      initializeTimeZones();
+    }
+
+    // CRITICAL FIX: Ensure we're working with UTC time first
+    // If the datetime is already in UTC, use it. Otherwise convert to UTC first.
+    final utcDateTime = dateTime.isUtc ? dateTime : dateTime.toUtc();
+
+    // Now convert from UTC to UK time
+    final tz.TZDateTime ukDateTime = tz.TZDateTime.from(utcDateTime, _london);
+    return DateTime(
+      ukDateTime.year,
+      ukDateTime.month,
+      ukDateTime.day,
+      ukDateTime.hour,
+      ukDateTime.minute,
+      ukDateTime.second,
+      ukDateTime.millisecond,
+      ukDateTime.microsecond,
     );
   }
 
