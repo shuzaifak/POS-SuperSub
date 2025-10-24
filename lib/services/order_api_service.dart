@@ -230,6 +230,40 @@ class OrderApiService {
     }
   }
 
+  // Fetch orders by specific date
+  static Future<List<Order>> fetchOrdersByDate(DateTime date) async {
+    // Format date as YYYY-MM-DD
+    final dateString =
+        '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    final url = _buildProxyUrl('/orders/by-date');
+
+    try {
+      final response = await http.get(
+        url.replace(queryParameters: {'date': dateString}),
+        headers: BrandInfo.getDefaultHeaders(), // Using brand headers
+      );
+
+      print('📅 Fetching orders for date: $dateString');
+      print('🔍 URL: ${url.replace(queryParameters: {'date': dateString})}');
+
+      if (response.statusCode == 200) {
+        List jsonResponse = json.decode(response.body);
+        List<Order> orders = [];
+        for (var orderJson in jsonResponse) {
+          orders.add(Order.fromJson(orderJson));
+        }
+        print('✅ Fetched ${orders.length} orders for $dateString');
+        return orders;
+      } else {
+        throw Exception(
+          'Failed to load orders for $dateString: ${response.statusCode} ${response.body}',
+        );
+      }
+    } catch (e) {
+      throw Exception('Error fetching orders for $dateString: $e');
+    }
+  }
+
   // Update order status
   static Future<bool> updateOrderStatus(int orderId, String newStatus) async {
     final url = _buildProxyUrl('/orders/update-status');

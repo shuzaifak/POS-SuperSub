@@ -2375,7 +2375,7 @@ class ThermalPrinterService {
 
     // Use full 80mm paper width (48 characters)
     receipt.writeln('================================================');
-    receipt.writeln('                  **SuperSub**'); // Bold restaurant name
+    receipt.writeln('                   **SuperSub**'); // Bold restaurant name
     receipt.writeln('================================================');
     DateTime displayDateTime = orderDateTime ?? UKTimeService.now();
     receipt.writeln(
