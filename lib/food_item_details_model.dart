@@ -65,7 +65,6 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
   String? _selectedBread;
   String? _selectedMeat; // Only one meat can be selected
   bool _doubleMeat = false;
-  bool _goLarge = false;
 
   // Generic option lists for Breakfast and Sandwich categories
   final List<String> _breadOptions = [
@@ -227,8 +226,6 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
             }
           } else if (lowerOption == 'double meat') {
             _doubleMeat = true;
-          } else if (lowerOption == 'go large') {
-            _goLarge = true;
           } else if (lowerOption.startsWith('toppings:')) {
             _selectedToppings.addAll(
               option.split(':').last.trim().split(',').map((s) => s.trim()),
@@ -477,12 +474,6 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
       }
     }
 
-    // Go Large is only for Sandwiches
-    if (widget.foodItem.category == 'Sandwiches' && _goLarge) {
-      price += 2.50;
-      debugPrint("Added Go Large cost: £2.50");
-    }
-
     // Make it a Meal adds £1.50
     if (_makeItAMeal) {
       price += 1.50;
@@ -616,16 +607,16 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
       }
     }
 
-    // Go Large is only for Sandwiches
-    if (widget.foodItem.category == 'Sandwiches' && _goLarge) {
-      selectedOptions.add('Go Large');
-    }
-
     // Make it a Meal options
     if (_makeItAMeal) {
       selectedOptions.add('Make it a Meal');
-      // Note: Meal drink and side are stored in CartItem properties (mealDealDrink, mealDealSide)
-      // and displayed separately in the cart, so we don't add them to selectedOptions
+      // Add drink and side to selectedOptions for printing
+      if (_selectedMealDrink != null) {
+        selectedOptions.add('Drink: ${_selectedMealDrink!.name}');
+      }
+      if (_selectedSideType != null) {
+        selectedOptions.add('Side: $_selectedSideType');
+      }
     }
 
     final String userComment = _reviewNotesController.text.trim();
@@ -1144,12 +1135,6 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
         _buildCategoryContent(),
 
         const SizedBox(height: 30),
-
-        // Go Large option (only for Sandwiches)
-        if (widget.foodItem.category == 'Sandwiches') _buildGoLargeOption(),
-
-        if (widget.foodItem.category == 'Sandwiches')
-          const SizedBox(height: 30),
 
         // Make it a Meal option (for Sandwiches, Wraps, Salads, Bowls)
         if ([
@@ -1835,51 +1820,6 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
           },
         ),
       ],
-    );
-  }
-
-  Widget _buildGoLargeOption() {
-    return InkWell(
-      onTap: () {
-        setState(() {
-          _goLarge = !_goLarge;
-          _updatePriceDisplay();
-        });
-      },
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.white, width: 2),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(
-                color: _goLarge ? Colors.white : Colors.transparent,
-                border: Border.all(color: Colors.white, width: 2),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child:
-                  _goLarge
-                      ? const Icon(Icons.check, color: Colors.black, size: 18)
-                      : null,
-            ),
-            const SizedBox(width: 12),
-            const Text(
-              'Go Large (+£2.50)',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 

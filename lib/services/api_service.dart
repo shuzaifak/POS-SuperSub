@@ -5,7 +5,7 @@ import '../config/brand_info.dart';
 import '../models/paidout_models.dart';
 
 class ApiService {
-  static const String _apiBase = "https://api.surgechain.co.uk";
+  static const String _apiBase = "https://api.supersubs.uk";
 
   // Helper method to build full URLs
   static String _buildUrl(String path) {
@@ -16,12 +16,13 @@ class ApiService {
   static Future<bool> markOrderAsPaid(
     int orderId, {
     String? paymentType,
+    bool paidStatus = true,
   }) async {
     final url = Uri.parse(_buildUrl('/item/set-paid-status'));
     try {
       final Map<String, dynamic> requestBody = {
         'order_id': orderId,
-        'paid_status': true,
+        'paid_status': paidStatus,
       };
 
       // Add payment type if provided

@@ -17,7 +17,7 @@ class ShopStatusData {
 }
 
 class OrderApiService {
-  static const String _backendBaseUrl = "https://api.surgechain.co.uk";
+  static const String _backendBaseUrl = "https://api.supersubs.uk";
 
   // Helper method to build full URLs for HTTP requests
   static String _buildHttpUrl(String path) {

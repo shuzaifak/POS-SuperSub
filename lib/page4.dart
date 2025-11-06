@@ -30,6 +30,7 @@ import 'package:epos/providers/offline_provider.dart';
 import 'package:epos/providers/payment_link_provider.dart';
 import 'package:epos/services/offline_order_manager.dart';
 import 'package:epos/services/uk_time_service.dart';
+import 'package:epos/services/order_price_tracking_service.dart';
 
 class Page4 extends StatefulWidget {
   final String? initialSelectedServiceImage;
@@ -79,6 +80,8 @@ class _Page4State extends State<Page4> {
   final ScrollController _categoryScrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
+  late final List<GlobalKey> _categoryItemKeys;
+  late final VoidCallback _searchControllerListener;
   int? _editingCartIndex;
   double _appliedDiscountPercentage = 0.0;
   double _discountAmount = 0.0;
@@ -133,6 +136,179 @@ class _Page4State extends State<Page4> {
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeOut,
     );
+  }
+
+  String _normalizeCategoryKey(String value) {
+    return value.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toLowerCase();
+  }
+
+  List<FoodItem> _getAllAvailableFoodItems() {
+    if (!mounted) return foodItems;
+
+    try {
+      final itemProvider = Provider.of<ItemAvailabilityProvider>(
+        context,
+        listen: false,
+      );
+      if (itemProvider.allItems.isNotEmpty) {
+        return itemProvider.allItems;
+      }
+    } catch (_) {
+      // Provider might not be ready yet; fall back to local data
+    }
+
+    if (widget.foodItems.isNotEmpty) {
+      return widget.foodItems;
+    }
+    return foodItems;
+  }
+
+  bool _matchesSearchQuery(FoodItem item, String lowerCaseQuery) {
+    if (item.name.toLowerCase().contains(lowerCaseQuery)) return true;
+    if (item.description?.toLowerCase().contains(lowerCaseQuery) ?? false) {
+      return true;
+    }
+    if (item.subType?.toLowerCase().contains(lowerCaseQuery) ?? false) {
+      return true;
+    }
+    if (item.category.toLowerCase().contains(lowerCaseQuery)) return true;
+    return false;
+  }
+
+  int? _categoryIndexForItemCategory(String category) {
+    final normalizedItemCategory = _normalizeCategoryKey(category);
+    if (normalizedItemCategory.isEmpty) return null;
+
+    for (var i = 0; i < categories.length; i++) {
+      final normalizedCategoryName = _normalizeCategoryKey(categories[i].name);
+      if (normalizedCategoryName == normalizedItemCategory) {
+        return i;
+      }
+    }
+
+    return null;
+  }
+
+  void _ensureCategoryVisible(int index) {
+    if (index < 0 || index >= _categoryItemKeys.length) {
+      return;
+    }
+
+    final context = _categoryItemKeys[index].currentContext;
+    if (context != null) {
+      Scrollable.ensureVisible(
+        context,
+        duration: const Duration(milliseconds: 300),
+        alignment: 0.5,
+      );
+    }
+  }
+
+  int _findSubcategoryIndex(List<String> subcategories, String target) {
+    final normalizedTarget = target.trim().toLowerCase();
+    return subcategories.indexWhere(
+      (value) => value.trim().toLowerCase() == normalizedTarget,
+    );
+  }
+
+  bool _applyCategorySelectionForItem(FoodItem item) {
+    final targetCategoryIndex = _categoryIndexForItemCategory(item.category);
+    if (targetCategoryIndex == null) {
+      return false;
+    }
+
+    final bool categoryChanged = targetCategoryIndex != selectedCategory;
+
+    selectedCategory = targetCategoryIndex;
+    _selectedShawarmaSubcategory = 0;
+    _selectedWingsSubcategory = 0;
+    _selectedDealsSubcategory = 0;
+    _selectedPizzaSubcategory = 0;
+
+    final selectedCategoryName =
+        categories[targetCategoryIndex].name.toLowerCase();
+    final itemSubType = item.subType?.trim();
+    if (itemSubType != null && itemSubType.isNotEmpty) {
+      if (selectedCategoryName == 'shawarmas' &&
+          _shawarmaSubcategories.isNotEmpty) {
+        final index = _findSubcategoryIndex(
+          _shawarmaSubcategories,
+          itemSubType,
+        );
+        if (index != -1) {
+          _selectedShawarmaSubcategory = index;
+        }
+      } else if (selectedCategoryName == 'wings' &&
+          _wingsSubcategories.isNotEmpty) {
+        final index = _findSubcategoryIndex(_wingsSubcategories, itemSubType);
+        if (index != -1) {
+          _selectedWingsSubcategory = index;
+        }
+      } else if (selectedCategoryName == 'deals' &&
+          _dealsSubcategories.isNotEmpty) {
+        final index = _findSubcategoryIndex(_dealsSubcategories, itemSubType);
+        if (index != -1) {
+          _selectedDealsSubcategory = index;
+        }
+      } else if (selectedCategoryName == 'pizza' &&
+          _pizzaSubcategories.isNotEmpty) {
+        final index = _findSubcategoryIndex(_pizzaSubcategories, itemSubType);
+        if (index != -1) {
+          _selectedPizzaSubcategory = index;
+        }
+      }
+    }
+
+    return categoryChanged;
+  }
+
+  void _handleSearchQueryChange(String query) {
+    FoodItem? matchedItem;
+    final trimmedQuery = query.trim();
+
+    if (trimmedQuery.isNotEmpty) {
+      final lowerCaseQuery = trimmedQuery.toLowerCase();
+      final allItems = _getAllAvailableFoodItems();
+      for (final item in allItems) {
+        if (_matchesSearchQuery(item, lowerCaseQuery)) {
+          matchedItem = item;
+          break;
+        }
+      }
+    }
+
+    final previousCategory = selectedCategory;
+    final previousSearch = _searchQuery;
+    int? categoryToScroll;
+    setState(() {
+      _searchQuery = query;
+      if (matchedItem != null) {
+        final categoryChanged = _applyCategorySelectionForItem(matchedItem);
+        if (categoryChanged) {
+          categoryToScroll = selectedCategory;
+        }
+      }
+    });
+
+    if (previousCategory != selectedCategory ||
+        previousSearch != _searchQuery) {
+      final stateProvider = Provider.of<Page4StateProvider>(
+        context,
+        listen: false,
+      );
+      stateProvider.updateUIState(
+        category:
+            previousCategory != selectedCategory ? selectedCategory : null,
+        search: previousSearch != _searchQuery ? _searchQuery : null,
+      );
+    }
+
+    if (categoryToScroll != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _ensureCategoryVisible(categoryToScroll!);
+      });
+    }
   }
 
   final RegExp _nameRegExp = RegExp(r"^[a-zA-Z\s-']+$");
@@ -643,6 +819,13 @@ class _Page4State extends State<Page4> {
   @override
   void initState() {
     super.initState();
+    _categoryItemKeys = List.generate(categories.length, (_) => GlobalKey());
+    _searchControllerListener = () {
+      final text = _searchController.text;
+      if (text == _searchQuery) return;
+      _handleSearchQueryChange(text);
+    };
+    _searchController.addListener(_searchControllerListener);
 
     _isEditMode = widget.editMode;
     _editingOrderId = widget.orderId;
@@ -772,12 +955,13 @@ class _Page4State extends State<Page4> {
       _updateScrollButtonVisibility();
     });
 
-    _searchController.addListener(() {
-      setState(() {
-        _searchQuery = _searchController.text;
-      });
-    });
     _searchFocusNode.addListener(() => setState(() {}));
+    if (_searchQuery.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _handleSearchQueryChange(_searchQuery);
+      });
+    }
 
     _commentFocusNode.addListener(() {
       if (!_commentFocusNode.hasFocus) {
@@ -997,12 +1181,110 @@ class _Page4State extends State<Page4> {
             resolvedFoodItem.name,
           );
 
+          // CRITICAL FIX: Parse meal deal information from description/options
+          bool isMealDeal = false;
+          FoodItem? mealDealDrink;
+          FoodItem? mealDealSide;
+          String? mealDealSideType;
+
+          // Check if this is a meal deal
+          if (options.any(
+            (opt) => opt.toLowerCase().contains('make it a meal'),
+          )) {
+            isMealDeal = true;
+            print('🔍 DEBUG: Item $index - IS A MEAL DEAL');
+
+            // Extract drink name
+            final drinkOption = options.firstWhere(
+              (opt) => opt.toLowerCase().startsWith('drink:'),
+              orElse: () => '',
+            );
+            if (drinkOption.isNotEmpty) {
+              final drinkName = drinkOption.substring('drink:'.length).trim();
+              print('🔍 DEBUG: Item $index - Drink name: "$drinkName"');
+
+              // Find the drink FoodItem from widget.foodItems
+              mealDealDrink = widget.foodItems.firstWhere(
+                (item) =>
+                    item.name.toLowerCase() == drinkName.toLowerCase() &&
+                    item.category.toUpperCase() == 'SOFTDRINKS',
+                orElse:
+                    () => widget.foodItems.firstWhere(
+                      (item) =>
+                          item.name.toLowerCase() == drinkName.toLowerCase(),
+                      orElse:
+                          () => FoodItem(
+                            id: -1,
+                            name: drinkName,
+                            category: 'SoftDrinks',
+                            price: {'default': 0.0},
+                            image: '',
+                            availability: true,
+                          ),
+                    ),
+              );
+              print(
+                '🔍 DEBUG: Item $index - Found drink: ${mealDealDrink.name} (id: ${mealDealDrink.id})',
+              );
+            }
+
+            // Extract side type and find the side FoodItem
+            final sideOption = options.firstWhere(
+              (opt) => opt.toLowerCase().startsWith('side:'),
+              orElse: () => '',
+            );
+            if (sideOption.isNotEmpty) {
+              mealDealSideType = sideOption.substring('side:'.length).trim();
+              print('🔍 DEBUG: Item $index - Side type: "$mealDealSideType"');
+
+              // Find a representative item from the side category
+              if (mealDealSideType.isNotEmpty) {
+                if (mealDealSideType.toLowerCase() == 'crisp') {
+                  // Find any crisp item
+                  mealDealSide = widget.foodItems.firstWhere(
+                    (item) => item.category.toUpperCase() == 'CRISPS',
+                    orElse:
+                        () => FoodItem(
+                          id: -1,
+                          name: 'Crisp',
+                          category: 'Crisps',
+                          price: {'default': 0.0},
+                          image: '',
+                          availability: true,
+                        ),
+                  );
+                } else if (mealDealSideType.toLowerCase() == 'cookie') {
+                  // Find any dessert/cookie item
+                  mealDealSide = widget.foodItems.firstWhere(
+                    (item) => item.category.toUpperCase() == 'DESSERTS',
+                    orElse:
+                        () => FoodItem(
+                          id: -1,
+                          name: 'Cookie',
+                          category: 'Desserts',
+                          price: {'default': 0.0},
+                          image: '',
+                          availability: true,
+                        ),
+                  );
+                }
+                print(
+                  '🔍 DEBUG: Item $index - Found side: ${mealDealSide?.name} (id: ${mealDealSide?.id})',
+                );
+              }
+            }
+          }
+
           return CartItem(
             foodItem: resolvedFoodItem,
             quantity: quantity,
             selectedOptions: options.isNotEmpty ? options : null,
             comment: orderItem.comment,
             pricePerUnit: pricePerUnit,
+            isMealDeal: isMealDeal,
+            mealDealDrink: mealDealDrink,
+            mealDealSide: mealDealSide,
+            mealDealSideType: mealDealSideType,
           );
         }).toList();
 
@@ -1263,10 +1545,19 @@ class _Page4State extends State<Page4> {
         _calculateDiscountAmount().toStringAsFixed(2),
       );
 
+      // Get previous total price from existing order
+      final double? previousTotalPrice = _existingOrder?.orderTotalPrice;
+
       print('🔄 Updating order $_editingOrderId:');
       print('   Payment Type: ${paymentDetails.paymentType}');
       print('   Paid Status: ${paymentDetails.paidStatus}');
       print('   Total Price: $totalBeforeDiscount');
+      if (previousTotalPrice != null) {
+        print('   Previous Price: £${previousTotalPrice.toStringAsFixed(2)}');
+        final diff = totalBeforeDiscount - previousTotalPrice;
+        final sign = diff >= 0 ? '+' : '';
+        print('   Price Change: $sign£${diff.toStringAsFixed(2)}');
+      }
 
       final apiService = ApiService();
       final bool success = await apiService.updateOrderCart(
@@ -1280,10 +1571,21 @@ class _Page4State extends State<Page4> {
       if (!mounted) return;
 
       if (success) {
+        // Store price change for frontend display (only if price changed)
+        if (previousTotalPrice != null &&
+            totalBeforeDiscount != previousTotalPrice) {
+          await OrderPriceTrackingService().storePriceChange(
+            orderId: _editingOrderId!,
+            previousPrice: previousTotalPrice,
+            newPrice: totalBeforeDiscount,
+          );
+        }
+
         // Also update payment status separately using existing API
         final bool paymentUpdated = await ApiService.markOrderAsPaid(
           _editingOrderId!,
           paymentType: paymentDetails.paymentType,
+          paidStatus: paymentDetails.paidStatus,
         );
 
         if (!mounted) return;
@@ -1403,7 +1705,7 @@ class _Page4State extends State<Page4> {
 
     _categoryScrollController.removeListener(_updateScrollButtonVisibility);
     _categoryScrollController.dispose();
-    _searchController.removeListener(() => setState(() {}));
+    _searchController.removeListener(_searchControllerListener);
     _searchController.dispose();
     _searchFocusNode.dispose();
     _commentEditingController.dispose();
@@ -1706,22 +2008,10 @@ class _Page4State extends State<Page4> {
     // Start with item name
     final StringBuffer buffer = StringBuffer(cartItem.foodItem.name);
 
-    // Add selected options
+    // Add selected options (which already includes drink and side from food_item_details_model.dart)
     for (final option in options) {
       buffer.writeln();
       buffer.write(option);
-    }
-
-    // Add meal deal drink if present
-    if (cartItem.isMealDeal && cartItem.mealDealDrink != null) {
-      buffer.writeln();
-      buffer.write('Drink: ${cartItem.mealDealDrink!.name}');
-    }
-
-    // Add meal deal side if present
-    if (cartItem.isMealDeal && cartItem.mealDealSideType != null) {
-      buffer.writeln();
-      buffer.write('Side: ${cartItem.mealDealSideType}');
     }
 
     return buffer.toString();
@@ -2462,10 +2752,10 @@ class _Page4State extends State<Page4> {
 
               // Collapse search bar if expanded
               if (_isSearchBarExpanded) {
+                _searchController.clear();
+                _handleSearchQueryChange('');
                 setState(() {
                   _isSearchBarExpanded = false;
-                  _searchController.clear();
-                  _searchQuery = '';
                 });
               }
             },
@@ -3077,10 +3367,10 @@ class _Page4State extends State<Page4> {
       onTap: () {
         FocusScope.of(context).unfocus();
         if (_isSearchBarExpanded) {
+          _searchController.clear();
+          _handleSearchQueryChange('');
           setState(() {
             _isSearchBarExpanded = false;
-            _searchController.clear();
-            _searchQuery = '';
           });
         } else {
           // Save state before going back
@@ -3106,10 +3396,10 @@ class _Page4State extends State<Page4> {
                   onTap: () {
                     FocusScope.of(context).unfocus();
                     if (_isSearchBarExpanded) {
+                      _searchController.clear();
+                      _handleSearchQueryChange('');
                       setState(() {
                         _isSearchBarExpanded = false;
-                        _searchController.clear();
-                        _searchQuery = '';
                       });
                     } else {
                       Navigator.pop(context);
@@ -3182,10 +3472,8 @@ class _Page4State extends State<Page4> {
                                   ),
                                   suffixIcon: GestureDetector(
                                     onTap: () {
-                                      setState(() {
-                                        _searchController.clear();
-                                        _searchQuery = '';
-                                      });
+                                      _searchController.clear();
+                                      _handleSearchQueryChange('');
                                     },
                                     child: const Padding(
                                       padding: EdgeInsets.only(
@@ -3216,11 +3504,7 @@ class _Page4State extends State<Page4> {
                                   color: Colors.black,
                                   fontSize: 18,
                                 ),
-                                onChanged: (query) {
-                                  setState(() {
-                                    _searchQuery = query;
-                                  });
-                                },
+                                onChanged: _handleSearchQueryChange,
                                 onTap: () {
                                   setState(() {});
                                 },
@@ -3495,73 +3779,71 @@ class _Page4State extends State<Page4> {
 
         final selectedCategoryName = categories[selectedCategory].name;
 
-        String mappedCategoryKey;
-        if (selectedCategoryName.toLowerCase() == 'deals') {
-          mappedCategoryKey = 'Deals';
-        } else if (selectedCategoryName.toLowerCase() == 'calzones') {
-          mappedCategoryKey = 'Calzones';
-        } else if (selectedCategoryName.toLowerCase() == 'shawarmas') {
-          mappedCategoryKey = 'Shawarma';
-        } else if (selectedCategoryName.toLowerCase() == 'kids meal') {
-          mappedCategoryKey = 'KidsMeal';
-        } else if (selectedCategoryName.toLowerCase() == 'garlic bread') {
-          mappedCategoryKey = 'GarlicBread';
-        } else {
-          mappedCategoryKey = selectedCategoryName.toLowerCase();
-        }
-
-        Iterable<FoodItem> currentItems = allFoodItems.where(
-          (item) =>
-              item.category.toLowerCase() == mappedCategoryKey.toLowerCase(),
-        );
-
-        // Filter by subcategory for Shawarma items
-        if (selectedCategoryName.toLowerCase() == 'shawarmas') {
-          final selectedSubcategory =
-              _shawarmaSubcategories[_selectedShawarmaSubcategory];
-          currentItems = currentItems.where(
-            (item) => item.subType?.trim() == selectedSubcategory.trim(),
-          );
-        }
-
-        // Filter by subcategory for Wings items
-        if (selectedCategoryName.toLowerCase() == 'wings' &&
-            _wingsSubcategories.isNotEmpty) {
-          final selectedSubcategory =
-              _wingsSubcategories[_selectedWingsSubcategory];
-          currentItems = currentItems.where(
-            (item) => item.subType?.trim() == selectedSubcategory.trim(),
-          );
-        }
-
-        // Filter by subcategory for Deals items
-        if (selectedCategoryName.toLowerCase() == 'deals' &&
-            _dealsSubcategories.isNotEmpty) {
-          final selectedSubcategory =
-              _dealsSubcategories[_selectedDealsSubcategory];
-          currentItems = currentItems.where(
-            (item) => item.subType?.trim() == selectedSubcategory.trim(),
-          );
-        }
-
-        // Filter by subcategory for Pizza items
-        if (selectedCategoryName.toLowerCase() == 'pizza' &&
-            _pizzaSubcategories.isNotEmpty) {
-          final selectedSubcategory =
-              _pizzaSubcategories[_selectedPizzaSubcategory];
-          currentItems = currentItems.where(
-            (item) => item.subType?.trim() == selectedSubcategory.trim(),
-          );
-        }
-
+        Iterable<FoodItem> currentItems;
         if (_searchQuery.isNotEmpty) {
           final lowerCaseQuery = _searchQuery.toLowerCase();
-          currentItems = currentItems.where((item) {
-            return item.name.toLowerCase().contains(lowerCaseQuery) ||
-                (item.description?.toLowerCase().contains(lowerCaseQuery) ??
-                    false) ||
-                (item.subType?.toLowerCase().contains(lowerCaseQuery) ?? false);
-          });
+          currentItems = allFoodItems.where(
+            (item) => _matchesSearchQuery(item, lowerCaseQuery),
+          );
+        } else {
+          String mappedCategoryKey;
+          if (selectedCategoryName.toLowerCase() == 'deals') {
+            mappedCategoryKey = 'Deals';
+          } else if (selectedCategoryName.toLowerCase() == 'calzones') {
+            mappedCategoryKey = 'Calzones';
+          } else if (selectedCategoryName.toLowerCase() == 'shawarmas') {
+            mappedCategoryKey = 'Shawarma';
+          } else if (selectedCategoryName.toLowerCase() == 'kids meal') {
+            mappedCategoryKey = 'KidsMeal';
+          } else if (selectedCategoryName.toLowerCase() == 'garlic bread') {
+            mappedCategoryKey = 'GarlicBread';
+          } else {
+            mappedCategoryKey = selectedCategoryName.toLowerCase();
+          }
+
+          currentItems = allFoodItems.where(
+            (item) =>
+                item.category.toLowerCase() == mappedCategoryKey.toLowerCase(),
+          );
+
+          // Filter by subcategory for Shawarma items
+          if (selectedCategoryName.toLowerCase() == 'shawarmas') {
+            final selectedSubcategory =
+                _shawarmaSubcategories[_selectedShawarmaSubcategory];
+            currentItems = currentItems.where(
+              (item) => item.subType?.trim() == selectedSubcategory.trim(),
+            );
+          }
+
+          // Filter by subcategory for Wings items
+          if (selectedCategoryName.toLowerCase() == 'wings' &&
+              _wingsSubcategories.isNotEmpty) {
+            final selectedSubcategory =
+                _wingsSubcategories[_selectedWingsSubcategory];
+            currentItems = currentItems.where(
+              (item) => item.subType?.trim() == selectedSubcategory.trim(),
+            );
+          }
+
+          // Filter by subcategory for Deals items
+          if (selectedCategoryName.toLowerCase() == 'deals' &&
+              _dealsSubcategories.isNotEmpty) {
+            final selectedSubcategory =
+                _dealsSubcategories[_selectedDealsSubcategory];
+            currentItems = currentItems.where(
+              (item) => item.subType?.trim() == selectedSubcategory.trim(),
+            );
+          }
+
+          // Filter by subcategory for Pizza items
+          if (selectedCategoryName.toLowerCase() == 'pizza' &&
+              _pizzaSubcategories.isNotEmpty) {
+            final selectedSubcategory =
+                _pizzaSubcategories[_selectedPizzaSubcategory];
+            currentItems = currentItems.where(
+              (item) => item.subType?.trim() == selectedSubcategory.trim(),
+            );
+          }
         }
 
         final filteredItems = currentItems.toList();
@@ -3587,9 +3869,7 @@ class _Page4State extends State<Page4> {
         if (filteredItems.isEmpty) {
           if (_searchQuery.isNotEmpty) {
             return Center(
-              child: Text(
-                'No items found matching "$_searchQuery" in this category.',
-              ),
+              child: Text('No items found matching "$_searchQuery".'),
             );
           } else {
             return const Center(
@@ -4227,7 +4507,6 @@ class _Page4State extends State<Page4> {
                     String? selectedBread;
                     String? selectedMeat;
                     bool doubleMeat = false;
-                    bool goLarge = false;
 
                     // JackedPotato specific options
                     List<String> classicToppings = [];
@@ -4399,9 +4678,6 @@ class _Page4State extends State<Page4> {
                           hasOptions = true;
                         } else if (lowerOption == 'double meat') {
                           doubleMeat = true;
-                          hasOptions = true;
-                        } else if (lowerOption == 'go large') {
-                          goLarge = true;
                           hasOptions = true;
                         }
                       }
@@ -4637,18 +4913,6 @@ class _Page4State extends State<Page4> {
                                                           color: Colors.black,
                                                         ),
                                                         maxLines: 2,
-                                                        overflow:
-                                                            TextOverflow
-                                                                .ellipsis,
-                                                      ),
-                                                    if (goLarge)
-                                                      const Text(
-                                                        'Go Large',
-                                                        style: TextStyle(
-                                                          fontSize: 15,
-                                                          fontFamily: 'Poppins',
-                                                          color: Colors.black,
-                                                        ),
                                                         overflow:
                                                             TextOverflow
                                                                 .ellipsis,
@@ -5653,6 +5917,7 @@ class _Page4State extends State<Page4> {
         "items":
             _cartItems.map((cartItem) {
               final String description = _buildDescriptionForCartItem(cartItem);
+
               final double pricePerUnit = double.parse(
                 cartItem.pricePerUnit.toStringAsFixed(2),
               );
@@ -6367,6 +6632,7 @@ class _Page4State extends State<Page4> {
                     final isSelected = selectedCategory == index;
 
                     return GestureDetector(
+                      key: _categoryItemKeys[index],
                       onTap: () {
                         setState(() {
                           selectedCategory = index;

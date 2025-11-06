@@ -15,6 +15,7 @@ import 'package:epos/circular_timer_widget.dart';
 import 'package:epos/services/uk_time_service.dart';
 import 'package:epos/services/custom_popup_service.dart';
 import 'package:epos/services/connectivity_service.dart';
+import 'package:epos/services/order_price_tracking_service.dart';
 import 'models/cart_item.dart';
 import 'models/food_item.dart';
 import 'package:intl/intl.dart';
@@ -1547,6 +1548,36 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
                                                   fontWeight: FontWeight.normal,
                                                 ),
                                               ),
+                                              // UNPAID Indicator
+                                              if (liveSelectedOrder
+                                                      .paidStatus ==
+                                                  false)
+                                                Container(
+                                                  margin: const EdgeInsets.only(
+                                                    top: 4,
+                                                  ),
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 4,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.red,
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          4,
+                                                        ),
+                                                  ),
+                                                  child: const Text(
+                                                    'UNPAID',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      color: Colors.white,
+                                                    ),
+                                                  ),
+                                                ),
                                             ],
                                           ),
                                           if (liveSelectedOrder.orderType
@@ -2017,216 +2048,331 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
                                     ),
                                     const SizedBox(height: 7),
 
-                                    // Total and printer section
-                                    Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.start,
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Flexible(
-                                          child: Container(
-                                            padding: const EdgeInsets.all(15),
-                                            decoration: BoxDecoration(
-                                              color: Colors.black,
-                                              borderRadius:
-                                                  BorderRadius.circular(15),
-                                            ),
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Row(
-                                                  mainAxisAlignment:
-                                                      MainAxisAlignment
-                                                          .spaceBetween,
-                                                  children: [
-                                                    const Text(
-                                                      'Total',
-                                                      style: TextStyle(
-                                                        fontSize: 20,
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                        color: Colors.white,
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 60),
-                                                    Text(
-                                                      '£${liveSelectedOrder.orderTotalPrice.toStringAsFixed(2)}',
-                                                      style: const TextStyle(
-                                                        fontSize: 18,
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                        color: Colors.white,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                const SizedBox(height: 10),
-                                                Row(
-                                                  mainAxisAlignment:
-                                                      MainAxisAlignment
-                                                          .spaceBetween,
-                                                  children: [
-                                                    const Text(
-                                                      'Change Due',
-                                                      style: TextStyle(
-                                                        fontSize: 18,
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                        color: Colors.white,
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 20),
-                                                    Text(
-                                                      '£${liveSelectedOrder.changeDue.toStringAsFixed(2)}',
-                                                      style: const TextStyle(
-                                                        fontSize: 18,
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                        color: Colors.white,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        MouseRegion(
-                                          cursor: SystemMouseCursors.click,
-                                          child: GestureDetector(
-                                            onTap: () async {
-                                              // Set the _selectedOrder temporarily for printing
-                                              _selectedOrder =
-                                                  liveSelectedOrder;
-                                              await _handlePrintingOrderReceipt();
-                                            },
-                                            child: Container(
-                                              padding: const EdgeInsets.all(8),
-                                              decoration: BoxDecoration(
-                                                color: Colors.black,
-                                                borderRadius:
-                                                    BorderRadius.circular(15),
-                                              ),
-                                              child: Column(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Image.asset(
-                                                    'assets/images/printer.png',
-                                                    width: 50,
-                                                    height: 50,
-                                                    color: Colors.white,
-                                                  ),
-                                                  const SizedBox(height: 4),
-                                                  const Text(
-                                                    'Print',
-                                                    style: TextStyle(
-                                                      fontSize: 13,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      color: Colors.white,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        // Cancel button
-                                        MouseRegion(
-                                          cursor: SystemMouseCursors.click,
-                                          child: GestureDetector(
-                                            onTap: () async {
-                                              // Set the _selectedOrder temporarily for cancellation
-                                              _selectedOrder =
-                                                  liveSelectedOrder;
-                                              await _handleCancelOrder();
-                                            },
-                                            child: Container(
-                                              padding: const EdgeInsets.all(8),
-                                              decoration: BoxDecoration(
-                                                color: Colors.red[700],
-                                                borderRadius:
-                                                    BorderRadius.circular(15),
-                                              ),
-                                              child: Column(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  const Icon(
-                                                    Icons.cancel_outlined,
-                                                    size: 50,
-                                                    color: Colors.white,
-                                                  ),
-                                                  const SizedBox(height: 4),
-                                                  const Text(
-                                                    'Cancel',
-                                                    style: TextStyle(
-                                                      fontSize: 13,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      color: Colors.white,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
+                                    Builder(
+                                      builder: (context) {
+                                        final order = liveSelectedOrder!;
+                                        final priceTrackingService =
+                                            OrderPriceTrackingService();
+                                        final bool isPaidOrder =
+                                            order.paidStatus == true;
+                                        final bool hasPaidPriceChange =
+                                            isPaidOrder &&
+                                            priceTrackingService.hasPriceChange(
+                                              order.orderId,
+                                            );
 
-                                        // EDIT button - only show for pending orders
-                                        if (liveSelectedOrder.status
-                                                    .toLowerCase() ==
-                                                'pending' ||
-                                            liveSelectedOrder.status
-                                                    .toLowerCase() ==
-                                                'yellow')
-                                          MouseRegion(
-                                            cursor: SystemMouseCursors.click,
-                                            child: GestureDetector(
-                                              onTap: () async {
-                                                await _handleEditOrder(
-                                                  liveSelectedOrder!,
-                                                );
-                                              },
+                                        // Total and printer section
+                                        return Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Flexible(
                                               child: Container(
                                                 padding: const EdgeInsets.all(
-                                                  8,
+                                                  15,
                                                 ),
                                                 decoration: BoxDecoration(
-                                                  color: Colors.blue[700],
+                                                  color: Colors.black,
                                                   borderRadius:
                                                       BorderRadius.circular(15),
                                                 ),
                                                 child: Column(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
                                                   children: [
-                                                    Image.asset(
-                                                      'assets/images/EDIT.png',
-                                                      width: 50,
-                                                      height: 50,
-                                                      color: Colors.white,
+                                                    Row(
+                                                      mainAxisAlignment:
+                                                          MainAxisAlignment
+                                                              .spaceBetween,
+                                                      children: [
+                                                        const Text(
+                                                          'Total',
+                                                          style: TextStyle(
+                                                            fontSize: 20,
+                                                            fontWeight:
+                                                                FontWeight.bold,
+                                                            color: Colors.white,
+                                                          ),
+                                                        ),
+                                                        const SizedBox(
+                                                          width: 60,
+                                                        ),
+                                                        Column(
+                                                          crossAxisAlignment:
+                                                              CrossAxisAlignment
+                                                                  .end,
+                                                          children: [
+                                                            Text(
+                                                              '£${order.orderTotalPrice.toStringAsFixed(2)}',
+                                                              style: const TextStyle(
+                                                                fontSize: 20,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold,
+                                                                color:
+                                                                    Colors
+                                                                        .white,
+                                                              ),
+                                                            ),
+                                                            // Show price difference if order was edited and is PAID
+                                                            if (hasPaidPriceChange) ...[
+                                                              const SizedBox(
+                                                                height: 2,
+                                                              ),
+                                                              Builder(
+                                                                builder: (
+                                                                  context,
+                                                                ) {
+                                                                  final priceChange =
+                                                                      priceTrackingService
+                                                                          .getPriceChange(
+                                                                            order.orderId,
+                                                                          );
+                                                                  if (priceChange ==
+                                                                      null) {
+                                                                    return const SizedBox.shrink();
+                                                                  }
+
+                                                                  final diff =
+                                                                      priceChange
+                                                                          .difference;
+                                                                  final isIncrease =
+                                                                      diff > 0;
+                                                                  final sign =
+                                                                      isIncrease
+                                                                          ? '+'
+                                                                          : '';
+
+                                                                  return Column(
+                                                                    crossAxisAlignment:
+                                                                        CrossAxisAlignment
+                                                                            .end,
+                                                                    children: [
+                                                                      Text(
+                                                                        'Was: £${priceChange.previousPrice.toStringAsFixed(2)}',
+                                                                        style: const TextStyle(
+                                                                          fontSize:
+                                                                              14,
+                                                                          fontWeight:
+                                                                              FontWeight.bold,
+                                                                          color:
+                                                                              Colors.white70,
+                                                                          decoration:
+                                                                              TextDecoration.lineThrough,
+                                                                        ),
+                                                                      ),
+                                                                      Text(
+                                                                        '$sign£${diff.abs().toStringAsFixed(2)}',
+                                                                        style: TextStyle(
+                                                                          fontSize:
+                                                                              16,
+                                                                          fontWeight:
+                                                                              FontWeight.bold,
+                                                                          color:
+                                                                              isIncrease
+                                                                                  ? Colors.greenAccent
+                                                                                  : Colors.redAccent,
+                                                                        ),
+                                                                      ),
+                                                                    ],
+                                                                  );
+                                                                },
+                                                              ),
+                                                            ],
+                                                          ],
+                                                        ),
+                                                      ],
                                                     ),
-                                                    const SizedBox(height: 4),
-                                                    const Text(
-                                                      'Edit',
-                                                      style: TextStyle(
-                                                        fontSize: 13,
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                        color: Colors.white,
+                                                    const SizedBox(height: 10),
+                                                    // Only show Change Due if: order NOT edited OR (edited AND changeDue > 0)
+                                                    if (!hasPaidPriceChange ||
+                                                        order.changeDue > 0)
+                                                      Row(
+                                                        mainAxisAlignment:
+                                                            MainAxisAlignment
+                                                                .spaceBetween,
+                                                        children: [
+                                                          const Text(
+                                                            'Change Due',
+                                                            style: TextStyle(
+                                                              fontSize: 18,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .bold,
+                                                              color:
+                                                                  Colors.white,
+                                                            ),
+                                                          ),
+                                                          const SizedBox(
+                                                            width: 20,
+                                                          ),
+                                                          Text(
+                                                            '£${order.changeDue.toStringAsFixed(2)}',
+                                                            style:
+                                                                const TextStyle(
+                                                                  fontSize: 18,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .bold,
+                                                                  color:
+                                                                      Colors
+                                                                          .white,
+                                                                ),
+                                                          ),
+                                                        ],
                                                       ),
-                                                    ),
                                                   ],
                                                 ),
                                               ),
                                             ),
-                                          ),
-                                      ],
+                                            const SizedBox(width: 8),
+                                            MouseRegion(
+                                              cursor: SystemMouseCursors.click,
+                                              child: GestureDetector(
+                                                onTap: () async {
+                                                  // Set the _selectedOrder temporarily for printing
+                                                  _selectedOrder = order;
+                                                  await _handlePrintingOrderReceipt();
+                                                },
+                                                child: Container(
+                                                  padding: const EdgeInsets.all(
+                                                    8,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.black,
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          15,
+                                                        ),
+                                                  ),
+                                                  child: Column(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    children: [
+                                                      Image.asset(
+                                                        'assets/images/printer.png',
+                                                        width: 50,
+                                                        height: 50,
+                                                        color: Colors.white,
+                                                      ),
+                                                      const SizedBox(height: 4),
+                                                      const Text(
+                                                        'Print',
+                                                        style: TextStyle(
+                                                          fontSize: 13,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          color: Colors.white,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            // Cancel button
+                                            MouseRegion(
+                                              cursor: SystemMouseCursors.click,
+                                              child: GestureDetector(
+                                                onTap: () async {
+                                                  // Set the _selectedOrder temporarily for cancellation
+                                                  _selectedOrder = order;
+                                                  await _handleCancelOrder();
+                                                },
+                                                child: Container(
+                                                  padding: const EdgeInsets.all(
+                                                    8,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.red[700],
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          15,
+                                                        ),
+                                                  ),
+                                                  child: Column(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    children: [
+                                                      const Icon(
+                                                        Icons.cancel_outlined,
+                                                        size: 50,
+                                                        color: Colors.white,
+                                                      ),
+                                                      const SizedBox(height: 4),
+                                                      const Text(
+                                                        'Cancel',
+                                                        style: TextStyle(
+                                                          fontSize: 13,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          color: Colors.white,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+
+                                            // EDIT button - only show for pending orders
+                                            if (order.status.toLowerCase() ==
+                                                    'pending' ||
+                                                order.status.toLowerCase() ==
+                                                    'yellow')
+                                              MouseRegion(
+                                                cursor:
+                                                    SystemMouseCursors.click,
+                                                child: GestureDetector(
+                                                  onTap: () async {
+                                                    await _handleEditOrder(
+                                                      order,
+                                                    );
+                                                  },
+                                                  child: Container(
+                                                    padding:
+                                                        const EdgeInsets.all(8),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.blue[700],
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            15,
+                                                          ),
+                                                    ),
+                                                    child: Column(
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      children: [
+                                                        Image.asset(
+                                                          'assets/images/EDIT.png',
+                                                          width: 50,
+                                                          height: 50,
+                                                          color: Colors.white,
+                                                        ),
+                                                        const SizedBox(
+                                                          height: 4,
+                                                        ),
+                                                        const Text(
+                                                          'Edit',
+                                                          style: TextStyle(
+                                                            fontSize: 13,
+                                                            fontWeight:
+                                                                FontWeight.bold,
+                                                            color: Colors.white,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                          ],
+                                        );
+                                      },
                                     ),
                                   ],
                                 ),

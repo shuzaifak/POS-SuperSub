@@ -142,6 +142,7 @@ class Order {
   final String? county;
   final String? postalCode;
   final double orderTotalPrice;
+  final double? previousTotalPrice; // Track price before edit
   final String? orderExtraNotes;
   final List<OrderItem> items;
   final int? driverId;
@@ -165,6 +166,7 @@ class Order {
     this.county,
     this.postalCode,
     required this.orderTotalPrice,
+    this.previousTotalPrice, // Optional - only set when order is edited
     this.orderExtraNotes,
     required this.items,
     this.driverId,
@@ -173,6 +175,15 @@ class Order {
 
   // Helper method to check if order was edited
   bool get isEdited => updatedAt != null;
+
+  // Helper method to get price difference (positive = increase, negative = decrease)
+  double get priceDifference {
+    if (previousTotalPrice == null) return 0.0;
+    return orderTotalPrice - previousTotalPrice!;
+  }
+
+  // Helper method to check if price changed
+  bool get priceChanged => previousTotalPrice != null && priceDifference != 0.0;
 
   factory Order.fromJson(Map<String, dynamic> json) {
     // Move helper function inside factory constructor
@@ -238,6 +249,7 @@ class Order {
       county: json['county'],
       postalCode: json['postal_code'],
       orderTotalPrice: totalPrice,
+      previousTotalPrice: null, // Will be set locally when editing
       orderExtraNotes:
           json['order_extra_notes'] ?? json['extra_notes'] ?? json['notes'],
       items:
@@ -273,6 +285,7 @@ class Order {
     String? orderType,
     String? status,
     DateTime? createdAt,
+    DateTime? updatedAt,
     double? changeDue,
     String? orderSource,
     String? customerName,
@@ -283,6 +296,7 @@ class Order {
     String? county,
     String? postalCode,
     double? orderTotalPrice,
+    double? previousTotalPrice,
     String? orderExtraNotes,
     List<OrderItem>? items,
     int? driverId,
@@ -297,6 +311,7 @@ class Order {
       orderType: orderType ?? this.orderType,
       status: status ?? this.status,
       createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
       changeDue: changeDue ?? this.changeDue,
       orderSource: orderSource ?? this.orderSource,
       customerName: customerName ?? this.customerName,
@@ -307,6 +322,7 @@ class Order {
       county: county ?? this.county,
       postalCode: postalCode ?? this.postalCode,
       orderTotalPrice: orderTotalPrice ?? this.orderTotalPrice,
+      previousTotalPrice: previousTotalPrice ?? this.previousTotalPrice,
       orderExtraNotes: orderExtraNotes ?? this.orderExtraNotes,
       items: items ?? this.items,
       driverId: driverId ?? this.driverId,

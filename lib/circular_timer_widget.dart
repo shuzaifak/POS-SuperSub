@@ -67,15 +67,6 @@ class _CircularTimerState extends State<CircularTimer> {
 
       // Calculate difference using UK timestamps
       _elapsed = currentUKTime.difference(startTimeAsUK);
-
-      // Debug logging to verify time calculation
-      print('⏰ CircularTimer Time Check:');
-      print('   Order CreatedAt (from backend): ${widget.startTime}');
-      print('   StartTime as UK local: $startTimeAsUK');
-      print('   Current UK Time: $currentUKTime');
-      print('   Calculated Elapsed: $_elapsed');
-      print('   Elapsed in Minutes: ${_elapsed.inMinutes} minutes');
-      print('   Elapsed in Seconds: ${_elapsed.inSeconds} seconds');
     });
   }
 

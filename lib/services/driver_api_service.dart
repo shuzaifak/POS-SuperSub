@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 class DriverApiService {
-  static const String _apiBase = "https://api.surgechain.co.uk";
+  static const String _apiBase = "https://api.supersubs.uk";
 
   // Helper method to build full URLs
   static String _buildUrl(String path) {
