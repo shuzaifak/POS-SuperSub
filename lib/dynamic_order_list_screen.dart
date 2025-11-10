@@ -1257,7 +1257,7 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
                                                     ),
                                                     alignment: Alignment.center,
                                                     child: Text(
-                                                      '#${order.orderId}',
+                                                      '#${order.displayOrderNumber}',
                                                       style: const TextStyle(
                                                         fontSize: 16,
                                                         fontWeight:
@@ -1542,7 +1542,7 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
                                                 ),
                                               ),
                                               Text(
-                                                'Order no. ${liveSelectedOrder.orderId}',
+                                                'Order no. ${liveSelectedOrder.displayOrderNumber}',
                                                 style: const TextStyle(
                                                   fontSize: 17,
                                                   fontWeight: FontWeight.normal,
@@ -2082,6 +2082,50 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
                                                   crossAxisAlignment:
                                                       CrossAxisAlignment.start,
                                                   children: [
+                                                    // Show discount if present
+                                                    if (order.discountPercentage !=
+                                                            null &&
+                                                        order.discountPercentage! >
+                                                            0) ...[
+                                                      Row(
+                                                        mainAxisAlignment:
+                                                            MainAxisAlignment
+                                                                .spaceBetween,
+                                                        children: [
+                                                          Text(
+                                                            'Discount (${order.discountPercentage!.toStringAsFixed(1)}%)',
+                                                            style: const TextStyle(
+                                                              fontSize: 18,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w600,
+                                                              color:
+                                                                  Colors
+                                                                      .white70,
+                                                            ),
+                                                          ),
+                                                          const SizedBox(
+                                                            width: 20,
+                                                          ),
+                                                          Text(
+                                                            '- £${(order.discountAmount ?? 0).toStringAsFixed(2)}',
+                                                            style:
+                                                                const TextStyle(
+                                                                  fontSize: 18,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w600,
+                                                                  color: Color(
+                                                                    0xFF90EE90,
+                                                                  ),
+                                                                ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                      const SizedBox(
+                                                        height: 10,
+                                                      ),
+                                                    ],
                                                     Row(
                                                       mainAxisAlignment:
                                                           MainAxisAlignment
@@ -2521,9 +2565,13 @@ class _DynamicOrderListScreenState extends State<DynamicOrderListScreen>
         paidStatus:
             _selectedOrder!
                 .paidStatus, // Pass the actual paid status from order
+        orderId: _selectedOrder!.orderId,
+        orderNumber: _selectedOrder!.displayOrderNumber,
         deliveryCharge: deliveryChargeAmount,
         orderDateTime: UKTimeService.now(), // Always use UK time for printing
         isEdited: _selectedOrder!.isEdited, // Pass if order was edited
+        discountPercentage: _selectedOrder!.discountPercentage,
+        discountAmount: _selectedOrder!.discountAmount,
         onShowMethodSelection: (availableMethods) {
           CustomPopupService.show(
             context,

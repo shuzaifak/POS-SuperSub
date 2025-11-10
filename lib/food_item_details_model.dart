@@ -248,8 +248,8 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
       _isInSizeSelectionMode = false;
       _sizeHasBeenSelected =
           _selectedSize != null ||
-          (widget.foodItem.price.keys.length == 1 &&
-              widget.foodItem.price.isNotEmpty);
+          (widget.foodItem.effectivePosPrice.keys.length == 1 &&
+              widget.foodItem.effectivePosPrice.isNotEmpty);
 
       // Set correct tab for categories without Bread when editing
       if (widget.foodItem.category == 'JackedPotato') {
@@ -355,15 +355,16 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
         _selectedOptionCategory = 'Meat';
       }
 
-      bool requiresSizeSelection = widget.foodItem.price.keys.length > 1;
+      bool requiresSizeSelection =
+          widget.foodItem.effectivePosPrice.keys.length > 1;
 
       if (requiresSizeSelection) {
         _isInSizeSelectionMode = true;
         _selectedSize = null;
       } else {
-        if (widget.foodItem.price.keys.length == 1 &&
-            widget.foodItem.price.isNotEmpty) {
-          _selectedSize = widget.foodItem.price.keys.first;
+        if (widget.foodItem.effectivePosPrice.keys.length == 1 &&
+            widget.foodItem.effectivePosPrice.isNotEmpty) {
+          _selectedSize = widget.foodItem.effectivePosPrice.keys.first;
           _sizeHasBeenSelected = true;
         }
         _isInSizeSelectionMode = false;
@@ -410,18 +411,18 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
 
   double _calculatePricePerUnit() {
     debugPrint("--- Calculating Price for ${widget.foodItem.name} ---");
-    debugPrint("Food Item Price Map: ${widget.foodItem.price}");
+    debugPrint("Food Item Price Map: ${widget.foodItem.effectivePosPrice}");
     debugPrint("Selected Size: $_selectedSize");
 
     double price = 0.0;
 
     // Get base price from size
     if (_selectedSize != null &&
-        widget.foodItem.price.containsKey(_selectedSize)) {
-      price = widget.foodItem.price[_selectedSize] ?? 0.0;
-    } else if (widget.foodItem.price.keys.length == 1 &&
-        widget.foodItem.price.isNotEmpty) {
-      price = widget.foodItem.price.values.first;
+        widget.foodItem.effectivePosPrice.containsKey(_selectedSize)) {
+      price = widget.foodItem.effectivePosPrice[_selectedSize] ?? 0.0;
+    } else if (widget.foodItem.effectivePosPrice.keys.length == 1 &&
+        widget.foodItem.effectivePosPrice.isNotEmpty) {
+      price = widget.foodItem.effectivePosPrice.values.first;
     } else {
       debugPrint("No valid size selected or price not found");
       return 0.0;
@@ -524,7 +525,8 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
     }
 
     // Size validation
-    if (widget.foodItem.price.keys.length > 1 && _selectedSize == null) {
+    if (widget.foodItem.effectivePosPrice.keys.length > 1 &&
+        _selectedSize == null) {
       CustomPopupService.show(
         context,
         "Please select a size before adding to cart",
@@ -556,7 +558,8 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
     final List<String> selectedOptions = [];
 
     // Add size if applicable
-    if (_selectedSize != null && widget.foodItem.price.keys.length > 1) {
+    if (_selectedSize != null &&
+        widget.foodItem.effectivePosPrice.keys.length > 1) {
       selectedOptions.add('Size: $_selectedSize');
     }
 
@@ -710,7 +713,8 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
     }
 
     // Size validation
-    if (widget.foodItem.price.keys.length > 1 && _selectedSize == null) {
+    if (widget.foodItem.effectivePosPrice.keys.length > 1 &&
+        _selectedSize == null) {
       canConfirmSelection = false;
     }
 
@@ -1088,7 +1092,7 @@ class _FoodItemDetailsModalState extends State<FoodItemDetailsModal> {
             runSpacing: 15,
             alignment: WrapAlignment.center,
             children:
-                widget.foodItem.price.keys.map((sizeKey) {
+                widget.foodItem.effectivePosPrice.keys.map((sizeKey) {
                   final bool isActive = _selectedSize == sizeKey;
                   final String displayedText = _getDisplaySize(sizeKey);
 

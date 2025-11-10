@@ -6,7 +6,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../services/api_service.dart';
 import 'package:epos/custom_bottom_nav_bar.dart';
-import 'admin_portal_screen.dart';
+import 'admin_panel_webview_screen.dart';
 import 'package:epos/services/custom_popup_service.dart';
 import 'edit_items_screen.dart';
 import 'order_history_screen.dart';
@@ -1050,7 +1050,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return GestureDetector(
       onTap: () {
         Navigator.of(context).push(
-          MaterialPageRoute(builder: (context) => const AdminPortalScreen()),
+          MaterialPageRoute(
+            builder: (context) => const AdminPanelWebViewScreen(),
+          ),
         );
       },
       child: Container(
@@ -1199,9 +1201,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _showOrderHistoryScreen() {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => const OrderHistoryScreen(),
-      ),
+      MaterialPageRoute(builder: (context) => const OrderHistoryScreen()),
     );
   }
 

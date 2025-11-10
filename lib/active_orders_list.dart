@@ -212,7 +212,7 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
                     const SizedBox(height: 8),
                     // Subtitle
                     Text(
-                      'Mark Order #${order.orderId} as paid?',
+                      'Mark Order #${order.displayOrderNumber} as paid?',
                       style: TextStyle(
                         fontSize: 14,
                         color: Colors.grey.shade600,
@@ -343,7 +343,7 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
               ),
               const SizedBox(width: 10),
               Text(
-                'Order #${_selectedOrder!.orderId} - ${_selectedOrder!.customerName}',
+                'Order #${_selectedOrder!.displayOrderNumber} - ${_selectedOrder!.customerName}',
                 style: TextStyle(
                   fontSize: isLargeScreen ? 22 : 20,
                   fontWeight: FontWeight.bold,
@@ -1107,6 +1107,8 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
         city: _selectedOrder!.city,
         postalCode: _selectedOrder!.postalCode,
         paymentType: _selectedOrder!.paymentType,
+        orderId: _selectedOrder!.orderId,
+        orderNumber: _selectedOrder!.displayOrderNumber,
         deliveryCharge: deliveryChargeAmount,
         orderDateTime: UKTimeService.now(), // Always use UK time for printing
         onShowMethodSelection: (availableMethods) {
@@ -1544,7 +1546,7 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
                             ),
                           ),
                           Text(
-                            'Order no. ${_selectedOrder!.orderId}',
+                            'Order no. ${_selectedOrder!.displayOrderNumber}',
                             style: TextStyle(
                               fontSize: isLargeScreen ? 19 : 17,
                               fontWeight: FontWeight.normal,
@@ -2140,7 +2142,7 @@ class _ActiveOrdersListState extends State<ActiveOrdersList> {
                                   ),
                                   alignment: Alignment.center,
                                   child: Text(
-                                    '#${order.orderId}',
+                                    '#${order.displayOrderNumber}',
                                     style: const TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.bold,

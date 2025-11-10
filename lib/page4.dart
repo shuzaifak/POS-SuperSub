@@ -29,8 +29,8 @@ import 'package:epos/providers/item_availability_provider.dart';
 import 'package:epos/providers/offline_provider.dart';
 import 'package:epos/providers/payment_link_provider.dart';
 import 'package:epos/services/offline_order_manager.dart';
-import 'package:epos/services/uk_time_service.dart';
 import 'package:epos/services/order_price_tracking_service.dart';
+import 'package:epos/services/uk_time_service.dart';
 
 class Page4 extends StatefulWidget {
   final String? initialSelectedServiceImage;
@@ -80,7 +80,6 @@ class _Page4State extends State<Page4> {
   final ScrollController _categoryScrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
-  late final List<GlobalKey> _categoryItemKeys;
   late final VoidCallback _searchControllerListener;
   int? _editingCartIndex;
   double _appliedDiscountPercentage = 0.0;
@@ -136,179 +135,6 @@ class _Page4State extends State<Page4> {
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeOut,
     );
-  }
-
-  String _normalizeCategoryKey(String value) {
-    return value.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toLowerCase();
-  }
-
-  List<FoodItem> _getAllAvailableFoodItems() {
-    if (!mounted) return foodItems;
-
-    try {
-      final itemProvider = Provider.of<ItemAvailabilityProvider>(
-        context,
-        listen: false,
-      );
-      if (itemProvider.allItems.isNotEmpty) {
-        return itemProvider.allItems;
-      }
-    } catch (_) {
-      // Provider might not be ready yet; fall back to local data
-    }
-
-    if (widget.foodItems.isNotEmpty) {
-      return widget.foodItems;
-    }
-    return foodItems;
-  }
-
-  bool _matchesSearchQuery(FoodItem item, String lowerCaseQuery) {
-    if (item.name.toLowerCase().contains(lowerCaseQuery)) return true;
-    if (item.description?.toLowerCase().contains(lowerCaseQuery) ?? false) {
-      return true;
-    }
-    if (item.subType?.toLowerCase().contains(lowerCaseQuery) ?? false) {
-      return true;
-    }
-    if (item.category.toLowerCase().contains(lowerCaseQuery)) return true;
-    return false;
-  }
-
-  int? _categoryIndexForItemCategory(String category) {
-    final normalizedItemCategory = _normalizeCategoryKey(category);
-    if (normalizedItemCategory.isEmpty) return null;
-
-    for (var i = 0; i < categories.length; i++) {
-      final normalizedCategoryName = _normalizeCategoryKey(categories[i].name);
-      if (normalizedCategoryName == normalizedItemCategory) {
-        return i;
-      }
-    }
-
-    return null;
-  }
-
-  void _ensureCategoryVisible(int index) {
-    if (index < 0 || index >= _categoryItemKeys.length) {
-      return;
-    }
-
-    final context = _categoryItemKeys[index].currentContext;
-    if (context != null) {
-      Scrollable.ensureVisible(
-        context,
-        duration: const Duration(milliseconds: 300),
-        alignment: 0.5,
-      );
-    }
-  }
-
-  int _findSubcategoryIndex(List<String> subcategories, String target) {
-    final normalizedTarget = target.trim().toLowerCase();
-    return subcategories.indexWhere(
-      (value) => value.trim().toLowerCase() == normalizedTarget,
-    );
-  }
-
-  bool _applyCategorySelectionForItem(FoodItem item) {
-    final targetCategoryIndex = _categoryIndexForItemCategory(item.category);
-    if (targetCategoryIndex == null) {
-      return false;
-    }
-
-    final bool categoryChanged = targetCategoryIndex != selectedCategory;
-
-    selectedCategory = targetCategoryIndex;
-    _selectedShawarmaSubcategory = 0;
-    _selectedWingsSubcategory = 0;
-    _selectedDealsSubcategory = 0;
-    _selectedPizzaSubcategory = 0;
-
-    final selectedCategoryName =
-        categories[targetCategoryIndex].name.toLowerCase();
-    final itemSubType = item.subType?.trim();
-    if (itemSubType != null && itemSubType.isNotEmpty) {
-      if (selectedCategoryName == 'shawarmas' &&
-          _shawarmaSubcategories.isNotEmpty) {
-        final index = _findSubcategoryIndex(
-          _shawarmaSubcategories,
-          itemSubType,
-        );
-        if (index != -1) {
-          _selectedShawarmaSubcategory = index;
-        }
-      } else if (selectedCategoryName == 'wings' &&
-          _wingsSubcategories.isNotEmpty) {
-        final index = _findSubcategoryIndex(_wingsSubcategories, itemSubType);
-        if (index != -1) {
-          _selectedWingsSubcategory = index;
-        }
-      } else if (selectedCategoryName == 'deals' &&
-          _dealsSubcategories.isNotEmpty) {
-        final index = _findSubcategoryIndex(_dealsSubcategories, itemSubType);
-        if (index != -1) {
-          _selectedDealsSubcategory = index;
-        }
-      } else if (selectedCategoryName == 'pizza' &&
-          _pizzaSubcategories.isNotEmpty) {
-        final index = _findSubcategoryIndex(_pizzaSubcategories, itemSubType);
-        if (index != -1) {
-          _selectedPizzaSubcategory = index;
-        }
-      }
-    }
-
-    return categoryChanged;
-  }
-
-  void _handleSearchQueryChange(String query) {
-    FoodItem? matchedItem;
-    final trimmedQuery = query.trim();
-
-    if (trimmedQuery.isNotEmpty) {
-      final lowerCaseQuery = trimmedQuery.toLowerCase();
-      final allItems = _getAllAvailableFoodItems();
-      for (final item in allItems) {
-        if (_matchesSearchQuery(item, lowerCaseQuery)) {
-          matchedItem = item;
-          break;
-        }
-      }
-    }
-
-    final previousCategory = selectedCategory;
-    final previousSearch = _searchQuery;
-    int? categoryToScroll;
-    setState(() {
-      _searchQuery = query;
-      if (matchedItem != null) {
-        final categoryChanged = _applyCategorySelectionForItem(matchedItem);
-        if (categoryChanged) {
-          categoryToScroll = selectedCategory;
-        }
-      }
-    });
-
-    if (previousCategory != selectedCategory ||
-        previousSearch != _searchQuery) {
-      final stateProvider = Provider.of<Page4StateProvider>(
-        context,
-        listen: false,
-      );
-      stateProvider.updateUIState(
-        category:
-            previousCategory != selectedCategory ? selectedCategory : null,
-        search: previousSearch != _searchQuery ? _searchQuery : null,
-      );
-    }
-
-    if (categoryToScroll != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _ensureCategoryVisible(categoryToScroll!);
-      });
-    }
   }
 
   final RegExp _nameRegExp = RegExp(r"^[a-zA-Z\s-']+$");
@@ -757,6 +583,132 @@ class _Page4State extends State<Page4> {
         .join(' ');
   }
 
+  String _normalizeCategoryKey(String value) {
+    return value.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toLowerCase();
+  }
+
+  List<FoodItem> _getAllAvailableFoodItems() {
+    if (!mounted) return foodItems;
+
+    try {
+      final itemProvider = Provider.of<ItemAvailabilityProvider>(
+        context,
+        listen: false,
+      );
+      if (itemProvider.allItems.isNotEmpty) {
+        return itemProvider.allItems;
+      }
+    } catch (_) {
+      // Provider not available yet; fall back to local state
+    }
+
+    if (widget.foodItems.isNotEmpty) {
+      return widget.foodItems;
+    }
+    return foodItems;
+  }
+
+  bool _matchesSearchQuery(FoodItem item, String lowerCaseQuery) {
+    if (item.name.toLowerCase().contains(lowerCaseQuery)) return true;
+    if (item.description?.toLowerCase().contains(lowerCaseQuery) ?? false) {
+      return true;
+    }
+    if (item.subType?.toLowerCase().contains(lowerCaseQuery) ?? false) {
+      return true;
+    }
+    if (item.category.toLowerCase().contains(lowerCaseQuery)) return true;
+    return false;
+  }
+
+  int? _categoryIndexForItemCategory(String category) {
+    final normalizedItemCategory = _normalizeCategoryKey(category);
+
+    for (var i = 0; i < categories.length; i++) {
+      final normalizedCategoryName = _normalizeCategoryKey(categories[i].name);
+      if (normalizedCategoryName == normalizedItemCategory) {
+        return i;
+      }
+    }
+
+    // No category match found
+    return null;
+  }
+
+  int _findSubcategoryIndex(List<String> subcategories, String target) {
+    final normalizedTarget = target.trim().toLowerCase();
+    return subcategories.indexWhere(
+      (value) => value.trim().toLowerCase() == normalizedTarget,
+    );
+  }
+
+  void _applyCategorySelectionForItem(FoodItem item) {
+    final targetCategoryIndex = _categoryIndexForItemCategory(item.category);
+    if (targetCategoryIndex == null) return;
+
+    selectedCategory = targetCategoryIndex;
+
+    // Reset subcategory selections before applying the relevant one
+    _selectedShawarmaSubcategory = 0;
+    _selectedWingsSubcategory = 0;
+    _selectedDealsSubcategory = 0;
+    _selectedPizzaSubcategory = 0;
+
+    final selectedCategoryName =
+        categories[targetCategoryIndex].name.toLowerCase();
+    final itemSubType = item.subType?.trim();
+    if (itemSubType == null || itemSubType.isEmpty) {
+      return;
+    }
+
+    if (selectedCategoryName == 'shawarmas' &&
+        _shawarmaSubcategories.isNotEmpty) {
+      final index = _findSubcategoryIndex(_shawarmaSubcategories, itemSubType);
+      if (index != -1) {
+        _selectedShawarmaSubcategory = index;
+      }
+    } else if (selectedCategoryName == 'wings' &&
+        _wingsSubcategories.isNotEmpty) {
+      final index = _findSubcategoryIndex(_wingsSubcategories, itemSubType);
+      if (index != -1) {
+        _selectedWingsSubcategory = index;
+      }
+    } else if (selectedCategoryName == 'deals' &&
+        _dealsSubcategories.isNotEmpty) {
+      final index = _findSubcategoryIndex(_dealsSubcategories, itemSubType);
+      if (index != -1) {
+        _selectedDealsSubcategory = index;
+      }
+    } else if (selectedCategoryName == 'pizza' &&
+        _pizzaSubcategories.isNotEmpty) {
+      final index = _findSubcategoryIndex(_pizzaSubcategories, itemSubType);
+      if (index != -1) {
+        _selectedPizzaSubcategory = index;
+      }
+    }
+  }
+
+  void _handleSearchQueryChange(String query) {
+    FoodItem? matchedItem;
+
+    if (query.isNotEmpty) {
+      final lowerCaseQuery = query.toLowerCase();
+      final allItems = _getAllAvailableFoodItems();
+      for (final item in allItems) {
+        if (_matchesSearchQuery(item, lowerCaseQuery)) {
+          matchedItem = item;
+          break;
+        }
+      }
+    }
+
+    setState(() {
+      _searchQuery = query;
+      if (matchedItem != null) {
+        _applyCategorySelectionForItem(matchedItem);
+      }
+    });
+  }
+
   Widget _buildItemDescription(FoodItem item, Color textColor) {
     final description = item.description!;
 
@@ -819,13 +771,6 @@ class _Page4State extends State<Page4> {
   @override
   void initState() {
     super.initState();
-    _categoryItemKeys = List.generate(categories.length, (_) => GlobalKey());
-    _searchControllerListener = () {
-      final text = _searchController.text;
-      if (text == _searchQuery) return;
-      _handleSearchQueryChange(text);
-    };
-    _searchController.addListener(_searchControllerListener);
 
     _isEditMode = widget.editMode;
     _editingOrderId = widget.orderId;
@@ -955,13 +900,13 @@ class _Page4State extends State<Page4> {
       _updateScrollButtonVisibility();
     });
 
+    _searchControllerListener = () {
+      final text = _searchController.text;
+      if (text == _searchQuery) return;
+      _handleSearchQueryChange(text);
+    };
+    _searchController.addListener(_searchControllerListener);
     _searchFocusNode.addListener(() => setState(() {}));
-    if (_searchQuery.isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _handleSearchQueryChange(_searchQuery);
-      });
-    }
 
     _commentFocusNode.addListener(() {
       if (!_commentFocusNode.hasFocus) {
@@ -2752,10 +2697,10 @@ class _Page4State extends State<Page4> {
 
               // Collapse search bar if expanded
               if (_isSearchBarExpanded) {
-                _searchController.clear();
-                _handleSearchQueryChange('');
                 setState(() {
                   _isSearchBarExpanded = false;
+                  _searchController.clear();
+                  _searchQuery = '';
                 });
               }
             },
@@ -3367,10 +3312,10 @@ class _Page4State extends State<Page4> {
       onTap: () {
         FocusScope.of(context).unfocus();
         if (_isSearchBarExpanded) {
-          _searchController.clear();
-          _handleSearchQueryChange('');
           setState(() {
             _isSearchBarExpanded = false;
+            _searchController.clear();
+            _searchQuery = '';
           });
         } else {
           // Save state before going back
@@ -3396,10 +3341,10 @@ class _Page4State extends State<Page4> {
                   onTap: () {
                     FocusScope.of(context).unfocus();
                     if (_isSearchBarExpanded) {
-                      _searchController.clear();
-                      _handleSearchQueryChange('');
                       setState(() {
                         _isSearchBarExpanded = false;
+                        _searchController.clear();
+                        _searchQuery = '';
                       });
                     } else {
                       Navigator.pop(context);
@@ -3472,8 +3417,10 @@ class _Page4State extends State<Page4> {
                                   ),
                                   suffixIcon: GestureDetector(
                                     onTap: () {
-                                      _searchController.clear();
-                                      _handleSearchQueryChange('');
+                                      setState(() {
+                                        _searchController.clear();
+                                        _searchQuery = '';
+                                      });
                                     },
                                     child: const Padding(
                                       padding: EdgeInsets.only(
@@ -4149,7 +4096,8 @@ class _Page4State extends State<Page4> {
         !_showPayment &&
         _selectedPaymentType == 'card_through_link' &&
         _cartItems.isNotEmpty &&
-        (_customerDetails == null ||
+        (_isEditMode ||
+            _customerDetails == null ||
             _customerDetails!.email == null ||
             _customerDetails!.email!.trim().isEmpty)) {
       return Column(
@@ -4203,7 +4151,8 @@ class _Page4State extends State<Page4> {
         !_showPayment &&
         _selectedPaymentType == 'card_through_link' &&
         _cartItems.isNotEmpty &&
-        (_customerDetails == null ||
+        (_isEditMode ||
+            _customerDetails == null ||
             _customerDetails!.email == null ||
             _customerDetails!.email!.trim().isEmpty)) {
       return Column(
@@ -5595,6 +5544,60 @@ class _Page4State extends State<Page4> {
                     ),
                   ),
                 ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            // Second row: Card Link, Discount
+            Row(
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: AbsorbPointer(
+                    absorbing: _isProcessingUnpaid,
+                    child: Opacity(
+                      opacity: _isProcessingUnpaid ? 0.3 : 1.0,
+                      child: GestureDetector(
+                        onTap: () async {
+                          setState(() {
+                            _selectedPaymentType = 'card_through_link';
+                          });
+                          _proceedToNextStep();
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 18,
+                          ),
+                          decoration: BoxDecoration(
+                            color:
+                                _selectedPaymentType == 'card_through_link'
+                                    ? Colors.grey[300]
+                                    : const Color(0xFF4CAF50),
+                            borderRadius: BorderRadius.circular(8),
+                            border:
+                                _selectedPaymentType == 'card_through_link'
+                                    ? Border.all(color: Colors.grey)
+                                    : null,
+                          ),
+                          child: Center(
+                            child: Text(
+                              'Card Through Link',
+                              style: TextStyle(
+                                color:
+                                    _selectedPaymentType == 'card_through_link'
+                                        ? Colors.black
+                                        : Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 29,
+                                fontFamily: 'Poppins',
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: AbsorbPointer(
@@ -5615,7 +5618,7 @@ class _Page4State extends State<Page4> {
                         },
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
+                            horizontal: 16,
                             vertical: 18,
                           ),
                           decoration: BoxDecoration(
@@ -5638,7 +5641,6 @@ class _Page4State extends State<Page4> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
               ],
             ),
             const SizedBox(height: 10),
@@ -5760,6 +5762,7 @@ class _Page4State extends State<Page4> {
 
             // Proceed to payment screen without sending link
             setState(() {
+              _isSendingPaymentLink = false;
               _showPayment = true;
             });
             return;
@@ -5897,6 +5900,10 @@ class _Page4State extends State<Page4> {
         "payment_type": _selectedPaymentType,
         "amount_received": finalAmountReceived,
         "discount_percentage": finalDiscountPercentage,
+        "discount_details": {
+          "percentage": finalDiscountPercentage,
+          "amount": dynamicDiscountAmount,
+        },
         "order_type":
             _actualOrderType.toLowerCase() == 'collection'
                 ? 'takeaway'
@@ -5953,7 +5960,9 @@ class _Page4State extends State<Page4> {
               .trim();
 
       // First submit order to backend and get order ID
-      final String? backendOrderId = await _submitOrderAndGetId(orderData);
+      final OrderCreationResponse? backendOrder = await _submitOrderAndGetId(
+        orderData,
+      );
 
       // Always use UK time for receipts and dialogs
       final DateTime orderCreationTime = UKTimeService.now();
@@ -5972,7 +5981,8 @@ class _Page4State extends State<Page4> {
         extraNotes: extraNotes,
         changeDue: finalChangeDue,
         paidStatus: paymentDetails.paidStatus,
-        orderId: backendOrderId,
+        orderId: backendOrder?.orderId,
+        orderNumber: backendOrder?.orderNumber,
         orderDateTime: orderCreationTime,
         orderSource: 'EPOS', // POS orders from page4
         formattedCartItems: formattedCartItems,
@@ -5996,7 +6006,9 @@ class _Page4State extends State<Page4> {
     }
   }
 
-  Future<String?> _submitOrderAndGetId(Map<String, dynamic> orderData) async {
+  Future<OrderCreationResponse?> _submitOrderAndGetId(
+    Map<String, dynamic> orderData,
+  ) async {
     final offlineProvider = Provider.of<OfflineProvider>(
       context,
       listen: false,
@@ -6027,32 +6039,35 @@ class _Page4State extends State<Page4> {
 
         // Add offline order to the orders list in background
         eposOrdersProvider.addOfflineOrder(offlineOrder).catchError((error) {
-          print('⚠️ Background addOfflineOrder failed: $error');
+          print('?s??,? Background addOfflineOrder failed: $error');
         });
 
         // Return null for offline orders (no backend order ID)
         return null;
       } catch (e) {
-        print('❌ Failed to create offline order: $e');
+        print('??O Failed to create offline order: $e');
         throw Exception('Failed to save order offline: $e');
       }
     }
 
-    // ONLINE MODE: Submit to backend and get order ID
+    // ONLINE MODE: Submit to backend and get order ID/number
     try {
-      final orderId = await ApiService.createOrderFromMap(orderData);
+      final orderResponse = await ApiService.createOrderFromMap(orderData);
+      final orderId = orderResponse.orderId;
+      final orderNumber = orderResponse.orderNumber;
+      final displayIdentifier = orderNumber ?? orderId ?? 'UNKNOWN';
       print(
-        '✅ Order placed successfully online: $orderId for type: $_actualOrderType',
+        '?o. Order placed successfully online: $displayIdentifier for type: $_actualOrderType',
       );
 
       // Refresh provider in background
       eposOrdersProvider.refresh().catchError((error) {
-        print('⚠️ Background refresh failed after order placement: $error');
+        print('?s??,? Background refresh failed after order placement: $error');
       });
 
-      return orderId;
+      return orderResponse;
     } catch (e) {
-      print('❌ Failed to submit order online: $e');
+      print('??O Failed to submit order online: $e');
 
       // Try to save offline as fallback
       try {
@@ -6072,13 +6087,13 @@ class _Page4State extends State<Page4> {
         );
 
         eposOrdersProvider.addOfflineOrder(offlineOrder).catchError((error) {
-          print('⚠️ Background addOfflineOrder failed: $error');
+          print('?s??,? Background addOfflineOrder failed: $error');
         });
 
-        print('✅ Order saved offline as fallback');
+        print('?o. Order saved offline as fallback');
         return null; // No backend order ID for offline orders
       } catch (offlineError) {
-        print('❌ Offline fallback also failed: $offlineError');
+        print('??O Offline fallback also failed: $offlineError');
         throw Exception(
           'Failed to submit order online and offline fallback failed: $offlineError',
         );
@@ -6095,6 +6110,7 @@ class _Page4State extends State<Page4> {
     required double changeDue,
     required bool paidStatus,
     String? orderId,
+    String? orderNumber,
     DateTime? orderDateTime,
     String? orderSource,
     List<CartItem>? formattedCartItems,
@@ -6108,6 +6124,10 @@ class _Page4State extends State<Page4> {
       if (_shouldApplyDeliveryCharge(_actualOrderType, _selectedPaymentType)) {
         deliveryChargeAmount = 1.50; // Delivery charge amount
       }
+
+      // Extract discount from orderData
+      final discountPercentage = orderData['discount_percentage'] as double?;
+      final discountAmount = orderData['discount_amount'] as double?;
 
       await ThermalPrinterService().printReceiptWithUserInteraction(
         transactionId: transactionId,
@@ -6126,8 +6146,11 @@ class _Page4State extends State<Page4> {
         paymentType: _selectedPaymentType,
         paidStatus: paidStatus,
         orderId: orderId != null ? int.tryParse(orderId) : null,
+        orderNumber: orderNumber,
         deliveryCharge: deliveryChargeAmount,
         orderDateTime: orderDateTime,
+        discountPercentage: discountPercentage,
+        discountAmount: discountAmount,
         onShowMethodSelection: (availableMethods) {
           if (mounted) {
             CustomPopupService.show(
@@ -6632,7 +6655,6 @@ class _Page4State extends State<Page4> {
                     final isSelected = selectedCategory == index;
 
                     return GestureDetector(
-                      key: _categoryItemKeys[index],
                       onTap: () {
                         setState(() {
                           selectedCategory = index;

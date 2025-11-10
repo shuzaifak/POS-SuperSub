@@ -494,11 +494,14 @@ class ThermalPrinterService {
     String? postalCode,
     String? paymentType,
     bool? paidStatus,
-    int? orderId,
+    int? orderId, // Internal use only (for API calls)
+    String? orderNumber, // Display to user on receipt
     double? deliveryCharge,
     DateTime? orderDateTime,
     Function(List<String> availableMethods)? onShowMethodSelection,
     bool isEdited = false, // New parameter to indicate if order was edited
+    double? discountPercentage, // Discount percentage
+    double? discountAmount, // Discount amount
   }) async {
     if (kIsWeb && !ENABLE_DRAWER_TEST_MODE) {
       print('🚫 Web platform - printer not supported');
@@ -543,10 +546,13 @@ class ThermalPrinterService {
       paymentType: paymentType,
       paidStatus: paidStatus,
       orderId: orderId,
+      orderNumber: orderNumber,
       deliveryCharge: deliveryCharge,
       isXprinterUSB:
           _useXprinterSDK && Platform.isAndroid && _xprinterService.isConnected,
       isEdited: isEdited,
+      discountPercentage: discountPercentage,
+      discountAmount: discountAmount,
     );
 
     Future<String> receiptContentFuture = Future.value(
@@ -1037,9 +1043,12 @@ class ThermalPrinterService {
     String? paymentType,
     bool? paidStatus,
     int? orderId,
+    String? orderNumber,
     double? deliveryCharge,
     DateTime? orderDateTime,
     bool isEdited = false,
+    double? discountPercentage,
+    double? discountAmount,
   }) async {
     try {
       // Test receipt content generation
@@ -1092,6 +1101,8 @@ class ThermalPrinterService {
             Platform.isAndroid &&
             _xprinterService.isConnected,
         isEdited: isEdited,
+        discountPercentage: discountPercentage,
+        discountAmount: discountAmount,
       );
 
       print('✅ Receipt generation validation successful');
@@ -1590,9 +1601,12 @@ class ThermalPrinterService {
     String? paymentType,
     bool? paidStatus,
     int? orderId,
+    String? orderNumber,
     double? deliveryCharge,
     DateTime? orderDateTime,
     bool isEdited = false,
+    double? discountPercentage,
+    double? discountAmount,
   }) async {
     if (kIsWeb) return false;
 
@@ -1620,10 +1634,13 @@ class ThermalPrinterService {
       paymentType: paymentType,
       paidStatus: paidStatus,
       orderId: orderId,
+      orderNumber: orderNumber,
       deliveryCharge: deliveryCharge,
       isXprinterUSB:
           _useXprinterSDK && Platform.isAndroid && _xprinterService.isConnected,
       isEdited: isEdited,
+      discountPercentage: discountPercentage,
+      discountAmount: discountAmount,
     );
 
     String receiptContent = _generateReceiptContent(
@@ -1643,6 +1660,7 @@ class ThermalPrinterService {
       paymentType: paymentType,
       paidStatus: paidStatus,
       orderId: orderId,
+      orderNumber: orderNumber,
       deliveryCharge: deliveryCharge,
       orderDateTime: orderDateTime,
       isXprinterUSB:
@@ -2473,6 +2491,7 @@ class ThermalPrinterService {
     String? paymentType,
     bool? paidStatus,
     int? orderId,
+    String? orderNumber,
     double? deliveryCharge,
     DateTime? orderDateTime,
     bool isXprinterUSB = false,
@@ -2482,14 +2501,16 @@ class ThermalPrinterService {
 
     // Use full 80mm paper width (48 characters)
     receipt.writeln('================================================');
-    receipt.writeln('                   **SuperSub**'); // Bold restaurant name
+    receipt.writeln('                  **SuperSub**'); // Bold restaurant name
     receipt.writeln('================================================');
     DateTime displayDateTime = orderDateTime ?? UKTimeService.now();
     receipt.writeln(
       'Date: ${DateFormat('dd/MM/yyyy HH:mm').format(displayDateTime)}',
     );
-    if (orderId != null) {
-      receipt.writeln('**Order #: $orderId**'); // Bold order number
+    // Show order_number to user (fallback to orderId if not available)
+    final displayNumber = orderNumber ?? orderId?.toString();
+    if (displayNumber != null) {
+      receipt.writeln('**Order #: $displayNumber**'); // Bold order number
     }
     receipt.writeln(
       '**Order Type: ${orderType.toUpperCase()}**',
@@ -2499,24 +2520,24 @@ class ThermalPrinterService {
 
     // Customer Details Section
     if (!_shouldExcludeField(customerName)) {
-      receipt.writeln('CUSTOMER DETAILS:');
+      receipt.writeln('**CUSTOMER DETAILS:**');
       receipt.writeln('------------------------------------------------');
-      receipt.writeln('Name: $customerName');
+      receipt.writeln('**Name: $customerName**');
 
       if (!_shouldExcludeField(phoneNumber)) {
-        receipt.writeln('Phone: $phoneNumber');
+        receipt.writeln('**Phone: $phoneNumber**');
       }
 
       // Address details for delivery orders
       if (orderType.toLowerCase() == 'delivery') {
         if (!_shouldExcludeField(streetAddress)) {
-          receipt.writeln('Address: $streetAddress');
+          receipt.writeln('**Address: $streetAddress**');
         }
         if (!_shouldExcludeField(city)) {
-          receipt.writeln('City: $city');
+          receipt.writeln('**City: $city**');
         }
         if (!_shouldExcludeField(postalCode)) {
-          receipt.writeln('Postcode: $postalCode');
+          receipt.writeln('**Postcode: $postalCode**');
         }
       }
 
@@ -2533,7 +2554,7 @@ class ThermalPrinterService {
       double itemTotal = itemPricePerUnit * item.quantity;
 
       // Format item line with name and price on same line
-      String itemName = '${item.quantity}x **${item.foodItem.name}**';
+      String itemName = '**${item.quantity}x ${item.foodItem.name}**';
       String itemPrice = '${itemTotal.toStringAsFixed(2)}';
 
       // Calculate padding to align price to the right (48 char width)
@@ -2701,10 +2722,13 @@ class ThermalPrinterService {
     String? postalCode,
     String? paymentType,
     bool? paidStatus,
-    int? orderId,
+    int? orderId, // Internal use only
+    String? orderNumber, // Display to user on receipt
     double? deliveryCharge,
     bool isXprinterUSB = false,
     bool isEdited = false, // New parameter to indicate if order was edited
+    double? discountPercentage, // Discount percentage
+    double? discountAmount, // Discount amount
   }) async {
     // PERFORMANCE: Cache CapabilityProfile to avoid repeated disk I/O (saves 5-15 seconds per print)
     _cachedCapabilityProfile ??= await CapabilityProfile.load();
@@ -2739,10 +2763,11 @@ class ThermalPrinterService {
       'Date: ${DateFormat('dd/MM/yyyy HH:mm').format(UKTimeService.now())}',
     );
 
-    // Bold order number
-    if (orderId != null) {
+    // Bold order number - show order_number to user (fallback to orderId)
+    final displayNumber = orderNumber ?? orderId?.toString();
+    if (displayNumber != null) {
       bytes += generator.text(
-        'Order #: $orderId',
+        'Order #: $displayNumber',
         styles: const PosStyles(
           height: PosTextSize.size2,
           width: PosTextSize.size1,
@@ -2769,6 +2794,7 @@ class ThermalPrinterService {
         styles: const PosStyles(
           height: PosTextSize.size3,
           width: PosTextSize.size2,
+          bold: true,
         ),
       );
       bytes += generator.text(
@@ -2779,6 +2805,7 @@ class ThermalPrinterService {
         styles: const PosStyles(
           height: PosTextSize.size2,
           width: PosTextSize.size1,
+          bold: true,
         ),
       );
 
@@ -2788,6 +2815,7 @@ class ThermalPrinterService {
           styles: const PosStyles(
             height: PosTextSize.size2,
             width: PosTextSize.size1,
+            bold: true,
           ),
         );
       }
@@ -2800,6 +2828,7 @@ class ThermalPrinterService {
             styles: const PosStyles(
               height: PosTextSize.size2,
               width: PosTextSize.size1,
+              bold: true,
             ),
           );
         }
@@ -2809,6 +2838,7 @@ class ThermalPrinterService {
             styles: const PosStyles(
               height: PosTextSize.size2,
               width: PosTextSize.size1,
+              bold: true,
             ),
           );
         }
@@ -2818,6 +2848,7 @@ class ThermalPrinterService {
             styles: const PosStyles(
               height: PosTextSize.size2,
               width: PosTextSize.size1,
+              bold: true,
             ),
           );
         }
@@ -2864,7 +2895,7 @@ class ThermalPrinterService {
 
       bytes += generator.text(
         formattedLine,
-        styles: const PosStyles(bold: true),
+        styles: const PosStyles(bold: true, height: PosTextSize.size2),
       );
 
       if (item.selectedOptions != null && item.selectedOptions!.isNotEmpty) {
@@ -2920,6 +2951,26 @@ class ThermalPrinterService {
         ),
         PosColumn(
           text: deliveryChargeText,
+          width: 4,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+    }
+
+    // Show discount if present
+    if (discountPercentage != null && discountPercentage > 0) {
+      String discountText =
+          isXprinterUSB
+              ? '${discountAmount?.toStringAsFixed(2) ?? "0.00"}'
+              : '${discountAmount?.toStringAsFixed(2) ?? "0.00"}';
+      bytes += generator.row([
+        PosColumn(
+          text: 'Discount (${discountPercentage.toStringAsFixed(1)}%):',
+          width: 8,
+          styles: const PosStyles(align: PosAlign.left),
+        ),
+        PosColumn(
+          text: '- $discountText',
           width: 4,
           styles: const PosStyles(align: PosAlign.right),
         ),
